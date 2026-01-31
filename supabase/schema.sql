@@ -157,3 +157,46 @@ CREATE POLICY "Service role has full access to conversation_threads" ON conversa
 
 CREATE POLICY "Service role has full access to agent_queue" ON agent_queue
   FOR ALL USING (auth.role() = 'service_role');
+
+-- Agent memory for tracking sources and confidence (auditing)
+CREATE TABLE IF NOT EXISTS agent_memory (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  agent TEXT NOT NULL,
+  message_ts TEXT,
+  thread_ts TEXT,
+  response_text TEXT NOT NULL,
+  sources TEXT[] DEFAULT '{}',
+  confidence_level TEXT NOT NULL, -- HIGH, MEDIUM, LOW
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for agent_memory
+CREATE INDEX IF NOT EXISTS idx_agent_memory_agent ON agent_memory(agent);
+CREATE INDEX IF NOT EXISTS idx_agent_memory_created ON agent_memory(created_at);
+CREATE INDEX IF NOT EXISTS idx_agent_memory_confidence ON agent_memory(confidence_level);
+
+-- RLS for agent_memory
+ALTER TABLE agent_memory ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service role has full access to agent_memory" ON agent_memory
+  FOR ALL USING (auth.role() = 'service_role');
+
+-- Research cache for external API results (FPDS, USASpending, SAM, News)
+CREATE TABLE IF NOT EXISTS research_cache (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cache_key TEXT UNIQUE NOT NULL,
+  source TEXT NOT NULL, -- fpds, usaspending, sam-entity, news
+  data JSONB NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for research_cache
+CREATE INDEX IF NOT EXISTS idx_research_cache_key ON research_cache(cache_key);
+CREATE INDEX IF NOT EXISTS idx_research_cache_source ON research_cache(source);
+CREATE INDEX IF NOT EXISTS idx_research_cache_created ON research_cache(created_at);
+
+-- RLS for research_cache
+ALTER TABLE research_cache ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service role has full access to research_cache" ON research_cache
+  FOR ALL USING (auth.role() = 'service_role');

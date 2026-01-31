@@ -323,3 +323,49 @@ export async function updateTaskStatus(
 export async function cancelTask(id: string): Promise<AgentQueueItem> {
   return updateTaskStatus(id, 'cancelled');
 }
+
+// Agent memory operations - for logging sources and confidence
+export interface AgentMemoryEntry {
+  agent: string;
+  message_ts: string;
+  thread_ts?: string;
+  response_text: string;
+  sources: string[];
+  confidence_level: 'HIGH' | 'MEDIUM' | 'LOW';
+}
+
+export async function logAgentMemory(entry: AgentMemoryEntry): Promise<void> {
+  try {
+    const { error } = await getSupabase()
+      .from('agent_memory')
+      .insert({
+        ...entry,
+        created_at: new Date().toISOString(),
+      });
+
+    if (error) {
+      // Table might not exist yet, log but don't throw
+      console.warn('Could not log to agent_memory:', error.message);
+    }
+  } catch (err) {
+    console.warn('Could not log to agent_memory:', err);
+  }
+}
+
+export async function getAgentMemory(
+  agent: string,
+  limit: number = 20
+): Promise<AgentMemoryEntry[]> {
+  const { data, error } = await getSupabase()
+    .from('agent_memory')
+    .select()
+    .eq('agent', agent)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.warn('Could not read agent_memory:', error.message);
+    return [];
+  }
+  return data || [];
+}

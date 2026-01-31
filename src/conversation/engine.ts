@@ -30,13 +30,37 @@ import {
   fill,
 } from './phrases.js';
 
-// Agent display info for posting
-const AGENT_INFO: Record<AgentName, { emoji: string; displayName: string; name: string }> = {
-  scout: { emoji: '🔍', displayName: 'Scout', name: 'Maya' },
-  analyst: { emoji: '📊', displayName: 'Analyst', name: 'David' },
-  connector: { emoji: '🤝', displayName: 'Connector', name: 'Rosa' },
-  strategist: { emoji: '🎯', displayName: 'Strategist', name: 'James' },
-  pm: { emoji: '📋', displayName: 'PM', name: 'Patricia' },
+// Agent display info for posting (with profile pictures)
+const AGENT_INFO: Record<AgentName, {
+  username: string;
+  displayName: string;
+  icon_url: string;
+}> = {
+  scout: {
+    username: 'Maya',
+    displayName: 'Scout',
+    icon_url: 'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/Maya.jpeg',
+  },
+  analyst: {
+    username: 'David',
+    displayName: 'Analyst',
+    icon_url: 'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/David.jpeg',
+  },
+  connector: {
+    username: 'Rosa',
+    displayName: 'Connector',
+    icon_url: 'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/Rosa.jpeg',
+  },
+  strategist: {
+    username: 'James',
+    displayName: 'Strategist',
+    icon_url: 'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/James.jpeg',
+  },
+  pm: {
+    username: 'Patricia',
+    displayName: 'PM',
+    icon_url: 'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/Patricia.jpeg',
+  },
 };
 
 interface ConversationContext {
@@ -61,19 +85,21 @@ function randomDelay(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-// Post as agent
+// Post as agent with custom username and profile picture
 async function postAsAgent(
   agent: AgentName,
   text: string,
   threadTs?: string
 ): Promise<string> {
-  const { emoji, displayName } = AGENT_INFO[agent];
+  const { username, icon_url } = AGENT_INFO[agent];
   const app = getSlackApp();
   const channel = getChannelId();
 
   const result = await app.client.chat.postMessage({
     channel,
-    text: `${emoji} *${displayName}*\n\n${text}`,
+    text,
+    username,
+    icon_url,
     thread_ts: threadTs,
     unfurl_links: false,
     unfurl_media: false,

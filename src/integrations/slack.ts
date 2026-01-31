@@ -40,28 +40,55 @@ export function getChannelId(): string {
   return channelId;
 }
 
-// Agent display info
-const AGENT_INFO: Record<AgentName, { emoji: string; displayName: string }> = {
-  scout: { emoji: '🔍', displayName: 'Scout' },
-  analyst: { emoji: '📊', displayName: 'Analyst' },
-  connector: { emoji: '🤝', displayName: 'Connector' },
-  strategist: { emoji: '🎯', displayName: 'Strategist' },
-  pm: { emoji: '📋', displayName: 'PM' },
+// Agent display info with profile pictures
+// Using DiceBear avatars for consistent, professional-looking profiles
+const AGENT_INFO: Record<AgentName, {
+  username: string;
+  icon_url: string;
+  displayName: string;
+}> = {
+  scout: {
+    username: 'Maya',
+    displayName: 'Scout',
+    icon_url: 'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/Maya.jpeg',
+  },
+  analyst: {
+    username: 'David',
+    displayName: 'Analyst',
+    icon_url: 'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/David.jpeg',
+  },
+  connector: {
+    username: 'Rosa',
+    displayName: 'Connector',
+    icon_url: 'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/Rosa.jpeg',
+  },
+  strategist: {
+    username: 'James',
+    displayName: 'Strategist',
+    icon_url: 'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/James.jpeg',
+  },
+  pm: {
+    username: 'Patricia',
+    displayName: 'PM',
+    icon_url: 'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/Patricia.jpeg',
+  },
 };
 
-// Post a message as an agent
+// Post a message as an agent with custom username and profile picture
 export async function postAsAgent(
   agent: AgentName,
   text: string,
   threadTs?: string
 ): Promise<{ ts: string; channel: string }> {
-  const { emoji, displayName } = AGENT_INFO[agent];
+  const { username, icon_url } = AGENT_INFO[agent];
   const app = getSlackApp();
   const channel = getChannelId();
 
   const result = await app.client.chat.postMessage({
     channel,
-    text: `${emoji} *${displayName}*\n\n${text}`,
+    text,
+    username,
+    icon_url,
     thread_ts: threadTs,
     unfurl_links: false,
     unfurl_media: false,

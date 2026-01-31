@@ -16,6 +16,9 @@
     "pm": "tsx src/run-pm.ts",
     "conversation": "tsx src/run-conversation.ts",
     "full-flow": "tsx src/run-full-flow.ts",
+    "live": "tsx src/live/run-team.ts",
+    "live:maya": "tsx src/live/run-maya.ts",
+    "live:david": "tsx src/live/run-david.ts",
     "test:connections": "tsx src/test-connections.ts"
   },
   "keywords": [

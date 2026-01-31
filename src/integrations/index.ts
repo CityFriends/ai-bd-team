@@ -3,3 +3,7 @@ export * from './supabase.js';
 export * from './slack.js';
 export * from './claude.js';
 export * from './sam-gov.js';
+export * from './fpds.js';
+export * from './usaspending.js';
+export * from './sam-entity.js';
+export * from './news-search.js';
