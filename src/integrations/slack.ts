@@ -46,6 +46,7 @@ const AGENT_INFO: Record<AgentName, { emoji: string; displayName: string }> = {
   analyst: { emoji: '📊', displayName: 'Analyst' },
   connector: { emoji: '🤝', displayName: 'Connector' },
   strategist: { emoji: '🎯', displayName: 'Strategist' },
+  pm: { emoji: '📋', displayName: 'PM' },
 };
 
 // Post a message as an agent

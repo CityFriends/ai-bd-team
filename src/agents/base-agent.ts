@@ -74,11 +74,28 @@ export abstract class BaseAgent {
 // Helper to extract @mentions from text
 export function extractMentions(text: string): AgentName[] {
   const mentions: AgentName[] = [];
-  const agentNames: AgentName[] = ['scout', 'analyst', 'connector', 'strategist'];
+  const agentNames: AgentName[] = ['scout', 'analyst', 'connector', 'strategist', 'pm'];
+
+  // Also check for name mentions
+  const nameToAgent: Record<string, AgentName> = {
+    'maya': 'scout',
+    'david': 'analyst',
+    'rosa': 'connector',
+    'james': 'strategist',
+    'patricia': 'pm',
+  };
 
   for (const agent of agentNames) {
     const regex = new RegExp(`@${agent}`, 'gi');
     if (regex.test(text)) {
+      mentions.push(agent);
+    }
+  }
+
+  // Check for @Name mentions too
+  for (const [name, agent] of Object.entries(nameToAgent)) {
+    const regex = new RegExp(`@${name}`, 'gi');
+    if (regex.test(text) && !mentions.includes(agent)) {
       mentions.push(agent);
     }
   }

@@ -8,7 +8,15 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "scout": "tsx src/run-scout.ts",
+    "analyst": "tsx src/run-analyst.ts",
+    "connector": "tsx src/run-connector.ts",
+    "strategist": "tsx src/run-strategist.ts",
+    "pm": "tsx src/run-pm.ts",
+    "conversation": "tsx src/run-conversation.ts",
+    "full-flow": "tsx src/run-full-flow.ts",
+    "test:connections": "tsx src/test-connections.ts"
   },
   "keywords": [
     "ai",
@@ -21,9 +29,12 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
     "@slack/bolt": "^4.1.0",
+    "@slack/logger": "^4.0.0",
+    "@slack/web-api": "^7.13.0",
+    "@supabase/functions-js": "^2.93.3",
     "@supabase/supabase-js": "^2.47.10",
-    "node-cron": "^3.0.3",
-    "dotenv": "^16.4.7"
+    "dotenv": "^16.4.7",
+    "node-cron": "^3.0.3"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
