@@ -17,6 +17,15 @@
 - [x] SAM.gov entity verification for partners
 - [x] FAR lookup (semantic search + direct citation lookup via Supabase)
 
+### API Assignments by Agent
+| Agent | APIs Wired Up | Use Case |
+|-------|---------------|----------|
+| Maya | SAM.gov opportunities, SerpAPI news | Scouts new opps, finds relevant news |
+| David | FPDS, USASpending, FAR | Researches incumbents, budgets, cites regulations |
+| Rosa | SAM.gov entity verification | Verifies potential partners |
+| James | FAR, FPDS | Strategic analysis, regulatory guidance |
+| Patricia | (none yet) | Tracks action items, manages workflow |
+
 ### Agent Personalities (Distinct Voices)
 
 | Agent | Role | Background | Voice |
@@ -60,6 +69,7 @@
 - [x] David uses it: "Per FAR 15.305, they have to evaluate past performance..."
 - [x] James uses it: "FAR 16.505 governs task order competitions..."
 - [x] Keep citations specific: "FAR 9.505-2(b)(1)" not "the FAR says..."
+- [x] Created `src/scripts/update-far.ts` to refresh FAR data when GSA publishes changes
 
 ### Priority 2: Company Data Integration
 - [ ] Create `company_profile` table with FFTC capabilities, NAICS codes, past performance
