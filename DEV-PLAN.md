@@ -3,7 +3,7 @@
 ## What We've Built
 
 ### Core Infrastructure
-- [x] 5 Slack agents with separate bot tokens (Maya, David, Rosa, James, Patricia)
+- [x] 6 Slack agents with separate bot tokens (Maya, David, Rosa, James, Patricia, Jodie)
 - [x] Socket Mode for real-time message handling
 - [x] Message deduplication to prevent double responses
 - [x] Message claiming system to prevent pile-ons
@@ -45,6 +45,7 @@
 | Rosa | SAM.gov entity verification | Verifies potential partners |
 | James | FAR, FPDS | Strategic analysis, regulatory guidance |
 | Patricia | (none yet) | Tracks action items, manages workflow |
+| Jodie | (none yet) | Proposal writing, compliance matrices, executive summaries |
 
 ### Agent Personalities (Distinct Voices)
 
@@ -55,6 +56,7 @@
 | Rosa | Connector | 44, Mexican American, San Antonio, Silver Spring | Warm, Spanglish, "Mira", relationship-first |
 | James | Strategist | 52, Black, Chicago South Side, Arlington | Executive presence, old school, "I've seen this before" |
 | Patricia | PM | 31, Black, PG County/Howard, Petworth | Very online, millennial, emoji-friendly, TikTok references |
+| Jodie | Writer | 33, Vietnamese American, UC Berkeley, Columbia Heights | Quiet confidence, word nerd, "Where's the 'so what'?", night owl |
 
 ### Conversational Features
 - [x] Mood detection (busy, engaged, relaxed, stressed, uncertain)
@@ -115,6 +117,7 @@ Each agent has deep expertise they apply to interpret situations:
 - [x] Rosa: Knows prime vs sub strategy, structures teaming agreements, identifies partner red flags
 - [x] James: Assesses win probability, knows bid/no-bid criteria, architects discriminators
 - [x] Patricia: Runs compliance matrices, sets realistic schedules, knows proposal failures
+- [x] Jodie: Section L/M analysis, compliance matrices, win theme integration, proposal editing
 
 ### Strategic Context & Reasoning ✓
 Company profile now includes strategic intelligence:
@@ -193,6 +196,7 @@ Comprehensive docs for repeatable product deployment:
 - ~~Thread replies with short answers may not always trigger agent responses~~ - Fixed: agents respond to follow-ups
 - ~~Maya hallucinating fake URLs~~ - Fixed: strict validation + verification command
 - Agency forecast HTML parsing is generic - may need agency-specific parsers for complex pages
+- Jodie (Writer) temporarily disabled - Slack app needs Socket Mode enabled and proper scopes configured
 
 ---
 
@@ -317,7 +321,7 @@ Comprehensive docs for repeatable product deployment:
 
 ## Running the Agents
 ```bash
-npm run live              # Start all 5 agents in Slack
+npm run live              # Start all 6 agents in Slack (Jodie currently disabled pending Slack app setup)
 npm run full-system-test  # Run full BD team demo with real data
 
 # Maya's Automated Scanner
@@ -365,6 +369,7 @@ DAVID_BOT_TOKEN, DAVID_APP_TOKEN
 ROSA_BOT_TOKEN, ROSA_APP_TOKEN
 JAMES_BOT_TOKEN, JAMES_APP_TOKEN
 PATRICIA_BOT_TOKEN, PATRICIA_APP_TOKEN
+JODIE_BOT_TOKEN, JODIE_APP_TOKEN
 ANTHROPIC_API_KEY
 SUPABASE_URL, SUPABASE_SERVICE_KEY
 SAM_API_KEY
