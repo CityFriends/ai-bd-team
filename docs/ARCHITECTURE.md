@@ -378,10 +378,52 @@ Polls FPDS for new contract awards:
 ### Scheduled Jobs
 | Script | Schedule | Purpose |
 |--------|----------|---------|
+| `maya-scanner.ts` | 8am Mon-Fri | Scan SAM.gov for opportunities |
+| `maya-scanner.ts` | 8:30am Monday | Weekly opportunity summary |
+| `patricia-checkin.ts` | 9am Mon-Fri | Morning team check-in |
+| `patricia-checkin.ts` | 2pm Mon-Fri | Nudge for pending items |
 | `award-scheduler.ts` | Mon/Thu 9am | Check for new awards |
 | `sync-scheduler.ts` | Every 6 hours | Sync Notion data |
-| (planned) | Daily | Competitor news scan |
-| (planned) | Weekly | Pipeline status summary |
+
+---
+
+## Deployment
+
+### Production (Railway)
+The system runs 24/7 on Railway with automatic deployments.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         RAILWAY                              │
+│                                                              │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │              Node.js Application                     │   │
+│  │                                                      │   │
+│  │  ┌──────────────┐  ┌──────────────────────────┐    │   │
+│  │  │ Live Agents  │  │   Scheduled Jobs          │    │   │
+│  │  │ (Socket Mode)│  │   (node-cron)            │    │   │
+│  │  │              │  │                           │    │   │
+│  │  │ Maya         │  │ 8am:  Maya scan          │    │   │
+│  │  │ David        │  │ 9am:  Patricia check-in  │    │   │
+│  │  │ Rosa         │  │ 2pm:  Patricia nudge     │    │   │
+│  │  │ James        │  │ 6hr:  Notion sync        │    │   │
+│  │  │ Patricia     │  │                           │    │   │
+│  │  └──────────────┘  └──────────────────────────┘    │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                              │
+│  Config: railway.json, nixpacks.toml                        │
+│  Auto-deploy on push to main branch                         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Configuration Files
+- `railway.json` - Railway service configuration
+- `nixpacks.toml` - Build settings (Node.js 20, npm ci)
+
+### Repository
+- **GitHub**: `friends-innovation-lab/ai-bd-team`
+- **Branch**: `main`
+- **Auto-deploy**: Yes (push triggers deploy)
 
 ---
 

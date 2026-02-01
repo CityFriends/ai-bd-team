@@ -254,11 +254,12 @@ Comprehensive docs for repeatable product deployment:
 ---
 
 ## Tech Stack
-- **Runtime**: Node.js + TypeScript (tsx)
+- **Runtime**: Node.js 20 + TypeScript (tsx)
+- **Hosting**: Railway (always-on, auto-deploy from GitHub)
 - **Slack**: Bolt SDK with Socket Mode
 - **AI**: Claude claude-sonnet-4-20250514 via Anthropic SDK
-- **Database**: Supabase (PostgreSQL)
-- **APIs**: SAM.gov, FPDS, USASpending, SerpAPI
+- **Database**: Supabase (PostgreSQL + pgvector)
+- **APIs**: SAM.gov, FPDS, USASpending, SerpAPI, Notion
 
 ## Running the Agents
 ```bash
@@ -276,6 +277,20 @@ npm run patricia:nudge    # Check for pending items
 npm run patricia:schedule # Run on schedule (9am/2pm weekdays)
 ```
 
+## Deployment
+
+### Railway (Production)
+- **Repo**: `friends-innovation-lab/ai-bd-team`
+- **Branch**: `main`
+- **Auto-deploy**: Pushes to main trigger automatic deployment
+- **Config files**: `railway.json`, `nixpacks.toml`
+
+### Running Locally
+```bash
+npm run live              # Start all 5 agents
+npm run start:prod        # Production mode (agents + schedulers)
+```
+
 ## Environment Variables Required
 ```
 SLACK_CHANNEL_ID
@@ -288,4 +303,5 @@ ANTHROPIC_API_KEY
 SUPABASE_URL, SUPABASE_SERVICE_KEY
 SAM_API_KEY
 SERPAPI_KEY
+NOTION_API_KEY
 ```
