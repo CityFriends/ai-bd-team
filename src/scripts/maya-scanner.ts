@@ -10,6 +10,7 @@
  *   npm run maya:schedule     # Run on schedule
  */
 import 'dotenv/config';
+import * as fs from 'fs';
 import cron from 'node-cron';
 import { App } from '@slack/bolt';
 import { searchOpportunities, getSAMOpportunityURL, extractAgencyAbbreviation } from '../integrations/sam-gov.js';
@@ -17,12 +18,52 @@ import { getAnthropic } from '../integrations/claude.js';
 import { getSupabase } from '../integrations/supabase.js';
 import { loadCompanyContext, formatCompanyContextForPrompt } from '../context/company-context.js';
 import { matchForecastToSAM, linkForecastToSAM } from '../integrations/agency-forecasts.js';
+import { addOpportunityToNotion, logActivityToNotion, NotionHubIds } from '../integrations/notion-hub.js';
 import {
   OPPORTUNITY_FILTERS,
   scoreOpportunity,
   shouldPostOpportunity,
 } from '../config/opportunity-filters.js';
 import type { SAMOpportunity } from '../types/index.js';
+
+// Load Notion hub IDs if available
+function loadHubIds(): NotionHubIds | null {
+  try {
+    const data = fs.readFileSync('notion-hub-ids.json', 'utf-8');
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
+}
+
+// Map agency to Notion select value
+function mapAgencyForNotion(dept?: string, office?: string): string {
+  const abbrev = extractAgencyAbbreviation(dept, office);
+  return abbrev || 'Other';
+}
+
+// Map set-aside to Notion select value
+function mapSetAsideForNotion(setAside?: string): string {
+  if (!setAside) return 'Unrestricted';
+  const lower = setAside.toLowerCase();
+  if (lower.includes('8(a)')) return '8(a)';
+  if (lower.includes('wosb') || lower.includes('women')) return 'WOSB';
+  if (lower.includes('sdvosb') || lower.includes('service-disabled')) return 'SDVOSB';
+  if (lower.includes('hubzone')) return 'HUBZone';
+  if (lower.includes('small')) return 'Small Business';
+  return 'Unrestricted';
+}
+
+// Map opportunity type to Notion select value
+function mapTypeForNotion(type?: string): string {
+  if (!type) return 'Other';
+  const lower = type.toLowerCase();
+  if (lower.includes('rfi')) return 'RFI';
+  if (lower.includes('source')) return 'Sources Sought';
+  if (lower.includes('rfp') || lower.includes('solicitation')) return 'RFP';
+  if (lower.includes('task')) return 'Task Order';
+  return 'Other';
+}
 
 const CHANNEL_ID = process.env.SLACK_CHANNEL_ID || '';
 
@@ -376,14 +417,51 @@ async function runDailyScan() {
       await postToSlack(app, message);
 
       // Record that we posted this
+      let notionPageId: string | undefined;
       try {
         const supabase = getSupabase();
+
+        // Also sync to Notion if hub is configured
+        const hubIds = loadHubIds();
+        if (hubIds) {
+          try {
+            notionPageId = await addOpportunityToNotion(hubIds.opportunitiesDbId, {
+              name: opp.opportunity.title,
+              status: 'New',
+              fitScore: opp.score,
+              strategicFit: opp.score >= 70 && opp.reasons.some(r => r.toLowerCase().includes('strategic')),
+              agency: mapAgencyForNotion(opp.opportunity.department, opp.opportunity.office),
+              subAgency: opp.opportunity.office,
+              dueDate: opp.opportunity.responseDeadLine?.split('T')[0],
+              postedDate: opp.opportunity.postedDate,
+              naics: opp.opportunity.naicsCode,
+              setAside: mapSetAsideForNotion(opp.opportunity.setAsideDescription),
+              type: mapTypeForNotion(opp.opportunity.type),
+              samLink: opp.samUrl,
+              mayasTake: `Score: ${opp.score}/100. ${opp.reasons.join(', ')}${opp.redFlags.length > 0 ? ` Concerns: ${opp.redFlags.join(', ')}` : ''}`,
+            });
+
+            // Log activity
+            await logActivityToNotion(hubIds.activityLogDbId, {
+              agent: 'Maya',
+              actionType: 'Found Opportunity',
+              summary: `Found: ${opp.opportunity.title?.slice(0, 100)} (Score: ${opp.score})`,
+              opportunityId: notionPageId,
+            });
+
+            console.log(`[NOTION] Synced to Notion: ${notionPageId}`);
+          } catch (notionErr) {
+            console.warn('[NOTION] Sync failed:', notionErr);
+          }
+        }
+
         await supabase.from('seen_opportunities').insert({
           notice_id: opp.opportunity.noticeId,
           title: opp.opportunity.title,
           sam_url: opp.samUrl,
           score: opp.score,
           posted_at: new Date().toISOString(),
+          notion_page_id: notionPageId,
         });
       } catch {
         // Ignore if table doesn't exist
