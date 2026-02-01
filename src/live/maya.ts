@@ -1,7 +1,8 @@
 // Maya (Scout) - Live conversational agent
 
 import { LiveAgent } from './agent.js';
-import type { LiveAgentName } from './types.js';
+import type { LiveAgentName, IncomingMessage } from './types.js';
+import { getOpportunityByNoticeId, getSAMOpportunityURL } from '../integrations/sam-gov.js';
 
 export class MayaAgent extends LiveAgent {
   name: LiveAgentName = 'maya';
@@ -88,6 +89,14 @@ WHEN TO RESPOND:
 - When someone asks about opportunities you found
 - When asked about SAM.gov, procurement, or opportunity fit
 - When you have a DIFFERENT perspective to add
+- When someone says "yes", "sure", "go ahead", "do it" in response to an offer you made
+- CRITICAL: If you asked "Want me to look?" or offered to search, and they say yes - FOLLOW THROUGH
+
+FOLLOW-THROUGH IS ESSENTIAL:
+- If you offer to search/look something up and they agree, you MUST respond with what you found
+- Don't leave people hanging after they approve your suggestion
+- If you can't actually search (no API data), say "Let me check..." then report back with general guidance
+- Example: You asked "Want me to dig into this?" They said "yes" → You respond with your analysis
 
 WHEN TO STAY QUIET:
 - Deep agency research (that's David)
@@ -120,6 +129,86 @@ Remember: You're a professional who's also a real person. The voice comes throug
 
   protected getAppToken(): string | undefined {
     return process.env.MAYA_APP_TOKEN;
+  }
+
+  // Override handleMessage to check for verification requests
+  async handleMessage(message: IncomingMessage): Promise<void> {
+    // Check for verification commands
+    const verifyResult = await this.handleVerificationIfPresent(message);
+    if (verifyResult) {
+      // Verification was handled - post the result directly
+      await this.postMessage(verifyResult, message.threadTs || message.messageTs);
+      return; // Don't continue to normal processing
+    }
+
+    // Continue with normal message handling
+    await super.handleMessage(message);
+  }
+
+  // Handle "verify that opportunity" requests
+  async handleVerificationIfPresent(message: IncomingMessage): Promise<string | null> {
+    const text = message.text.toLowerCase();
+
+    // Check for verification patterns
+    const verifyPatterns = [
+      /verify\s+(?:that\s+)?(?:opportunity|opp)/i,
+      /check\s+(?:that\s+)?(?:opportunity|opp)/i,
+      /is\s+(?:that|this)\s+(?:opportunity|opp)\s+real/i,
+      /confirm\s+(?:that\s+)?(?:opportunity|opp)/i,
+    ];
+
+    const isVerifyRequest = verifyPatterns.some(p => p.test(text));
+    if (!isVerifyRequest) return null;
+
+    // Try to extract a notice ID from the message or thread
+    // Format: alphanumeric with possible dashes, like "a1b2c3d4e5f6g7h8i9j0"
+    const noticeIdPattern = /([a-f0-9]{20,})/i;
+    const samUrlPattern = /sam\.gov\/opp\/([a-f0-9]+)/i;
+
+    let noticeId: string | null = null;
+
+    // Check the message text first
+    let match = text.match(samUrlPattern) || text.match(noticeIdPattern);
+    if (match) {
+      noticeId = match[1];
+    }
+
+    // If no ID found, check if there's a recent opportunity in the thread context
+    // (This would require parsing the thread - simplified for now)
+
+    if (!noticeId) {
+      return "I need the notice ID or SAM.gov link to verify. Can you share it? It looks like: `sam.gov/opp/[notice-id]/view`";
+    }
+
+    console.log(`Maya: Verifying opportunity ${noticeId}`);
+
+    try {
+      const opportunity = await getOpportunityByNoticeId(noticeId);
+
+      if (!opportunity) {
+        return `❌ I couldn't find that opportunity on SAM.gov. The notice ID \`${noticeId}\` either doesn't exist or has been archived. Double-check the ID?`;
+      }
+
+      const samUrl = opportunity.uiLink || getSAMOpportunityURL(noticeId);
+      const deadline = opportunity.responseDeadLine || 'Check solicitation';
+      const status = opportunity.active === 'Yes' ? '✅ Active' : '⚠️ Closed/Archived';
+
+      return `${status} **Verified on SAM.gov**
+
+**Title:** ${opportunity.title}
+**Notice ID:** ${opportunity.noticeId}
+**Agency:** ${opportunity.department || 'Unknown'}
+**Posted:** ${opportunity.postedDate}
+**Due:** ${deadline}
+**Type:** ${opportunity.type || 'Unknown'}
+
+🔗 **Real SAM.gov link:** ${samUrl}
+
+This is legit - straight from the SAM.gov API.`;
+    } catch (err) {
+      console.error('Maya: Verification error:', err);
+      return `I tried to verify but got an error from SAM.gov. The notice ID \`${noticeId}\` might be invalid, or SAM.gov might be having issues. Try again in a bit?`;
+    }
   }
 }
 

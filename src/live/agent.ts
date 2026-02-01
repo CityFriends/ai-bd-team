@@ -386,9 +386,21 @@ export abstract class LiveAgent {
     }
 
     // Load research context (news, FPDS, USASpending, SAM Entity, FAR)
+    // For short replies in threads (like "yes", "go ahead"), use thread context for research
     let researchContext = '';
     try {
-      const research = await gatherResearchContext(message.text, this.name);
+      let textForResearch = message.text;
+
+      // If this is a short reply in an active thread, include recent thread context
+      // so we can understand WHAT to research
+      const isShortReply = message.text.trim().length < 30;
+      if (isShortReply && message.isInActiveThread && threadContext) {
+        // Combine thread context with the current message for better topic detection
+        textForResearch = threadContext + '\n\nCurrent message: ' + message.text;
+        console.log(`${this.displayName}: Using thread context for research (short reply)`);
+      }
+
+      const research = await gatherResearchContext(textForResearch, this.name);
       researchContext = formatResearchContext(research);
       if (researchContext) {
         console.log(`${this.displayName}: Gathered research context`);
