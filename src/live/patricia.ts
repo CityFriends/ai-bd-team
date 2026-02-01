@@ -153,6 +153,20 @@ Remember: You're a professional who's also a real person. Organized doesn't mean
     return process.env.PATRICIA_APP_TOKEN;
   }
 
+  // Override handleMessage to check for feedback commands first
+  async handleMessage(message: IncomingMessage): Promise<void> {
+    // Check for feedback command before normal processing
+    const feedbackResult = await this.handleFeedbackIfPresent(message);
+    if (feedbackResult) {
+      // Feedback was logged - let the normal response generation handle the acknowledgment
+      // The context about logged feedback is passed to the LLM
+      console.log(`Patricia: Detected feedback command: ${feedbackResult}`);
+    }
+
+    // Continue with normal message handling
+    await super.handleMessage(message);
+  }
+
   // Check if message is a feedback command and handle it
   async handleFeedbackIfPresent(message: IncomingMessage): Promise<string | null> {
     const text = message.text.toLowerCase();
@@ -201,7 +215,7 @@ Remember: You're a professional who's also a real person. Organized doesn't mean
       feedback_type: feedbackType,
       what_happened: feedbackText,
       severity: 'medium',
-      slack_ts: message.ts,
+      slack_ts: message.messageTs,
     });
 
     if (result) {
