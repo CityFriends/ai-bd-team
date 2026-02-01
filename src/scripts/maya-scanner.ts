@@ -12,10 +12,11 @@
 import 'dotenv/config';
 import cron from 'node-cron';
 import { App } from '@slack/bolt';
-import { searchOpportunities, getSAMOpportunityURL } from '../integrations/sam-gov.js';
+import { searchOpportunities, getSAMOpportunityURL, extractAgencyAbbreviation } from '../integrations/sam-gov.js';
 import { getAnthropic } from '../integrations/claude.js';
 import { getSupabase } from '../integrations/supabase.js';
 import { loadCompanyContext, formatCompanyContextForPrompt } from '../context/company-context.js';
+import { matchForecastToSAM, linkForecastToSAM } from '../integrations/agency-forecasts.js';
 import {
   OPPORTUNITY_FILTERS,
   scoreOpportunity,
@@ -339,7 +340,7 @@ async function runDailyScan() {
   } else {
     // Post top opportunities (max 3)
     for (const opp of validToPost.slice(0, 3)) {
-      const message = await generateMayaPost(opp, companyContext);
+      let message = await generateMayaPost(opp, companyContext);
 
       // CRITICAL: Don't post empty messages (validation failed)
       if (!message || message.trim().length === 0) {
@@ -351,6 +352,25 @@ async function runDailyScan() {
       if (!message.includes('sam.gov/opp/') && !message.includes(opp.samUrl)) {
         console.error(`[BLOCK POST] Message doesn't contain SAM.gov link - possible hallucination`);
         continue;
+      }
+
+      // Check if this matches a forecast we previously flagged
+      const agencyAbbrev = extractAgencyAbbreviation(opp.opportunity.department, opp.opportunity.office);
+      if (agencyAbbrev) {
+        try {
+          const match = await matchForecastToSAM(opp.opportunity.title, agencyAbbrev);
+          if (match.matched && match.forecastId) {
+            // Add a note about the forecast match!
+            message += `\n\n📅 *Heads up* - this matches a forecast I flagged earlier: "${match.forecastTitle}". It's live now!`;
+
+            // Link the forecast to this SAM.gov opportunity
+            await linkForecastToSAM(match.forecastId, opp.samUrl);
+            console.log(`[FORECAST] Matched to forecast: ${match.forecastTitle}`);
+          }
+        } catch (err) {
+          // Forecast check failed, continue without it
+          console.warn('[FORECAST] Match check failed:', err);
+        }
       }
 
       await postToSlack(app, message);
