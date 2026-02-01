@@ -27,6 +27,13 @@
   - Maya posts new awards to Slack automatically
   - Run manually: `npm run check-awards`
   - Run scheduled (Mon/Thu 9am): `npm run award-scheduler`
+- [x] Agency Forecast Scraper
+  - Scrapes 12 agency procurement forecast pages (CMS, VA, HHS, GSA, FEMA, DOL, State, ED, DHS, SBA, USDA, DOT)
+  - Relevance scoring based on HCD/UX/digital services keywords
+  - Stores forecasts in `agency_forecasts` table
+  - Matches SAM.gov opps to previously forecasted opportunities
+  - Run manually: `npm run forecast:scan`
+  - Weekly schedule: `npm run forecast:schedule` (Sunday 10pm scan, Monday 8:15am brief)
 - [x] SAM.gov entity verification for partners
 - [x] FAR lookup (semantic search + direct citation lookup via Supabase)
 
@@ -66,6 +73,25 @@
 - [x] Confidence levels: HIGH (official source), MEDIUM (inference), LOW (guess)
 - [x] Article links required: when citing news, must include actual URL
 - [x] Follow-up responses: agents respond to thread questions with substance, not just emoji reactions
+- [x] Short reply follow-through: when user says "yes" to agent offer, uses thread context for research
+- [x] Current time awareness: agents know the current date/time for appropriate greetings
+
+### Anti-Hallucination System ✓
+- [x] SAM.gov validation: requires noticeId, title, postedDate for all opportunities
+- [x] URL generation: `getSAMOpportunityURL()` creates real links from notice IDs
+- [x] Post validation: blocks posts without real SAM.gov URLs
+- [x] Maya verification command: "Maya, verify that opportunity" re-queries API
+- [x] Personality variation: different openers based on score (90+, 70-89, 60-69)
+- [x] Score threshold: won't post opportunities below score 60
+- [x] Logging: shows raw API responses for debugging
+
+### Feedback Logging System ✓
+- [x] Patricia logs feedback via Slack commands: "Patricia, bug: [issue]"
+- [x] Feedback types: bug, wrong_answer, great_catch, suggestion, annoying, missing_info
+- [x] Auto-extracts agent name from feedback text
+- [x] Severity levels: minor, medium, major
+- [x] Weekly summary for Monday check-ins
+- [x] Tracks resolved vs unresolved issues
 
 ### Competitor Intelligence
 - [x] Automatic competitor news search when incumbents/competitors mentioned
@@ -114,6 +140,8 @@ Agent-specific strategic reasoning:
 - [x] `agent_memory` - response logging with sources/confidence
 - [x] `seen_awards` - tracks reported awards (prevents duplicates)
 - [x] `competitor_intel` - stored intel on competitors (protests, performance, wins)
+- [x] `system_feedback` - tracks bugs, issues, suggestions for agent improvement
+- [x] `agency_forecasts` - upcoming opportunities from agency forecast pages
 
 ### Product Documentation
 Comprehensive docs for repeatable product deployment:
@@ -149,6 +177,8 @@ Comprehensive docs for repeatable product deployment:
 - FPDS keyword search can't find contract vehicles by name (e.g., "SPRUCE IDIQ") - needs contract number
 - ~~News sources are general~~ - Now includes GovCon sources: OrangeSlices, GovConWire, WashTech, FCW, Nextgov
 - ~~Thread replies with short answers may not always trigger agent responses~~ - Fixed: agents respond to follow-ups
+- ~~Maya hallucinating fake URLs~~ - Fixed: strict validation + verification command
+- Agency forecast HTML parsing is generic - may need agency-specific parsers for complex pages
 
 ---
 
@@ -215,11 +245,21 @@ Comprehensive docs for repeatable product deployment:
   - Posts opportunities 60+ score, immediate for 80+
   - Weekly summary on Mondays at 8:30am
   - Quiet morning message when nothing found
+  - Personality variation: different openers based on score
+  - Verification: "Maya, verify that opportunity" re-checks SAM.gov
+  - Forecast matching: flags when SAM.gov opp matches a forecast
   - Run scheduled: `npm run maya:schedule`
+- [x] Maya's forecast briefing (`npm run forecast:brief`)
+  - Monday 8:15am forecast update
+  - Lists high-relevance and medium-relevance upcoming opportunities
+  - Tracks when forecasts hit SAM.gov
+  - Run scheduled: `npm run forecast:schedule`
 - [x] Patricia's team management (`npm run patricia:checkin`)
   - Morning check-in at 9am weekdays
   - Afternoon nudge check at 2pm for pending items
   - Tracks opportunities needing decisions
+  - Feedback logging: "Patricia, bug: [issue]" saves to database
+  - Weekly feedback summary on Mondays
   - Run scheduled: `npm run patricia:schedule`
 - [x] Opportunity scoring system (`src/config/opportunity-filters.ts`)
   - 0-100 scoring based on NAICS, keywords, agency, set-aside, timeline
@@ -270,6 +310,11 @@ npm run full-system-test  # Run full BD team demo with real data
 npm run maya:scan         # One-time scan of SAM.gov
 npm run maya:schedule     # Run on schedule (8am Mon-Fri, 8:30am Monday weekly)
 npm run maya:weekly       # Weekly summary only
+
+# Agency Forecast Scanner
+npm run forecast:scan     # One-time scan of all agency forecasts
+npm run forecast:brief    # Generate Maya's forecast briefing
+npm run forecast:schedule # Weekly schedule (Sun 10pm scan, Mon 8:15am brief)
 
 # Patricia's Team Management
 npm run patricia:checkin  # Morning check-in
