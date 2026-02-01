@@ -313,6 +313,98 @@ async function cacheResult(cacheKey: string, result: NewsSearchResult): Promise<
   }
 }
 
+// Search for competitor intel - protests, performance issues, contract problems
+export async function searchCompetitorNews(params: {
+  companyName: string;
+  agencyName?: string;
+  daysBack?: number;
+}): Promise<{
+  protests: NewsArticle[];
+  performance: NewsArticle[];
+  awards: NewsArticle[];
+  general: NewsArticle[];
+  summary: string;
+}> {
+  const { companyName, agencyName, daysBack = 180 } = params;
+
+  // Search patterns based on the spec
+  const searches = [
+    // Protest news
+    searchNews({
+      query: `"${companyName}" protest GAO`,
+      limit: 3,
+      daysBack,
+      govconOnly: true,
+    }),
+    // Performance issues
+    searchNews({
+      query: `"${companyName}" ${agencyName || ''} performance problems issues`,
+      limit: 3,
+      daysBack,
+      govconOnly: true,
+    }),
+    // Awards (to see what they're winning)
+    searchNews({
+      query: `"${companyName}" contract award won`,
+      limit: 3,
+      daysBack: 90,
+      govconOnly: true,
+    }),
+    // General news
+    searchNews({
+      query: `"${companyName}" federal contract`,
+      limit: 3,
+      daysBack: 60,
+    }),
+  ];
+
+  const [protestResult, performanceResult, awardResult, generalResult] = await Promise.all(searches);
+
+  // Build summary
+  const summaryParts: string[] = [];
+
+  if (protestResult.articles.length > 0) {
+    summaryParts.push(`Found ${protestResult.articles.length} GAO protest mention(s)`);
+  }
+  if (performanceResult.articles.length > 0) {
+    summaryParts.push(`Found ${performanceResult.articles.length} performance issue mention(s)`);
+  }
+  if (awardResult.articles.length > 0) {
+    summaryParts.push(`${awardResult.articles.length} recent contract win(s)`);
+  }
+
+  const summary = summaryParts.length > 0
+    ? summaryParts.join('. ') + '.'
+    : `No significant news found for ${companyName}.`;
+
+  return {
+    protests: protestResult.articles,
+    performance: performanceResult.articles,
+    awards: awardResult.articles,
+    general: generalResult.articles,
+    summary,
+  };
+}
+
+// Search for agency contract news (awards, issues, recompetes)
+export async function searchAgencyContractNews(params: {
+  agencyName: string;
+  keywords?: string[];
+  daysBack?: number;
+}): Promise<NewsSearchResult> {
+  const { agencyName, keywords = [], daysBack = 90 } = params;
+
+  const keywordStr = keywords.slice(0, 2).join(' ');
+  const query = `${agencyName} ${keywordStr} contract award OR recompete OR modernization`;
+
+  return searchNews({
+    query,
+    limit: 5,
+    daysBack,
+    govconOnly: true,
+  });
+}
+
 // Format for agent response
 export function formatNewsForAgent(articles: NewsArticle[]): string {
   if (articles.length === 0) {

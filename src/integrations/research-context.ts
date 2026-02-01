@@ -1,9 +1,10 @@
 // Unified Research Context - fetches relevant data from all APIs based on message content
-import { searchNews, searchContractAwards, getAgencyNews, type NewsArticle } from './news-search.js';
+import { searchNews, searchContractAwards, searchCompetitorNews, searchAgencyContractNews, type NewsArticle } from './news-search.js';
 import { searchFPDS, searchByContractNumber, findIncumbent, formatFPDSForAgent, type FPDSContract } from './fpds.js';
 import { getAgencySpending, formatUSASpendingForAgent } from './usaspending.js';
 import { verifyRegistration, formatSAMEntityForAgent } from './sam-entity.js';
 import { searchFAR, formatFARResults } from './far-search.js';
+import { saveCompetitorIntel, getCompetitorIntel, hasRecentIntel, type CompetitorIntel } from './supabase.js';
 
 // Agency name mappings for detection
 const AGENCY_PATTERNS: Record<string, { code: string; name: string; keywords: string[] }> = {
@@ -49,6 +50,15 @@ export interface ResearchContext {
     sections: string;
     source: string;
   };
+  competitorIntel?: {
+    companyName: string;
+    protests: NewsArticle[];
+    performance: NewsArticle[];
+    awards: NewsArticle[];
+    savedIntel: CompetitorIntel[];
+    summary: string;
+    source: string;
+  };
 }
 
 // Detect which agency is being discussed
@@ -63,7 +73,7 @@ function detectAgency(text: string): { code: string; name: string } | null {
   return null;
 }
 
-// Detect if a company name is mentioned
+// Detect if a company name is mentioned (for partner verification)
 function detectCompanyName(text: string): string | null {
   // Look for patterns like "partner with X" or "team with X" or "verify X"
   const patterns = [
@@ -80,6 +90,57 @@ function detectCompanyName(text: string): string | null {
       return match[1].trim();
     }
   }
+  return null;
+}
+
+// Known GovCon competitors/primes to watch for
+const KNOWN_COMPETITORS = [
+  'Booz Allen', 'Booz Allen Hamilton', 'BAH',
+  'Deloitte', 'Accenture Federal', 'Accenture',
+  'SAIC', 'Leidos', 'General Dynamics IT', 'GDIT',
+  'ManTech', 'CACI', 'Peraton', 'ICF',
+  'Maximus', 'Guidehouse', 'CGI Federal', 'CGI',
+  'Northrop Grumman', 'Raytheon', 'Lockheed Martin',
+  'IBM Federal', 'IBM', 'Microsoft Federal', 'AWS',
+  'Palantir', 'Appian', 'Salesforce',
+  'Serco', 'PAE', 'KBR', 'Amentum',
+  'Cognosante', 'Optum', 'UnitedHealth',
+  'FCN', 'Federal Computer Network', 'Fearless',
+];
+
+// Detect competitor/incumbent company mentions
+function detectCompetitorMention(text: string): string | null {
+  const lowerText = text.toLowerCase();
+
+  // Check for known competitors first
+  for (const company of KNOWN_COMPETITORS) {
+    if (lowerText.includes(company.toLowerCase())) {
+      return company;
+    }
+  }
+
+  // Look for patterns that indicate a company being discussed
+  const competitorPatterns = [
+    /incumbent (?:is |was )?([A-Z][A-Za-z\s&]+?)(?:\s|,|\.|\?|$)/i,
+    /([A-Z][A-Za-z\s&]+?) (?:is |was )(?:the )?incumbent/i,
+    /([A-Z][A-Za-z\s&]+?) (?:has|had|won) (?:the |this )?contract/i,
+    /competing (?:against|with) ([A-Z][A-Za-z\s&]+?)(?:\s|,|\.|\?|$)/i,
+    /(?:what about|research|look into|dig into) ([A-Z][A-Za-z\s&]+?)(?:\s|,|\.|\?|$)/i,
+    /([A-Z][A-Za-z\s&]+?) protest/i,
+    /protest (?:by |from )?([A-Z][A-Za-z\s&]+?)(?:\s|,|\.|\?|$)/i,
+  ];
+
+  for (const pattern of competitorPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const company = match[1].trim();
+      // Filter out common false positives
+      if (company.length > 2 && !['the', 'a', 'an', 'this', 'that'].includes(company.toLowerCase())) {
+        return company;
+      }
+    }
+  }
+
   return null;
 }
 
@@ -119,12 +180,14 @@ function detectTopics(text: string): {
   needsNews: boolean;
   needsAwardNews: boolean;
   needsRiskNews: boolean;
+  needsCompetitorIntel: boolean;
   needsFPDS: boolean;
   needsSpending: boolean;
   needsPartnerCheck: boolean;
   needsFAR: boolean;
   agency: { code: string; name: string } | null;
   companyName: string | null;
+  competitorName: string | null;
   contractNumbers: string[];
   keywords: string[];
 } {
@@ -143,10 +206,20 @@ function detectTopics(text: string): {
     'breach', 'default', 'non-compliance', 'violation',
     'recompete', 'bridge contract', 'stop work',
   ];
+  // Keywords that trigger competitor intel search
+  const competitorKeywords = [
+    'incumbent', 'competitor', 'competing', 'competition',
+    'protest', 'gao', 'performance', 'issues', 'problems',
+    'who has', 'who won', 'who is', 'what about',
+    'dig into', 'research', 'look into',
+  ];
   const fpdsKeywords = ['incumbent', 'contract', 'fpds', 'who has', 'who won', 'awarded', 'contractor', 'vendor', 'piid', 'idiq'];
   const spendingKeywords = ['budget', 'spending', 'usaspending', 'obligat', 'fund', 'money', 'fiscal'];
   const partnerKeywords = ['partner', 'team', 'verify', 'registration', 'sam.gov', 'certified', 'certification', '8(a)', 'wosb', 'sdvosb', 'hubzone'];
   const farKeywords = ['far ', 'far.', 'regulation', 'cfr', 'acquisition', 'evaluation', 'past performance', 'source selection', 'protest'];
+
+  // Detect competitor/incumbent mentions
+  const competitorName = detectCompetitorMention(cleanedText);
 
   // Detect contract numbers in the message
   const contractNumbers = detectContractNumbers(text);
@@ -168,17 +241,21 @@ function detectTopics(text: string): {
 
   const needsAwardNews = awardNewsKeywords.some(kw => lowerText.includes(kw));
   const needsRiskNews = riskNewsKeywords.some(kw => lowerText.includes(kw));
+  const needsCompetitorIntel = competitorName !== null ||
+    competitorKeywords.some(kw => lowerText.includes(kw));
 
   return {
     needsNews: newsKeywords.some(kw => lowerText.includes(kw)) || needsAwardNews || needsRiskNews,
     needsAwardNews, // Specifically for GovCon award sources like OrangeSlices
     needsRiskNews,  // Contract cancellations, fraud, protests, debarments
+    needsCompetitorIntel, // Incumbent/competitor research
     needsFPDS: fpdsKeywords.some(kw => lowerText.includes(kw)) || contractNumbers.length > 0,
     needsSpending: spendingKeywords.some(kw => lowerText.includes(kw)),
     needsPartnerCheck: partnerKeywords.some(kw => lowerText.includes(kw)),
     needsFAR: farKeywords.some(kw => lowerText.includes(kw)),
     agency: detectAgency(cleanedText),
     companyName: detectCompanyName(cleanedText),
+    competitorName,
     contractNumbers,
     keywords: meaningfulKeywords,
   };
@@ -371,6 +448,86 @@ export async function gatherResearchContext(
     );
   }
 
+  // Competitor Intel: Search for incumbent/competitor issues
+  const shouldFetchCompetitorIntel = (agentName === 'david' || agentName === 'rosa') &&
+    (topics.needsCompetitorIntel || topics.competitorName);
+
+  if (shouldFetchCompetitorIntel) {
+    promises.push(
+      (async () => {
+        try {
+          // Get company name from explicit mention or from FPDS incumbent
+          let companyToResearch = topics.competitorName;
+
+          // If we found an incumbent from FPDS, also research them
+          if (!companyToResearch && context.fpds?.incumbent) {
+            companyToResearch = context.fpds.incumbent;
+          }
+
+          if (companyToResearch) {
+            // Check if we have recent intel already
+            const hasRecent = await hasRecentIntel(companyToResearch);
+
+            console.log(`Research: Fetching competitor intel for ${companyToResearch}${hasRecent ? ' (have recent)' : ''}`);
+
+            // Always search for fresh news
+            const intelResult = await searchCompetitorNews({
+              companyName: companyToResearch,
+              agencyName: topics.agency?.name,
+              daysBack: 180,
+            });
+
+            // Get any saved intel from database
+            const savedIntel = await getCompetitorIntel(companyToResearch);
+
+            context.competitorIntel = {
+              companyName: companyToResearch,
+              protests: intelResult.protests,
+              performance: intelResult.performance,
+              awards: intelResult.awards,
+              savedIntel,
+              summary: intelResult.summary,
+              source: 'GovCon News + Database',
+            };
+
+            // Save significant findings to database
+            if (intelResult.protests.length > 0) {
+              for (const article of intelResult.protests.slice(0, 2)) {
+                await saveCompetitorIntel({
+                  company_name: companyToResearch,
+                  agency_code: topics.agency?.code,
+                  intel_type: 'protest',
+                  summary: article.title,
+                  source_url: article.url,
+                  source_name: article.source,
+                  confidence: 'MEDIUM',
+                  discovered_by: agentName,
+                });
+              }
+            }
+
+            if (intelResult.performance.length > 0) {
+              for (const article of intelResult.performance.slice(0, 2)) {
+                await saveCompetitorIntel({
+                  company_name: companyToResearch,
+                  agency_code: topics.agency?.code,
+                  intel_type: 'performance',
+                  summary: article.title,
+                  source_url: article.url,
+                  source_name: article.source,
+                  confidence: 'MEDIUM',
+                  discovered_by: agentName,
+                });
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('Competitor intel fetch failed:', err);
+        }
+      })()
+    );
+  }
+
   // Wait for all fetches
   await Promise.all(promises);
 
@@ -421,6 +578,45 @@ export function formatResearchContext(context: ResearchContext): string {
   if (context.far) {
     parts.push('\nRELEVANT FAR SECTIONS:');
     parts.push(context.far.sections);
+  }
+
+  if (context.competitorIntel) {
+    const intel = context.competitorIntel;
+    parts.push(`\nCOMPETITOR INTEL FOR ${intel.companyName.toUpperCase()}:`);
+    parts.push(intel.summary);
+
+    if (intel.protests.length > 0) {
+      parts.push('\nPROTEST/GAO NEWS:');
+      intel.protests.slice(0, 2).forEach(article => {
+        parts.push(`- ${article.title}`);
+        parts.push(`  Link: ${article.url}`);
+      });
+    }
+
+    if (intel.performance.length > 0) {
+      parts.push('\nPERFORMANCE ISSUES:');
+      intel.performance.slice(0, 2).forEach(article => {
+        parts.push(`- ${article.title}`);
+        parts.push(`  Link: ${article.url}`);
+      });
+    }
+
+    if (intel.awards.length > 0) {
+      parts.push('\nRECENT WINS:');
+      intel.awards.slice(0, 2).forEach(article => {
+        parts.push(`- ${article.title}`);
+        parts.push(`  Link: ${article.url}`);
+      });
+    }
+
+    if (intel.savedIntel.length > 0) {
+      parts.push('\nPREVIOUSLY DISCOVERED:');
+      intel.savedIntel.slice(0, 3).forEach(saved => {
+        parts.push(`- [${saved.intel_type.toUpperCase()}] ${saved.summary}`);
+      });
+    }
+
+    parts.push(`Source: ${intel.source}`);
   }
 
   if (parts.length === 0) {
