@@ -670,9 +670,8 @@ export async function logActivityToNotion(
     properties['Notes'] = { rich_text: [{ text: { content: activity.notes } }] };
   }
 
-  if (activity.opportunityId) {
-    properties['Opportunity'] = { relation: [{ id: activity.opportunityId }] };
-  }
+  // Note: Opportunity relation may not exist if database was created without it
+  // Skip the relation field - it can be added manually in Notion later
 
   const result = await notionRequest('/pages', 'POST', {
     parent: { database_id: dbId },
