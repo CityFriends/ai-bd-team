@@ -143,6 +143,20 @@ Agent-specific strategic reasoning:
 - [x] `system_feedback` - tracks bugs, issues, suggestions for agent improvement
 - [x] `agency_forecasts` - upcoming opportunities from agency forecast pages
 
+### Notion Hub Integration ✓
+Central command center for human oversight:
+- [x] AI BD Team Hub page with 8 databases
+- [x] Opportunities database with full pipeline tracking
+- [x] Partners, Contacts, Past Performance databases
+- [x] Forecasts database for agency procurement forecasts
+- [x] Activity Log - tracks all agent actions
+- [x] Feedback Log - tracks bugs, suggestions, improvements
+- [x] Decisions database - Go/No-Go tracking with outcomes
+- [x] Settings and Playbook pages
+- [x] Bidirectional sync: Supabase ↔ Notion
+- [x] Maya syncs new opportunities automatically
+- [x] Decisions sync back from Notion to agents
+
 ### Product Documentation
 Comprehensive docs for repeatable product deployment:
 - [x] `docs/ARCHITECTURE.md` - System design, data flow, file structure
@@ -320,6 +334,13 @@ npm run forecast:schedule # Weekly schedule (Sun 10pm scan, Mon 8:15am brief)
 npm run patricia:checkin  # Morning check-in
 npm run patricia:nudge    # Check for pending items
 npm run patricia:schedule # Run on schedule (9am/2pm weekdays)
+
+# Notion Hub
+npm run notion:setup <page-id>  # Create hub structure
+npm run notion:sync             # One-time sync
+npm run notion:watch            # Continuous sync (every 5 min)
+npm run notion:check            # Check sync status
+npm run notion:test             # Test with sample opportunity
 ```
 
 ## Deployment
