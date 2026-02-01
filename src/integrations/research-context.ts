@@ -1,6 +1,6 @@
 // Unified Research Context - fetches relevant data from all APIs based on message content
-import { searchNews, getAgencyNews, type NewsArticle } from './news-search.js';
-import { searchFPDS, findIncumbent, formatFPDSForAgent, type FPDSContract } from './fpds.js';
+import { searchNews, searchContractAwards, getAgencyNews, type NewsArticle } from './news-search.js';
+import { searchFPDS, searchByContractNumber, findIncumbent, formatFPDSForAgent, type FPDSContract } from './fpds.js';
 import { getAgencySpending, formatUSASpendingForAgent } from './usaspending.js';
 import { verifyRegistration, formatSAMEntityForAgent } from './sam-entity.js';
 import { searchFAR, formatFARResults } from './far-search.js';
@@ -83,6 +83,27 @@ function detectCompanyName(text: string): string | null {
   return null;
 }
 
+// Detect contract numbers (PIIDs) in text
+// Common formats: 36C10B18D0003, GS-35F-0511T, HHSN316201200018W
+function detectContractNumbers(text: string): string[] {
+  const patterns = [
+    /\b(\d{2}[A-Z]\d{2}[A-Z]\d{2}[A-Z]\d{4,})\b/gi,           // VA format: 36C10B18D0003
+    /\b(GS-\d{2}F-\d{4,}[A-Z]?)\b/gi,                          // GSA schedule: GS-35F-0511T
+    /\b([A-Z]{4}\d{12,}[A-Z]?)\b/gi,                           // HHS format: HHSN316201200018W
+    /\b(\d{1,2}[A-Z]{2,4}\d{6,})\b/gi,                         // General: 47QTCA18D0003
+    /\b([A-Z]{1,4}\d{2}[A-Z]{1,4}\d{2}[A-Z]\d{4,})\b/gi,      // Mixed format
+  ];
+
+  const found: string[] = [];
+  for (const pattern of patterns) {
+    const matches = text.match(pattern) || [];
+    found.push(...matches);
+  }
+
+  // Deduplicate
+  return [...new Set(found)];
+}
+
 // Clean text of Slack mentions and formatting
 function cleanTextForSearch(text: string): string {
   return text
@@ -96,32 +117,57 @@ function cleanTextForSearch(text: string): string {
 // Detect research topics in the message
 function detectTopics(text: string): {
   needsNews: boolean;
+  needsAwardNews: boolean;
   needsFPDS: boolean;
   needsSpending: boolean;
   needsPartnerCheck: boolean;
   needsFAR: boolean;
   agency: { code: string; name: string } | null;
   companyName: string | null;
+  contractNumbers: string[];
   keywords: string[];
 } {
   const cleanedText = cleanTextForSearch(text);
   const lowerText = cleanedText.toLowerCase();
 
   const newsKeywords = ['news', 'article', 'recent', 'latest', 'update', 'announce', 'modernization', 'initiative', 'happening', 'going on'];
-  const fpdsKeywords = ['incumbent', 'contract', 'fpds', 'who has', 'who won', 'awarded', 'contractor', 'vendor'];
+  const awardNewsKeywords = ['award', 'awarded', 'won', 'wins', 'winner', 'orangeslices', 'govconwire', 'contract news'];
+  const fpdsKeywords = ['incumbent', 'contract', 'fpds', 'who has', 'who won', 'awarded', 'contractor', 'vendor', 'piid', 'idiq'];
   const spendingKeywords = ['budget', 'spending', 'usaspending', 'obligat', 'fund', 'money', 'fiscal'];
   const partnerKeywords = ['partner', 'team', 'verify', 'registration', 'sam.gov', 'certified', 'certification', '8(a)', 'wosb', 'sdvosb', 'hubzone'];
   const farKeywords = ['far ', 'far.', 'regulation', 'cfr', 'acquisition', 'evaluation', 'past performance', 'source selection', 'protest'];
 
+  // Detect contract numbers in the message
+  const contractNumbers = detectContractNumbers(text);
+
+  // Filter out common question/trigger words that make bad FPDS queries
+  const stopwords = [
+    'who\'s', 'whos', 'what\'s', 'whats', 'where', 'which', 'there', 'their', 'about',
+    'incumbent', 'incumbents', 'contract', 'contracts', 'contractor', 'contractors',
+    'vendor', 'vendors', 'awarded', 'winning', 'winner', 'looking', 'think', 'thinking',
+    'could', 'would', 'should', 'doing', 'going', 'getting', 'having', 'being',
+    'these', 'those', 'other', 'another', 'something', 'anything', 'nothing',
+    'what', 'have', 'does', 'area', 'areas', 'kind', 'type', 'types',
+  ];
+
+  const meaningfulKeywords = cleanedText
+    .split(/\s+/)
+    .map(w => w.replace(/[?!.,;:'"]/g, '').toLowerCase()) // Clean punctuation
+    .filter(w => w.length > 2 && !w.startsWith('@') && !stopwords.includes(w));
+
+  const needsAwardNews = awardNewsKeywords.some(kw => lowerText.includes(kw));
+
   return {
-    needsNews: newsKeywords.some(kw => lowerText.includes(kw)),
-    needsFPDS: fpdsKeywords.some(kw => lowerText.includes(kw)),
+    needsNews: newsKeywords.some(kw => lowerText.includes(kw)) || needsAwardNews,
+    needsAwardNews, // Specifically for GovCon award sources like OrangeSlices
+    needsFPDS: fpdsKeywords.some(kw => lowerText.includes(kw)) || contractNumbers.length > 0,
     needsSpending: spendingKeywords.some(kw => lowerText.includes(kw)),
     needsPartnerCheck: partnerKeywords.some(kw => lowerText.includes(kw)),
     needsFAR: farKeywords.some(kw => lowerText.includes(kw)),
     agency: detectAgency(cleanedText),
     companyName: detectCompanyName(cleanedText),
-    keywords: cleanedText.split(/\s+/).filter(w => w.length > 4 && !w.startsWith('@')),
+    contractNumbers,
+    keywords: meaningfulKeywords,
   };
 }
 
@@ -156,6 +202,25 @@ export async function gatherResearchContext(
     promises.push(
       (async () => {
         try {
+          // Use GovCon sources (OrangeSlices, GovConWire) for award news
+          if (topics.needsAwardNews) {
+            console.log(`Research: Fetching contract award news for ${topics.agency!.name} from GovCon sources`);
+            const result = await searchContractAwards({
+              agencyName: topics.agency!.name,
+              keywords: topics.keywords.slice(0, 2),
+              limit: 5,
+              daysBack: 60,
+            });
+            if (result.articles.length > 0) {
+              context.news = {
+                articles: result.articles,
+                source: `${result.source} (GovCon)`,
+              };
+              return;
+            }
+          }
+
+          // Fall back to general news search
           console.log(`Research: Fetching news for ${topics.agency!.name}`);
           const result = await searchNews({
             query: topics.agency!.name,
@@ -174,21 +239,40 @@ export async function gatherResearchContext(
     );
   }
 
-  if (shouldFetchFPDS && topics.agency) {
+  // FPDS: Check for contract numbers first, then use agency code filtering
+  if (shouldFetchFPDS) {
     promises.push(
       (async () => {
         try {
-          console.log(`Research: Fetching FPDS for ${topics.agency!.name}`);
-          const result = await findIncumbent({
-            agencyName: topics.agency!.name,
-            keywords: topics.keywords.slice(0, 3),
-          });
-          if (result.contracts.length > 0) {
-            context.fpds = {
-              contracts: result.contracts,
-              incumbent: result.incumbent || undefined,
-              source: result.source,
-            };
+          // Priority 1: Direct contract number lookup
+          if (topics.contractNumbers.length > 0) {
+            console.log(`Research: Fetching FPDS for contract number ${topics.contractNumbers[0]}`);
+            const result = await searchByContractNumber(topics.contractNumbers[0]);
+            if (result.contracts.length > 0) {
+              context.fpds = {
+                contracts: result.contracts,
+                incumbent: result.contracts[0]?.vendorName || undefined,
+                source: `FPDS (contract ${topics.contractNumbers[0]})`,
+              };
+              return;
+            }
+          }
+
+          // Priority 2: Agency code + keywords (much more precise)
+          if (topics.agency) {
+            console.log(`Research: Fetching FPDS for ${topics.agency.name} (code: ${topics.agency.code})`);
+            const result = await findIncumbent({
+              agencyCode: topics.agency.code,
+              agencyName: topics.agency.name,
+              keywords: topics.keywords.slice(0, 3),
+            });
+            if (result.contracts.length > 0) {
+              context.fpds = {
+                contracts: result.contracts,
+                incumbent: result.incumbent || undefined,
+                source: result.source,
+              };
+            }
           }
         } catch (err) {
           console.warn('FPDS fetch failed:', err);

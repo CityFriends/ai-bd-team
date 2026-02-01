@@ -11,9 +11,22 @@
 
 ### External API Integrations
 - [x] SAM.gov opportunity search
-- [x] FPDS incumbent/contract data (fixed: uses RSS `<item>` tags, not Atom `<entry>`)
+- [x] FPDS incumbent/contract data
+  - Fixed: uses RSS `<item>` tags, not Atom `<entry>`
+  - Added: contract number (PIID) direct lookup
+  - Added: agency code filtering for precision (VA=036, DOL=012, etc.)
+  - Improved: stopword filtering for cleaner search queries
 - [x] USASpending agency budgets
 - [x] SerpAPI for news search
+  - Added: time filtering (last 30 days default)
+  - Reduced cache to 2 hours for fresher results
+  - Added: GovCon-specific sources (OrangeSlices, GovConWire, WashTech, etc.)
+- [x] Award Monitor (like OrangeSlices)
+  - Polls FPDS for new awards across VA, HHS, DOL, DHS, GSA
+  - Tracks seen awards in `seen_awards` table to avoid duplicates
+  - Maya posts new awards to Slack automatically
+  - Run manually: `npm run check-awards`
+  - Run scheduled (Mon/Thu 9am): `npm run award-scheduler`
 - [x] SAM.gov entity verification for partners
 - [x] FAR lookup (semantic search + direct citation lookup via Supabase)
 
@@ -46,6 +59,12 @@
 - [x] Personality quirks that persist
 - [x] Non-work opinions (restaurants, Metro, weather - not politics)
 
+### Agent Behavior Guardrails
+- [x] No pile-ons: when one agent is @mentioned, others stay quiet
+- [x] No false promises: agents don't say "give me 20 minutes" or "I'll check" - they use data they have NOW or say they don't have it
+- [x] Source everything: agents cite FPDS, USASpending, FAR sections, news links
+- [x] Confidence levels: HIGH (official source), MEDIUM (inference), LOW (guess)
+
 ### Memory System (Supabase Tables)
 - [x] `user_context` - personal info about Lapedra/Tamara
 - [x] `conversation_memory` - key moments to reference
@@ -70,6 +89,13 @@
 - [x] James uses it: "FAR 16.505 governs task order competitions..."
 - [x] Keep citations specific: "FAR 9.505-2(b)(1)" not "the FAR says..."
 - [x] Created `src/scripts/update-far.ts` to refresh FAR data when GSA publishes changes
+
+### Known Limitations
+- FPDS keyword search can't find contract vehicles by name (e.g., "SPRUCE IDIQ") - needs contract number
+- News sources are general - no GovCon-specific sources like OrangeSlices/GovWin yet
+- Thread replies with short answers may not always trigger agent responses
+
+---
 
 ### Priority 2: Company Data Integration
 - [ ] Create `company_profile` table with FFTC capabilities, NAICS codes, past performance

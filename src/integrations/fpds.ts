@@ -29,6 +29,56 @@ export interface FPDSSearchResult {
   cachedAt?: string;
 }
 
+// Search FPDS by contract number (PIID)
+export async function searchByContractNumber(contractNumber: string): Promise<FPDSSearchResult> {
+  const query = `PIID:"${contractNumber}"`;
+
+  // Check cache first
+  const cached = await getCachedFPDSResult(query);
+  if (cached) {
+    console.log('FPDS: Using cached result for contract number');
+    return cached;
+  }
+
+  try {
+    const url = new URL(FPDS_BASE_URL);
+    url.searchParams.set('s', 'FPDS.GOV');
+    url.searchParams.set('indexName', 'awardfull');
+    url.searchParams.set('templateName', '1.5.3');
+    url.searchParams.set('q', query);
+    url.searchParams.set('rss', '1');
+
+    console.log(`FPDS: Searching for contract number "${contractNumber}"`);
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        'Accept': 'application/atom+xml, application/xml, text/xml',
+        'User-Agent': 'BD-Team-Research-Bot/1.0',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`FPDS API error: ${response.status}`);
+    }
+
+    const xmlText = await response.text();
+    const contracts = parseFPDSAtomFeed(xmlText, 20);
+
+    const result: FPDSSearchResult = {
+      contracts,
+      totalCount: contracts.length,
+      query,
+      cachedAt: new Date().toISOString(),
+    };
+
+    await cacheFPDSResult(query, result);
+    return result;
+  } catch (error) {
+    console.error('FPDS contract number search error:', error);
+    return { contracts: [], totalCount: 0, query };
+  }
+}
+
 // Search FPDS for contracts by keyword, agency, or vendor
 export async function searchFPDS(params: {
   keyword?: string;
@@ -39,12 +89,16 @@ export async function searchFPDS(params: {
 }): Promise<FPDSSearchResult> {
   const { keyword, agencyCode, vendorName, naicsCode, limit = 20 } = params;
 
-  // Build search query
+  // Build search query using FPDS field syntax for better precision
   const queryParts: string[] = [];
-  if (keyword) queryParts.push(keyword);
+
+  // Use agency code filter for precision (much better than keyword matching agency name)
   if (agencyCode) queryParts.push(`CONTRACTING_AGENCY_CODE:"${agencyCode}"`);
   if (vendorName) queryParts.push(`VENDOR_FULL_NAME:"${vendorName}"`);
   if (naicsCode) queryParts.push(`PRINCIPAL_NAICS_CODE:"${naicsCode}"`);
+
+  // Add keyword last (less precise, but useful for general terms)
+  if (keyword) queryParts.push(keyword);
 
   const query = queryParts.join(' AND ');
 

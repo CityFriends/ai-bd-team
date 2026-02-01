@@ -21,7 +21,9 @@
     "live:david": "tsx src/live/run-david.ts",
     "test:connections": "tsx src/test-connections.ts",
     "parse-far": "tsx src/scripts/parse-far.ts",
-    "update-far": "tsx src/scripts/update-far.ts"
+    "update-far": "tsx src/scripts/update-far.ts",
+    "check-awards": "tsx src/scripts/check-awards.ts",
+    "award-scheduler": "tsx src/scripts/award-scheduler.ts"
   },
   "keywords": [
     "ai",

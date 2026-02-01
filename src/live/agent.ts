@@ -118,9 +118,21 @@ export abstract class LiveAgent {
       const threadTs = msg.thread_ts;
       const isInActiveThread = threadTs && this.activeThreads.has(threadTs) && !isFromBot;
 
+      // Debug: log thread activity
+      if (threadTs && this.activeThreads.has(threadTs)) {
+        console.log(`${this.displayName}: Received message in active thread`);
+      }
+
       // Check if this is a general channel message (not in a thread) that we should respond to
       const isGeneralMessage = !threadTs && !isFromBot && msg.channel === this.channelId;
       let shouldProactivelyRespond = false;
+
+      // Check if ANOTHER agent is @mentioned - if so, don't proactively respond
+      const otherAgentMentioned = this.checkIfOtherAgentMentioned(msg.text || '');
+      if (otherAgentMentioned && !isMentioned) {
+        // Another agent was specifically @mentioned, let them handle it
+        return;
+      }
 
       if (isGeneralMessage) {
         // Patricia responds to general check-ins
@@ -228,6 +240,26 @@ export abstract class LiveAgent {
       isDirectMention,
       isInActiveThread,
     };
+  }
+
+  // Check if another agent (not this one) is @mentioned
+  private checkIfOtherAgentMentioned(text: string): boolean {
+    // Agent Slack IDs
+    const agentSlackIds: Record<string, LiveAgentName> = {
+      'U0AC3RA4JVB': 'maya',
+      'U0AC0SVD3MH': 'david',
+      'U0ACASZ36BW': 'rosa',
+      'U0AC582GXBQ': 'james',
+      'U0AC79NTDAN': 'patricia',
+    };
+
+    // Check for @mentions of other agents
+    for (const [slackId, agentName] of Object.entries(agentSlackIds)) {
+      if (agentName !== this.name && text.includes(`<@${slackId}>`)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // Extract which agents are mentioned in the text
@@ -436,13 +468,15 @@ USE RESEARCH DATA PROVIDED:
 - When FAR sections are provided, cite the specific section numbers
 - This is REAL data from APIs - use it, don't ignore it!
 
-NEVER SAY "GIVE ME A MINUTE" OR "LET ME CHECK":
-- You already HAVE the research data in your context - use it NOW
-- Don't say "let me pull the data" - you already have it
-- Don't say "give me a few minutes" - respond with the data immediately
-- If you have news articles, share them with links
-- If you have FPDS data, share the vendor names and values
-- Only say "I don't have data on this" if no research data was provided
+CRITICAL - NEVER PROMISE TO FOLLOW UP OR GET BACK TO THEM:
+- You already HAVE all the research data in your context - use it NOW
+- FORBIDDEN phrases (never use these): "give me 20 minutes", "let me pull", "I'll check", "let me dig into", "I'll get back to you", "I'd need to dig", "need to dig deeper", "flying blind", "would need to check", "I'll look into"
+- If FPDS/USASpending returned empty or no useful data, just say "I don't have FPDS data on this specific query"
+- If you have data, share it NOW. If you don't, say so and STOP - don't promise future research
+- You are NOT a human who can do follow-up work. You only know what's in your context RIGHT NOW
+- News articles → share them with links
+- FPDS data → share vendor names and values
+- No data → say "I couldn't find data on this" and move on, don't promise to look later
 
 IMPORTANT - DO NOT FABRICATE PERSONAL EXPERIENCES:
 - You are an AI advisor with expertise, NOT a real person with a career history
@@ -476,6 +510,7 @@ ADMIT UNKNOWNS - use these naturally:
 
 WHEN TO RESPOND:
 - You were directly @mentioned → YES, respond
+- IMPORTANT: If ANOTHER agent was @mentioned, DO NOT respond unless they tag you
 - This is clearly your area AND you have something NEW to add → respond
 - Someone else already said what you'd say → DON'T pile on
 - It's not your area → stay quiet

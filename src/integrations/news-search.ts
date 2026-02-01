@@ -17,23 +17,44 @@ export interface NewsSearchResult {
   source: 'bing' | 'google' | 'serpapi' | 'mock';
 }
 
+// GovCon news sources for contract award searches
+const GOVCON_SITES = [
+  'orangeslices.com',
+  'govconwire.com',
+  'washingtontechnology.com',
+  'federalnewsnetwork.com',
+  'nextgov.com',
+  'fcw.com',
+  'executivegov.com',
+];
+
 // Main search function - uses whichever API is configured
 export async function searchNews(params: {
   query: string;
   agencyName?: string;
   limit?: number;
+  daysBack?: number; // How many days of news to search (default 30)
+  govconOnly?: boolean; // Search only GovCon news sources
 }): Promise<NewsSearchResult> {
-  const { query, agencyName, limit = 5 } = params;
+  const { query, agencyName, limit = 5, daysBack = 30, govconOnly = false } = params;
 
-  // Build search query focused on gov/federal news
+  // Build search query
   let searchQuery = query;
   if (agencyName) {
     searchQuery = `${agencyName} ${query}`;
   }
-  searchQuery += ' federal government';
 
-  // Check cache first
-  const cacheKey = `news:${searchQuery}`;
+  // If searching for contract awards, use GovCon sites
+  if (govconOnly) {
+    // Use site: operator to search specific GovCon sources
+    const siteFilter = GOVCON_SITES.map(s => `site:${s}`).join(' OR ');
+    searchQuery = `(${siteFilter}) ${searchQuery}`;
+  } else {
+    searchQuery += ' federal government';
+  }
+
+  // Check cache first (include daysBack in cache key for freshness)
+  const cacheKey = `news:${searchQuery}:${daysBack}d`;
   const cached = await getCachedResult(cacheKey);
   if (cached) {
     console.log('News: Using cached result');
@@ -44,11 +65,11 @@ export async function searchNews(params: {
   let result: NewsSearchResult;
 
   if (process.env.BING_SEARCH_API_KEY) {
-    result = await searchBing(searchQuery, limit);
+    result = await searchBing(searchQuery, limit, daysBack);
   } else if (process.env.GOOGLE_SEARCH_API_KEY && process.env.GOOGLE_SEARCH_CX) {
-    result = await searchGoogle(searchQuery, limit);
+    result = await searchGoogle(searchQuery, limit, daysBack);
   } else if (process.env.SERPAPI_KEY) {
-    result = await searchSerpAPI(searchQuery, limit);
+    result = await searchSerpAPI(searchQuery, limit, daysBack);
   } else {
     console.warn('No news search API configured. Set BING_SEARCH_API_KEY, GOOGLE_SEARCH_API_KEY/GOOGLE_SEARCH_CX, or SERPAPI_KEY');
     result = {
@@ -88,15 +109,45 @@ export async function getAgencyNews(agencyName: string): Promise<{
   };
 }
 
+// Search for contract awards from GovCon news sources (OrangeSlices, GovConWire, etc.)
+export async function searchContractAwards(params: {
+  agencyName?: string;
+  vendorName?: string;
+  keywords?: string[];
+  limit?: number;
+  daysBack?: number;
+}): Promise<NewsSearchResult> {
+  const { agencyName, vendorName, keywords = [], limit = 5, daysBack = 60 } = params;
+
+  // Build query focused on contract awards
+  const queryParts: string[] = [];
+  if (agencyName) queryParts.push(agencyName);
+  if (vendorName) queryParts.push(vendorName);
+  queryParts.push(...keywords);
+  queryParts.push('contract award');
+
+  const query = queryParts.join(' ');
+
+  return searchNews({
+    query,
+    limit,
+    daysBack,
+    govconOnly: true, // Search GovCon sources like OrangeSlices
+  });
+}
+
 // Bing News Search API
-async function searchBing(query: string, limit: number): Promise<NewsSearchResult> {
+async function searchBing(query: string, limit: number, daysBack: number = 30): Promise<NewsSearchResult> {
   const apiKey = process.env.BING_SEARCH_API_KEY!;
+
+  // Bing freshness: Day, Week, Month
+  const freshness = daysBack <= 7 ? 'Week' : 'Month';
 
   try {
     const url = new URL('https://api.bing.microsoft.com/v7.0/news/search');
     url.searchParams.set('q', query);
     url.searchParams.set('count', limit.toString());
-    url.searchParams.set('freshness', 'Month'); // Last 30 days
+    url.searchParams.set('freshness', freshness);
     url.searchParams.set('mkt', 'en-US');
 
     const response = await fetch(url.toString(), {
@@ -131,9 +182,12 @@ async function searchBing(query: string, limit: number): Promise<NewsSearchResul
 }
 
 // Google Custom Search API
-async function searchGoogle(query: string, limit: number): Promise<NewsSearchResult> {
+async function searchGoogle(query: string, limit: number, daysBack: number = 30): Promise<NewsSearchResult> {
   const apiKey = process.env.GOOGLE_SEARCH_API_KEY!;
   const cx = process.env.GOOGLE_SEARCH_CX!;
+
+  // Google dateRestrict: d[number], w[number], m[number], y[number]
+  const dateRestrict = daysBack <= 7 ? `d${daysBack}` : daysBack <= 31 ? 'm1' : `d${daysBack}`;
 
   try {
     const url = new URL('https://www.googleapis.com/customsearch/v1');
@@ -141,7 +195,7 @@ async function searchGoogle(query: string, limit: number): Promise<NewsSearchRes
     url.searchParams.set('cx', cx);
     url.searchParams.set('q', query);
     url.searchParams.set('num', Math.min(limit, 10).toString());
-    url.searchParams.set('dateRestrict', 'm1'); // Last month
+    url.searchParams.set('dateRestrict', dateRestrict);
     url.searchParams.set('sort', 'date');
 
     const response = await fetch(url.toString());
@@ -172,8 +226,15 @@ async function searchGoogle(query: string, limit: number): Promise<NewsSearchRes
 }
 
 // SerpAPI (good for news aggregation)
-async function searchSerpAPI(query: string, limit: number): Promise<NewsSearchResult> {
+async function searchSerpAPI(query: string, limit: number, daysBack: number = 30): Promise<NewsSearchResult> {
   const apiKey = process.env.SERPAPI_KEY!;
+
+  // SerpAPI Google News uses 'when' parameter: 1d, 7d, 30d, 1y
+  let whenParam = '1m'; // default to last month
+  if (daysBack <= 1) whenParam = '1d';
+  else if (daysBack <= 7) whenParam = '7d';
+  else if (daysBack <= 30) whenParam = '1m';
+  else if (daysBack <= 365) whenParam = '1y';
 
   try {
     const url = new URL('https://serpapi.com/search.json');
@@ -182,6 +243,7 @@ async function searchSerpAPI(query: string, limit: number): Promise<NewsSearchRe
     url.searchParams.set('q', query);
     url.searchParams.set('gl', 'us');
     url.searchParams.set('hl', 'en');
+    url.searchParams.set('when', whenParam); // Filter by time
 
     const response = await fetch(url.toString());
 
@@ -222,9 +284,9 @@ async function getCachedResult(cacheKey: string): Promise<NewsSearchResult | nul
       .single();
 
     if (data) {
-      // News cache is short - 6 hours
+      // News cache is short - 2 hours for fresh results
       const cacheAge = Date.now() - new Date(data.created_at).getTime();
-      if (cacheAge < 6 * 60 * 60 * 1000) {
+      if (cacheAge < 2 * 60 * 60 * 1000) {
         return data.data as NewsSearchResult;
       }
     }
