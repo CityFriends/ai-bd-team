@@ -67,12 +67,21 @@ export async function checkAgencyAwards(
 
   // Filter to significant awards from real vendors (not government agencies)
   const govAgencyPatterns = [
-    /^department of/i,
-    /^u\.?s\.? /i,
-    /^united states/i,
-    /^state of/i,
-    /^city of/i,
-    /^county of/i,
+    /department of/i,           // Any "department of" (federal, state, local)
+    /^u\.?s\.? /i,              // U.S. anything
+    /^united states/i,          // United States
+    /^state of/i,               // State of X
+    /^city of/i,                // City of X
+    /^county of/i,              // County of X
+    /\bstate\b.*\b(department|agency|commission|board)\b/i,  // State agencies
+    /\b(health and human services|labor|education|transportation)\b.*\b(department|agency)\b/i,
+    /^(alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|montana|nebraska|nevada|new hampshire|new jersey|new mexico|new york|north carolina|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|south carolina|south dakota|tennessee|texas|utah|vermont|virginia|washington|west virginia|wisconsin|wyoming)\b/i,  // State names at start
+    /\buniversity\b/i,          // Universities
+    /\bcollege\b/i,             // Colleges
+    /\bgovernment\b/i,          // Government entities
+    /\bpublic\s+(school|health|safety)\b/i,  // Public entities
+    /^health and human services$/i,         // Bare HHS name
+    /^(labor|education|transportation|agriculture|interior|commerce|treasury|justice|defense|energy|housing)$/i,  // Bare agency names
   ];
 
   const significantAwards = result.contracts.filter(c => {
