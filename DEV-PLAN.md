@@ -48,7 +48,19 @@
 
 ## What's Next
 
-### Priority 1: Company Data Integration
+### Priority 1: FAR Lookup Capability
+- [ ] Clone/fetch GSA FAR repo: https://github.com/GSA/GSA-Acquisition-FAR
+- [ ] Parse XML files into chunks by section (part, subpart, section, title, full_text)
+- [ ] Create `far_sections` table in Supabase with pgvector for embeddings
+- [ ] Create `src/integrations/far-search.ts`:
+  - Semantic search: "What does FAR say about past performance?"
+  - Direct lookup: "FAR 15.304"
+  - Returns sections with specific citations
+- [ ] David uses it: "Per FAR 15.305, they have to evaluate past performance..."
+- [ ] James uses it: "FAR 16.505 governs task order competitions..."
+- [ ] Keep citations specific: "FAR 9.505-2(b)(1)" not "the FAR says..."
+
+### Priority 2: Company Data Integration
 - [ ] Create `company_profile` table with FFTC capabilities, NAICS codes, past performance
 - [ ] Load company data into agent context
 - [ ] Agents can reference "what we're good at" when evaluating opportunities
