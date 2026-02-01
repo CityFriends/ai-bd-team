@@ -27,7 +27,7 @@ async function fetchNotionDatabase(databaseId: string): Promise<NotionPage[]> {
     body: JSON.stringify({}),
   });
 
-  const data = await response.json();
+  const data = await response.json() as { results?: any[] };
   return data.results || [];
 }
 

@@ -72,11 +72,12 @@ async function main() {
   for (const naics of naicsCodes) {
     console.log(`Searching NAICS ${naics}...`);
     try {
-      const results = await searchOpportunities({
-        naicsCode: naics,
-        postedFrom: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      const response = await searchOpportunities({
+        naicsCodes: [naics],
+        postedFrom: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
         limit: 5,
       });
+      const results = response.opportunitiesData || [];
 
       if (results.length > 0) {
         // Find one with good data

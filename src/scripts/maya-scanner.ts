@@ -61,14 +61,15 @@ async function scanOpportunities(): Promise<ScoredOpportunity[]> {
   for (const naics of OPPORTUNITY_FILTERS.naicsCodes) {
     console.log(`  Searching NAICS ${naics}...`);
     try {
-      const results = await searchOpportunities({
-        naicsCode: naics,
-        postedFrom: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      const response = await searchOpportunities({
+        naicsCodes: [naics],
+        postedFrom: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
         limit: 20,
       });
+      const results = response.opportunitiesData || [];
 
       for (const opp of results) {
-        const { score, reasons, redFlags } = scoreOpportunity(opp);
+        const { score, reasons, redFlags } = scoreOpportunity(opp as any);
         const posting = shouldPostOpportunity(score);
 
         allOpportunities.push({
@@ -219,13 +220,17 @@ async function runDailyScan() {
       await postToSlack(app, message);
 
       // Record that we posted this
-      const supabase = getSupabase();
-      await supabase.from('seen_opportunities').insert({
-        notice_id: opp.opportunity.noticeId,
-        title: opp.opportunity.title,
-        score: opp.score,
-        posted_at: new Date().toISOString(),
-      }).catch(() => {}); // Ignore if table doesn't exist
+      try {
+        const supabase = getSupabase();
+        await supabase.from('seen_opportunities').insert({
+          notice_id: opp.opportunity.noticeId,
+          title: opp.opportunity.title,
+          score: opp.score,
+          posted_at: new Date().toISOString(),
+        });
+      } catch {
+        // Ignore if table doesn't exist
+      }
 
       await new Promise(r => setTimeout(r, 2000)); // Delay between posts
     }

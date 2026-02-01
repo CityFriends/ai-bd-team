@@ -37,7 +37,7 @@ async function fetchNotionDatabase(databaseId: string): Promise<NotionPage[]> {
     body: JSON.stringify({}),
   });
 
-  const data = await response.json();
+  const data = await response.json() as { results?: any[] };
   return data.results || [];
 }
 
@@ -247,16 +247,18 @@ async function syncLaborRates(): Promise<number> {
 }
 
 async function logSync(source: string, recordCount: number, status: 'success' | 'error', error?: string) {
-  const supabase = getSupabase();
-
-  // Create sync_log table if it doesn't exist (will fail silently if exists)
-  await supabase.from('sync_log').insert({
-    source,
-    record_count: recordCount,
-    status,
-    error_message: error,
-    synced_at: new Date().toISOString(),
-  }).then(() => {}).catch(() => {});
+  try {
+    const supabase = getSupabase();
+    await supabase.from('sync_log').insert({
+      source,
+      record_count: recordCount,
+      status,
+      error_message: error,
+      synced_at: new Date().toISOString(),
+    });
+  } catch {
+    // Ignore if table doesn't exist
+  }
 }
 
 // ============================================

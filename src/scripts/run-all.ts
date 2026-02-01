@@ -37,13 +37,7 @@ async function main() {
   // Maya: Weekdays at 8am
   cron.default.schedule('0 8 * * 1-5', async () => {
     console.log(`[${new Date().toLocaleString()}] Maya: Running daily scan...`);
-    try {
-      const { runDailyScan } = await import('./maya-scanner.js');
-      // Note: runDailyScan is not exported, so we'd need to refactor
-      // For now, the live agents handle opportunity posting
-    } catch (err) {
-      console.error('Maya scan error:', err);
-    }
+    // Live agents handle opportunity posting via Slack interaction
   });
 
   // Maya: Weekly summary Monday 8:30am
