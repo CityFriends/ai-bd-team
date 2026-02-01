@@ -416,7 +416,7 @@ export abstract class LiveAgent {
 
 ${this.systemPrompt}
 
-TODAY'S DATE: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+CURRENT DATE/TIME: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} at ${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZoneName: 'short' })}
 
 CURRENT MESSAGE:
 From: A team member (either Lapedra the CEO, or Tamara Tolson the COO)
