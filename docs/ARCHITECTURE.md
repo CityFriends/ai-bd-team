@@ -195,6 +195,9 @@ ai-bd-team/
 │   ├── scripts/                 # Utility scripts
 │   │   ├── scrape-company.ts    # Website scraper for company data
 │   │   ├── onboard-company.ts   # Patricia's onboarding CLI
+│   │   ├── import-notion.ts     # Full Notion import (contracts, CRM, rates)
+│   │   ├── sync-scheduler.ts    # Scheduled Notion sync
+│   │   ├── update-company-data.ts # Manual data updates
 │   │   ├── parse-far.ts         # Parse FAR XML
 │   │   ├── update-far.ts        # Refresh FAR data
 │   │   ├── check-awards.ts      # Manual award check
@@ -205,9 +208,12 @@ ai-bd-team/
 │   └── types/                   # Shared type definitions
 │
 ├── supabase/                    # Database migrations
-│   ├── far-sections.sql
-│   ├── seen-awards.sql
-│   └── competitor-intel.sql
+│   ├── company-knowledge-base.sql    # Full company KB schema (11 tables)
+│   ├── company-knowledge-base-novector.sql  # Version without pgvector
+│   ├── sync-log.sql             # Sync audit logging
+│   ├── far-sections.sql         # FAR with embeddings
+│   ├── seen-awards.sql          # Award deduplication
+│   └── competitor-intel.sql     # Competitor intelligence
 │
 ├── docs/                        # Documentation
 └── data/                        # Generated data (gitignored)
@@ -373,5 +379,115 @@ Polls FPDS for new contract awards:
 | Script | Schedule | Purpose |
 |--------|----------|---------|
 | `award-scheduler.ts` | Mon/Thu 9am | Check for new awards |
+| `sync-scheduler.ts` | Every 6 hours | Sync Notion data |
 | (planned) | Daily | Competitor news scan |
 | (planned) | Weekly | Pipeline status summary |
+
+---
+
+## Company Data Pipeline
+
+The company knowledge base is populated from multiple sources and stays in sync automatically.
+
+### Data Sources
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           DATA SOURCES                                       │
+│                                                                              │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐            │
+│  │  FFTC Website   │  │  Notion DBs     │  │  Manual Entry   │            │
+│  │  (scrape)       │  │  (API sync)     │  │  (onboarding)   │            │
+│  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘            │
+│           │                    │                    │                       │
+│           ▼                    ▼                    ▼                       │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │                     SUPABASE (PostgreSQL)                            │  │
+│  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐                 │  │
+│  │  │company_profile│ │past_perform. │ │teaming_partn.│                 │  │
+│  │  └──────────────┘ └──────────────┘ └──────────────┘                 │  │
+│  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐                 │  │
+│  │  │key_personnel │ │ case_studies │ │ labor_rates  │                 │  │
+│  │  └──────────────┘ └──────────────┘ └──────────────┘                 │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                    │                                        │
+│                                    ▼                                        │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │                    company-context.ts                                │  │
+│  │         Loads & formats context for each agent's prompt              │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Source → Table Mapping
+
+| Source | Script | Tables Populated |
+|--------|--------|------------------|
+| FFTC Website | `scrape-company.ts` | `company_profile`, `key_personnel`, `case_studies`, `proposal_content` |
+| Notion: Contracts Overview | `import-notion.ts` | `past_performance` |
+| Notion: CRM | `import-notion.ts` | `teaming_partners` |
+| Notion: GSA MAS Rates | `import-notion.ts` | `labor_rates` |
+| Interactive CLI | `onboard-company.ts` | `company_profile` (fills gaps) |
+
+### Sync Flow
+
+```
+Website Scrape (manual or scheduled)
+        │
+        ▼
+npm run scrape-company
+  - Fetches /work, /about/team, /services
+  - Extracts case studies, team members, capabilities
+  - Saves to Supabase
+        │
+        ▼
+Notion Sync (every 6 hours)
+        │
+        ▼
+npm run sync (or sync:schedule)
+  - Fetches Contracts Overview database
+  - Fetches CRM database
+  - Fetches GSA MAS Rates database
+  - Maps fields to our schema
+  - Upserts to Supabase (no duplicates)
+  - Logs to sync_log table
+        │
+        ▼
+Agent Request
+        │
+        ▼
+company-context.ts loads from Supabase
+  - Caches for 30 minutes
+  - Formats per agent role:
+    - Maya: NAICS, set-asides, capabilities
+    - David: past performance, agency experience
+    - Rosa: teaming partners, relationships
+    - James: no-bid criteria, differentiators
+    - Patricia: key personnel, availability
+        │
+        ▼
+Included in agent's Claude prompt
+```
+
+### Notion Database IDs
+
+| Database | ID | Fields Used |
+|----------|-----|-------------|
+| Contracts Overview | `1b807a79...` | Contract Name, Prime Contract Number, Value, Dates, Status, Vehicle, Set-Aside, NAICS |
+| CRM | `1bc07a79...` | Company, Core Capabilities, SBA Designations, Strengths, Weaknesses, POC |
+| GSA MAS Rates | `1e607a79...` | Labor Category, Year 1-5 Rates, SIN |
+
+### Data Refresh Commands
+
+```bash
+# One-time full refresh
+npm run scrape-company    # Website data
+npm run import-notion     # Notion data (full import)
+npm run sync              # Notion data (incremental)
+
+# Scheduled continuous sync
+npm run sync:schedule     # Runs every 6 hours
+
+# Interactive profile completion
+npm run onboard           # Patricia guides through gaps
+```
