@@ -100,6 +100,19 @@ Each agent has deep expertise they apply to interpret situations:
 - [x] `seen_awards` - tracks reported awards (prevents duplicates)
 - [x] `competitor_intel` - stored intel on competitors (protests, performance, wins)
 
+### Product Documentation
+Comprehensive docs for repeatable product deployment:
+- [x] `docs/ARCHITECTURE.md` - System design, data flow, file structure
+- [x] `docs/SETUP.md` - Step-by-step installation guide
+- [x] `docs/CONFIGURATION.md` - Customization options
+- [x] `docs/AGENTS.md` - Agent reference with examples
+- [x] `docs/DATABASE.md` - Schema and table documentation
+- [x] `docs/INTEGRATIONS.md` - External API reference
+- [x] `docs/ONBOARDING.md` - Client setup process
+- [x] `docs/COSTS.md` - Pricing and billing breakdown
+- [x] `docs/ROADMAP.md` - What's built and what's next
+- [x] `README.md` - Overview with links to all docs
+
 ---
 
 ## What's Next
