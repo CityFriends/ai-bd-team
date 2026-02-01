@@ -30,6 +30,28 @@ export interface SearchOptions {
   offset?: number;
 }
 
+// Generate SAM.gov opportunity URL from notice ID
+export function getSAMOpportunityURL(noticeId: string): string {
+  return `https://sam.gov/opp/${noticeId}/view`;
+}
+
+// Validate that an opportunity has required fields and is real
+export function validateOpportunity(opp: any): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+
+  if (!opp.noticeId) {
+    errors.push('Missing noticeId');
+  }
+  if (!opp.title) {
+    errors.push('Missing title');
+  }
+  if (!opp.postedDate) {
+    errors.push('Missing postedDate');
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
 // Search for opportunities
 export async function searchOpportunities(options: SearchOptions = {}): Promise<SAMSearchResponse> {
   const apiKey = getApiKey();
@@ -57,6 +79,8 @@ export async function searchOpportunities(options: SearchOptions = {}): Promise<
 
   const url = `${SAM_OPPORTUNITIES_URL}?${params.toString()}`;
 
+  console.log(`[SAM.gov] Querying: naics=${naics.join(',')}, from=${formatDate(from)}, to=${formatDate(to)}`);
+
   const response = await fetch(url, {
     headers: {
       Accept: 'application/json',
@@ -65,16 +89,37 @@ export async function searchOpportunities(options: SearchOptions = {}): Promise<
 
   if (!response.ok) {
     const text = await response.text();
+    console.error(`[SAM.gov] API error: ${response.status}`);
     throw new Error(`SAM.gov API error: ${response.status} - ${text}`);
   }
 
   const data = await response.json() as SAMSearchResponse;
 
+  // Log raw results for debugging
+  console.log(`[SAM.gov] Raw response: ${data.totalRecords || 0} total records`);
+
+  // Validate and filter opportunities - only return real ones
+  const validOpportunities = (data.opportunitiesData || []).filter(opp => {
+    const { valid, errors } = validateOpportunity(opp);
+    if (!valid) {
+      console.warn(`[SAM.gov] Invalid opportunity skipped: ${errors.join(', ')}`);
+    }
+    return valid;
+  });
+
+  // Add generated URL if uiLink is missing
+  const enrichedOpportunities = validOpportunities.map(opp => ({
+    ...opp,
+    uiLink: opp.uiLink || getSAMOpportunityURL(opp.noticeId),
+  }));
+
+  console.log(`[SAM.gov] Returning ${enrichedOpportunities.length} validated opportunities`);
+
   return {
     totalRecords: data.totalRecords || 0,
     limit: data.limit || 100,
     offset: data.offset || 0,
-    opportunitiesData: data.opportunitiesData || [],
+    opportunitiesData: enrichedOpportunities,
   };
 }
 
