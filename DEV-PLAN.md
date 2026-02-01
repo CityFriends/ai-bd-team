@@ -182,6 +182,11 @@ Comprehensive docs for repeatable product deployment:
   - Imports from GSA MAS Rates → labor_rates (13 categories)
   - Infers agency from contract name, maps fields automatically
   - Supports incremental updates (won't duplicate on re-run)
+- [x] Automated sync scheduler (`npm run sync:schedule`)
+  - Syncs Notion data every 6 hours automatically
+  - Logs syncs to `sync_log` table for auditing
+  - Run `npm run sync` for one-time manual sync
+  - Safe to run continuously in background
 
 ### Priority 3: Memory Persistence
 - [ ] Auto-save personal context when Lapedra/Tamara share something

@@ -26,7 +26,9 @@
     "award-scheduler": "tsx src/scripts/award-scheduler.ts",
     "scrape-company": "tsx src/scripts/scrape-company.ts",
     "onboard": "tsx src/scripts/onboard-company.ts",
-    "import-notion": "tsx src/scripts/import-notion.ts"
+    "import-notion": "tsx src/scripts/import-notion.ts",
+    "sync": "tsx src/scripts/sync-scheduler.ts",
+    "sync:schedule": "tsx src/scripts/sync-scheduler.ts --schedule"
   },
   "keywords": [
     "ai",
