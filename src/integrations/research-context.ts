@@ -118,6 +118,7 @@ function cleanTextForSearch(text: string): string {
 function detectTopics(text: string): {
   needsNews: boolean;
   needsAwardNews: boolean;
+  needsRiskNews: boolean;
   needsFPDS: boolean;
   needsSpending: boolean;
   needsPartnerCheck: boolean;
@@ -132,6 +133,16 @@ function detectTopics(text: string): {
 
   const newsKeywords = ['news', 'article', 'recent', 'latest', 'update', 'announce', 'modernization', 'initiative', 'happening', 'going on'];
   const awardNewsKeywords = ['award', 'awarded', 'won', 'wins', 'winner', 'orangeslices', 'govconwire', 'contract news'];
+  const riskNewsKeywords = [
+    'cancel', 'cancelled', 'canceled', 'cancellation', 'terminated', 'termination',
+    'fraud', 'investigation', 'investigated', 'oig', 'inspector general',
+    'protest', 'protested', 'gao protest', 'bid protest',
+    '8a', '8(a)', 'graduation', 'graduated', 'decertified', 'decertification',
+    'debarred', 'debarment', 'suspended', 'suspension',
+    'false claims', 'qui tam', 'whistleblower',
+    'breach', 'default', 'non-compliance', 'violation',
+    'recompete', 'bridge contract', 'stop work',
+  ];
   const fpdsKeywords = ['incumbent', 'contract', 'fpds', 'who has', 'who won', 'awarded', 'contractor', 'vendor', 'piid', 'idiq'];
   const spendingKeywords = ['budget', 'spending', 'usaspending', 'obligat', 'fund', 'money', 'fiscal'];
   const partnerKeywords = ['partner', 'team', 'verify', 'registration', 'sam.gov', 'certified', 'certification', '8(a)', 'wosb', 'sdvosb', 'hubzone'];
@@ -156,10 +167,12 @@ function detectTopics(text: string): {
     .filter(w => w.length > 2 && !w.startsWith('@') && !stopwords.includes(w));
 
   const needsAwardNews = awardNewsKeywords.some(kw => lowerText.includes(kw));
+  const needsRiskNews = riskNewsKeywords.some(kw => lowerText.includes(kw));
 
   return {
-    needsNews: newsKeywords.some(kw => lowerText.includes(kw)) || needsAwardNews,
+    needsNews: newsKeywords.some(kw => lowerText.includes(kw)) || needsAwardNews || needsRiskNews,
     needsAwardNews, // Specifically for GovCon award sources like OrangeSlices
+    needsRiskNews,  // Contract cancellations, fraud, protests, debarments
     needsFPDS: fpdsKeywords.some(kw => lowerText.includes(kw)) || contractNumbers.length > 0,
     needsSpending: spendingKeywords.some(kw => lowerText.includes(kw)),
     needsPartnerCheck: partnerKeywords.some(kw => lowerText.includes(kw)),
@@ -202,6 +215,26 @@ export async function gatherResearchContext(
     promises.push(
       (async () => {
         try {
+          // Use GovCon sources for risk news (cancellations, fraud, protests)
+          if (topics.needsRiskNews) {
+            console.log(`Research: Fetching risk/negative news for ${topics.agency!.name} from GovCon sources`);
+            const riskTerms = ['cancel', 'fraud', 'protest', 'debarment', 'terminated', 'investigation'];
+            const matchedTerm = riskTerms.find(t => topics.keywords.some(k => k.includes(t))) || 'contract issues';
+            const result = await searchNews({
+              query: `${topics.agency!.name} ${matchedTerm}`,
+              limit: 5,
+              daysBack: 90,
+              govconOnly: true,
+            });
+            if (result.articles.length > 0) {
+              context.news = {
+                articles: result.articles,
+                source: `${result.source} (GovCon Risk)`,
+              };
+              return;
+            }
+          }
+
           // Use GovCon sources (OrangeSlices, GovConWire) for award news
           if (topics.needsAwardNews) {
             console.log(`Research: Fetching contract award news for ${topics.agency!.name} from GovCon sources`);
