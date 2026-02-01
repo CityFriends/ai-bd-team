@@ -197,58 +197,77 @@ export async function getVendorHistory(vendorName: string): Promise<{
   };
 }
 
-// Parse FPDS Atom/XML feed
+// Parse FPDS RSS/XML feed
 function parseFPDSAtomFeed(xml: string, limit: number): FPDSContract[] {
   const contracts: FPDSContract[] = [];
 
-  // Simple XML parsing - extract entries
-  const entryRegex = /<entry>([\s\S]*?)<\/entry>/g;
+  // FPDS returns RSS format with <item> tags, not Atom <entry> tags
+  const itemRegex = /<item>([\s\S]*?)<\/item>/g;
   let match;
 
-  while ((match = entryRegex.exec(xml)) !== null && contracts.length < limit) {
+  while ((match = itemRegex.exec(xml)) !== null && contracts.length < limit) {
     const entry = match[1];
 
-    const contract: FPDSContract = {
-      contractId: extractXMLValue(entry, 'id') || `fpds-${contracts.length}`,
-      vendorName: extractXMLValue(entry, 'vendorName') ||
-                  extractXMLValue(entry, 'VENDOR_FULL_NAME') ||
-                  extractFromContent(entry, /vendor[^>]*>([^<]+)/i) ||
-                  'Unknown Vendor',
-      agencyName: extractXMLValue(entry, 'agencyID') ||
-                  extractXMLValue(entry, 'CONTRACTING_AGENCY_NAME') ||
-                  extractFromContent(entry, /agency[^>]*>([^<]+)/i) ||
-                  'Unknown Agency',
-      contractDescription: extractXMLValue(entry, 'title') ||
-                          extractXMLValue(entry, 'summary') ||
-                          extractXMLValue(entry, 'DESCRIPTION_OF_REQUIREMENT') ||
-                          '',
-      obligatedAmount: parseFloat(extractXMLValue(entry, 'obligatedAmount') ||
-                                  extractXMLValue(entry, 'OBLIGATED_AMOUNT') ||
-                                  extractFromContent(entry, /\$?([\d,]+(?:\.\d{2})?)/i)?.replace(/,/g, '') ||
-                                  '0'),
-      signedDate: extractXMLValue(entry, 'signedDate') ||
-                  extractXMLValue(entry, 'DATE_SIGNED') ||
-                  extractXMLValue(entry, 'updated') ||
-                  '',
-      naicsCode: extractXMLValue(entry, 'PRINCIPAL_NAICS_CODE'),
-      setAsideType: extractXMLValue(entry, 'TYPE_OF_SET_ASIDE'),
-    };
+    // RSS format: title contains "CONTRACT XXX awarded to VENDOR for $AMOUNT"
+    const title = extractCDATA(entry, 'title') || '';
+    const link = extractXMLValue(entry, 'link') || '';
+    const description = extractCDATA(entry, 'description') || '';
+    const pubDate = extractXMLValue(entry, 'pubDate') || '';
 
-    // Try to extract more details from content/summary
-    const content = extractXMLValue(entry, 'content') || extractXMLValue(entry, 'summary') || '';
-    if (content) {
-      // Extract vendor from content if not found
-      if (contract.vendorName === 'Unknown Vendor') {
-        const vendorMatch = content.match(/vendor[:\s]+([^,\n<]+)/i);
-        if (vendorMatch) contract.vendorName = vendorMatch[1].trim();
-      }
-
-      // Extract amount if not found
-      if (contract.obligatedAmount === 0) {
-        const amountMatch = content.match(/\$\s*([\d,]+(?:\.\d{2})?)/);
-        if (amountMatch) contract.obligatedAmount = parseFloat(amountMatch[1].replace(/,/g, ''));
-      }
+    // Parse vendor name from title: "awarded to VENDOR NAME," or "awarded to VENDOR NAME for"
+    let vendorName = 'Unknown Vendor';
+    const vendorMatch = title.match(/awarded to ([^,]+?)(?:,| for | was )/i);
+    if (vendorMatch) {
+      vendorName = vendorMatch[1].trim();
     }
+
+    // Parse amount from title: "for the amount of $X" or "for $X"
+    let amount = 0;
+    const amountMatch = title.match(/(?:for the amount of |for |amount of )\$?([-]?[\d,]+(?:\.\d{2})?)/i);
+    if (amountMatch) {
+      const parsedAmount = parseFloat(amountMatch[1].replace(/,/g, ''));
+      amount = isNaN(parsedAmount) ? 0 : Math.abs(parsedAmount); // Use absolute value for modifications
+    }
+
+    // Parse contract ID from title: "CONTRACT XXXXX" or "DELIVERY ORDER XXXXX"
+    let contractId = `fpds-${contracts.length}`;
+    const contractMatch = title.match(/(?:CONTRACT|ORDER|AGREEMENT)\s+([A-Z0-9]+)/i);
+    if (contractMatch) {
+      contractId = contractMatch[1];
+    }
+
+    // Parse contract type from title
+    let contractType = 'Unknown';
+    if (title.includes('DELIVERY ORDER')) contractType = 'Delivery Order';
+    else if (title.includes('DEFINITIVE CONTRACT')) contractType = 'Definitive Contract';
+    else if (title.includes('BPA')) contractType = 'BPA';
+    else if (title.includes('TASK ORDER')) contractType = 'Task Order';
+
+    // Extract agency code from link (AGENCY_CODE%3A%22XXXX%22)
+    let agencyName = 'Unknown Agency';
+    const agencyMatch = link.match(/AGENCY_CODE%3A%22(\d+)%22/);
+    if (agencyMatch) {
+      agencyName = `Agency ${agencyMatch[1]}`;
+    }
+
+    // Parse date from description or pubDate
+    let signedDate = '';
+    const dateMatch = description.match(/signed on (\d{4}-\d{2}-\d{2})/);
+    if (dateMatch) {
+      signedDate = dateMatch[1];
+    } else if (pubDate) {
+      signedDate = pubDate.split('T')[0];
+    }
+
+    const contract: FPDSContract = {
+      contractId,
+      vendorName,
+      agencyName,
+      contractDescription: title,
+      obligatedAmount: amount,
+      signedDate,
+      contractType,
+    };
 
     contracts.push(contract);
   }
@@ -262,9 +281,14 @@ function extractXMLValue(xml: string, tag: string): string | undefined {
   return match ? match[1].trim() : undefined;
 }
 
-function extractFromContent(xml: string, regex: RegExp): string | undefined {
+function extractCDATA(xml: string, tag: string): string | undefined {
+  // Match CDATA content: <tag><![CDATA[content]]></tag>
+  const regex = new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>`, 'i');
   const match = xml.match(regex);
-  return match ? match[1].trim() : undefined;
+  if (match) return match[1].trim();
+
+  // Fall back to regular tag content
+  return extractXMLValue(xml, tag);
 }
 
 // Cache helpers

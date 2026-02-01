@@ -45,6 +45,7 @@ export interface AgentResponse {
   confidence: number; // How confident the agent is they should respond (0-1)
   sources: string[]; // Sources cited (e.g., 'SAM.gov', 'FPDS', 'inference')
   confidenceLevel: ConfidenceLevel; // HIGH/MEDIUM/LOW based on source quality
+  reaction: string | null; // Optional emoji reaction (e.g., 'thumbsup', 'fire')
 }
 
 export interface AgentMemoryEntry {

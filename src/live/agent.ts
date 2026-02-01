@@ -3,6 +3,7 @@
 import { App, LogLevel } from '@slack/bolt';
 import { getAnthropic } from '../integrations/claude.js';
 import { logAgentMemory, claimMessage, getRecentThreadResponses, getConversationalContext, saveUserContext, saveConversationMemory } from '../integrations/supabase.js';
+import { gatherResearchContext, formatResearchContext } from '../integrations/research-context.js';
 import type {
   LiveAgentName,
   LiveAgentConfig,
@@ -104,6 +105,10 @@ export abstract class LiveAgent {
       // Check if we're mentioned in this message (for agent cross-talk)
       const text = (msg.text || '').toLowerCase();
       const isMentioned = (msg.text || '').includes(`<@${this.slackUserId}>`);
+
+      // If this is a direct @mention of THIS agent, skip - app_mention handler will handle it
+      // This prevents the race condition where both handlers fire for the same message
+      if (isMentioned && !msg.bot_id) return;
 
       // For bot messages (other agents), only respond if directly @mentioned
       const isFromBot = msg.bot_id || msg.subtype === 'bot_message';
@@ -347,6 +352,18 @@ export abstract class LiveAgent {
       // Memory not available yet, that's okay
     }
 
+    // Load research context (news, FPDS, USASpending, SAM Entity, FAR)
+    let researchContext = '';
+    try {
+      const research = await gatherResearchContext(message.text, this.name);
+      researchContext = formatResearchContext(research);
+      if (researchContext) {
+        console.log(`${this.displayName}: Gathered research context`);
+      }
+    } catch (err) {
+      console.warn(`${this.displayName}: Research context failed:`, err);
+    }
+
     // Detect mood
     const { mood, guidance } = this.detectMood(message.text);
 
@@ -369,6 +386,7 @@ CURRENT MOOD DETECTED: ${mood}
 ${guidance}
 ${memoryContext}
 ${threadContext}
+${researchContext}
 
 RESPOND LIKE A REAL HUMAN:
 - Vary your sentence structure - don't always start the same way
@@ -405,10 +423,39 @@ When someone replies with quick phrases like "yes", "yeah", "let's roll", "go fo
   - "Alright, reaching out to see who might team with us."
 
 SOURCE EVERYTHING (critical):
-- Always cite where facts come from: "According to SAM.gov...", "FPDS shows...", "USAspending has them at..."
+- Always cite where facts come from: "According to SAM.gov...", "FPDS shows...", "USAspending has them at...", "Per FAR 16.505..."
 - If you don't have data, SAY SO: "I don't have data on this", "I'd want to verify that", "Can't confirm without checking"
 - Never make up facts, numbers, or sources
 - Distinguish what you know vs. what you're inferring
+
+USE RESEARCH DATA PROVIDED:
+- If you see "=== RESEARCH DATA ===" in the context, USE IT in your response
+- Include specific numbers, names, and details from the research
+- When news articles are provided, mention the source and include the link
+- When FPDS data is provided, cite specific contract values and vendors
+- When FAR sections are provided, cite the specific section numbers
+- This is REAL data from APIs - use it, don't ignore it!
+
+NEVER SAY "GIVE ME A MINUTE" OR "LET ME CHECK":
+- You already HAVE the research data in your context - use it NOW
+- Don't say "let me pull the data" - you already have it
+- Don't say "give me a few minutes" - respond with the data immediately
+- If you have news articles, share them with links
+- If you have FPDS data, share the vendor names and values
+- Only say "I don't have data on this" if no research data was provided
+
+IMPORTANT - DO NOT FABRICATE PERSONAL EXPERIENCES:
+- You are an AI advisor with expertise, NOT a real person with a career history
+- NEVER use these phrases:
+  - "I've won..." / "I've lost..." / "I worked on..."
+  - "In my experience..." / "What I've learned..." / "I've seen..."
+  - "When I was at..." / "I remember when..." / "Back when I..."
+- INSTEAD use these phrases:
+  - "Typically..." / "The pattern is..." / "Industry best practice is..."
+  - "Per FAR [section]..." / "The regulation requires..." / "Data shows..."
+  - "Successful bidders often..." / "Common pitfalls include..."
+- You have a PERSONA (personality, background) but not REAL EXPERIENCES
+- Give professional advice grounded in FAR citations and data, not fake war stories
 
 CONFIDENCE LEVELS - indicate how sure you are:
 - HIGH confidence: "The solicitation says..." / "FPDS shows..." (official source)

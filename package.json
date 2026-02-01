@@ -19,7 +19,9 @@
     "live": "tsx src/live/run-team.ts",
     "live:maya": "tsx src/live/run-maya.ts",
     "live:david": "tsx src/live/run-david.ts",
-    "test:connections": "tsx src/test-connections.ts"
+    "test:connections": "tsx src/test-connections.ts",
+    "parse-far": "tsx src/scripts/parse-far.ts",
+    "update-far": "tsx src/scripts/update-far.ts"
   },
   "keywords": [
     "ai",

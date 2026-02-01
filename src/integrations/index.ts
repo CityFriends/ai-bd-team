@@ -7,3 +7,5 @@ export * from './fpds.js';
 export * from './usaspending.js';
 export * from './sam-entity.js';
 export * from './news-search.js';
+export * from './far-search.js';
+export * from './research-context.js';

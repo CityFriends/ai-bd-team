@@ -11,10 +11,11 @@
 
 ### External API Integrations
 - [x] SAM.gov opportunity search
-- [x] FPDS incumbent/contract data
+- [x] FPDS incumbent/contract data (fixed: uses RSS `<item>` tags, not Atom `<entry>`)
 - [x] USASpending agency budgets
 - [x] SerpAPI for news search
 - [x] SAM.gov entity verification for partners
+- [x] FAR lookup (semantic search + direct citation lookup via Supabase)
 
 ### Agent Personalities (Distinct Voices)
 
@@ -48,17 +49,17 @@
 
 ## What's Next
 
-### Priority 1: FAR Lookup Capability
-- [ ] Clone/fetch GSA FAR repo: https://github.com/GSA/GSA-Acquisition-FAR
-- [ ] Parse XML files into chunks by section (part, subpart, section, title, full_text)
-- [ ] Create `far_sections` table in Supabase with pgvector for embeddings
-- [ ] Create `src/integrations/far-search.ts`:
+### Priority 1: FAR Lookup Capability ✓
+- [x] Clone/fetch GSA FAR repo: https://github.com/GSA/GSA-Acquisition-FAR
+- [x] Parse XML files into chunks by section (part, subpart, section, title, full_text)
+- [x] Create `far_sections` table in Supabase with pgvector for embeddings
+- [x] Create `src/integrations/far-search.ts`:
   - Semantic search: "What does FAR say about past performance?"
   - Direct lookup: "FAR 15.304"
   - Returns sections with specific citations
-- [ ] David uses it: "Per FAR 15.305, they have to evaluate past performance..."
-- [ ] James uses it: "FAR 16.505 governs task order competitions..."
-- [ ] Keep citations specific: "FAR 9.505-2(b)(1)" not "the FAR says..."
+- [x] David uses it: "Per FAR 15.305, they have to evaluate past performance..."
+- [x] James uses it: "FAR 16.505 governs task order competitions..."
+- [x] Keep citations specific: "FAR 9.505-2(b)(1)" not "the FAR says..."
 
 ### Priority 2: Company Data Integration
 - [ ] Create `company_profile` table with FFTC capabilities, NAICS codes, past performance
