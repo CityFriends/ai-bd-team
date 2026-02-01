@@ -1,7 +1,8 @@
 // Patricia (PM) - Live conversational agent
 
 import { LiveAgent } from './agent.js';
-import type { LiveAgentName } from './types.js';
+import type { LiveAgentName, IncomingMessage } from './types.js';
+import { logFeedback, getFeedbackSummary, getUnresolvedFeedback } from '../integrations/supabase.js';
 
 export class PatriciaAgent extends LiveAgent {
   name: LiveAgentName = 'patricia';
@@ -83,6 +84,35 @@ BE PROACTIVE - CONNECT THE DOTS:
 - Reference deadlines proactively: "The Q&A deadline is Friday - should we submit questions?"
 - Think about dependencies: "We can't finalize pricing until David gets the incumbent data"
 
+FEEDBACK LOGGING:
+You track feedback about the AI team's performance. When Lapedra or Tamara says things like:
+- "Patricia, log feedback: [issue]"
+- "Patricia, bug: [problem]"
+- "Patricia, feedback: [observation]"
+- "Patricia, great catch: [compliment for an agent]"
+
+You should:
+1. Acknowledge: "Got it, logging that as [type] for [agent]."
+2. Ask for severity if not clear: "How serious? Minor, medium, or major?"
+3. Confirm: "Logged. I'll add it to the review list."
+
+Feedback types you recognize:
+- "bug" = something broken or wrong
+- "wrong_answer" = agent gave incorrect info
+- "great_catch" = agent did something really well
+- "suggestion" = idea for improvement
+- "annoying" = behavior that's frustrating
+- "missing_info" = agent should have known/said something
+
+Extract from feedback:
+- Which agent it's about (Maya, David, Rosa, James, or you)
+- What happened
+- What should have happened (if mentioned)
+
+Example:
+User: "Patricia, bug: Maya made up a fake SAM.gov link"
+You: "Ugh, that's not great. Logging as a bug for Maya - she shouldn't be inventing URLs. I'll mark it as medium severity unless you think it's more serious?"
+
 WHEN TO RESPOND:
 - When directly @mentioned
 - When asked about status or what's pending
@@ -121,6 +151,90 @@ Remember: You're a professional who's also a real person. Organized doesn't mean
 
   protected getAppToken(): string | undefined {
     return process.env.PATRICIA_APP_TOKEN;
+  }
+
+  // Check if message is a feedback command and handle it
+  async handleFeedbackIfPresent(message: IncomingMessage): Promise<string | null> {
+    const text = message.text.toLowerCase();
+
+    // Check for feedback patterns
+    const feedbackPatterns = [
+      /patricia,?\s*(log\s+)?feedback[:\s]+(.+)/i,
+      /patricia,?\s*bug[:\s]+(.+)/i,
+      /patricia,?\s*great\s+catch[:\s]+(.+)/i,
+      /patricia,?\s*suggestion[:\s]+(.+)/i,
+    ];
+
+    let feedbackType: 'bug' | 'wrong_answer' | 'great_catch' | 'suggestion' | 'annoying' | 'missing_info' = 'suggestion';
+    let feedbackText = '';
+
+    for (const pattern of feedbackPatterns) {
+      const match = message.text.match(pattern);
+      if (match) {
+        feedbackText = match[match.length - 1].trim();
+
+        if (text.includes('bug')) feedbackType = 'bug';
+        else if (text.includes('great catch')) feedbackType = 'great_catch';
+        else if (text.includes('wrong')) feedbackType = 'wrong_answer';
+        else if (text.includes('annoying')) feedbackType = 'annoying';
+        else if (text.includes('missing')) feedbackType = 'missing_info';
+
+        break;
+      }
+    }
+
+    if (!feedbackText) return null;
+
+    // Extract agent name from feedback
+    const agentNames = ['maya', 'david', 'rosa', 'james', 'patricia'];
+    let agent = 'unknown';
+    for (const name of agentNames) {
+      if (feedbackText.toLowerCase().includes(name)) {
+        agent = name.charAt(0).toUpperCase() + name.slice(1);
+        break;
+      }
+    }
+
+    // Log the feedback
+    const result = await logFeedback({
+      agent,
+      feedback_type: feedbackType,
+      what_happened: feedbackText,
+      severity: 'medium',
+      slack_ts: message.ts,
+    });
+
+    if (result) {
+      console.log(`Patricia: Logged feedback - ${feedbackType} for ${agent}`);
+      return `logged_feedback:${feedbackType}:${agent}`;
+    }
+
+    return null;
+  }
+
+  // Get weekly summary for Monday check-ins
+  async getWeeklySummary(): Promise<string> {
+    const summary = await getFeedbackSummary(7);
+
+    if (summary.total === 0) {
+      return "No feedback logged this week - either things are going great or we're not tracking issues!";
+    }
+
+    const typeList = Object.entries(summary.byType)
+      .map(([type, count]) => `${count} ${type.replace('_', ' ')}${count > 1 ? 's' : ''}`)
+      .join(', ');
+
+    const agentList = Object.entries(summary.byAgent)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([agent, count]) => `${agent}: ${count}`)
+      .join(', ');
+
+    let response = `Last week's feedback: ${typeList}.\n`;
+    if (agentList) response += `Most mentions: ${agentList}.\n`;
+    if (summary.unresolved > 0) response += `${summary.unresolved} item${summary.unresolved > 1 ? 's' : ''} still unresolved.`;
+
+    return response;
   }
 }
 
