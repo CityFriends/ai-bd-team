@@ -235,3 +235,116 @@ Using Claude claude-sonnet-4-20250514 because:
 - Strong instruction following
 - Good at maintaining personality
 - Reliable JSON output
+
+---
+
+## Agent Intelligence Features
+
+### Domain Expertise
+Each agent has deep domain knowledge embedded in their system prompt:
+
+| Agent | Expertise Area |
+|-------|---------------|
+| Maya | Opportunity identification: wired RFPs, SOW red flags, set-asides, NAICS games |
+| David | Competitive intelligence: FPDS patterns, incumbent vulnerability, protest dynamics |
+| Rosa | Teaming strategy: prime vs sub, teaming agreements, JV structures, partner red flags |
+| James | Capture strategy: win probability, bid/no-bid, price-to-win, discriminators |
+| Patricia | Proposal process: compliance matrices, schedules, review cycles, common failures |
+
+### Proactive Behavior (Connect the Dots)
+Agents don't just answer literal questions—they surface relevant context:
+- Maya: "I've seen 3 HCD solicitations from VA this month—they're on a kick"
+- David: "They just had a breach at Treasury—that might affect their VA work too"
+- Rosa: "If we team with them here, that opens doors at HHS"
+- James: "The obvious play is X, but have we considered Y?"
+- Patricia: "This overlaps with the HHS proposal—do we have bandwidth?"
+
+### Competitor Intelligence Pipeline
+```
+Message mentions competitor/incumbent
+        │
+        ▼
+Detect company name (known competitors or pattern match)
+        │
+        ▼
+Parallel news searches:
+  - "[company] protest GAO"
+  - "[company] performance problems"
+  - "[company] contract award"
+  - "[company] federal contract"
+        │
+        ▼
+Save significant findings to competitor_intel table
+        │
+        ▼
+Include in research context for response
+        │
+        ▼
+Agent interprets strategically:
+  "They lost a GAO protest last year—agency might be gun-shy"
+```
+
+### Response Quality Controls
+- **Source citations required**: Agents must cite FPDS, SAM.gov, news links
+- **Article URLs required**: When citing news, include actual link
+- **Confidence levels**: HIGH (official source), MEDIUM (inference), LOW (speculation)
+- **No false promises**: Agents can't say "I'll check" or "give me 20 minutes"
+- **Follow-up responses**: Must respond with substance, not just emoji reactions
+
+---
+
+## Database Tables
+
+### Core Operations
+| Table | Purpose |
+|-------|---------|
+| `message_claims` | Prevents duplicate agent responses |
+| `agent_memory` | Logs all agent responses with sources |
+| `research_cache` | Caches API responses (2-6 hour TTL) |
+
+### Memory & Context
+| Table | Purpose |
+|-------|---------|
+| `user_context` | Personal info about Lapedra/Tamara |
+| `conversation_memory` | Key moments to reference later |
+| `inside_jokes` | Shared references that build over time |
+| `decision_patterns` | Go/no-go decision history |
+
+### Intelligence
+| Table | Purpose |
+|-------|---------|
+| `competitor_intel` | Stored intel on competitors |
+| `seen_awards` | Tracks reported awards (deduplication) |
+| `far_sections` | FAR text with vector embeddings |
+
+---
+
+## API Integration Summary
+
+| Service | Auth | Used By | Purpose |
+|---------|------|---------|---------|
+| SAM.gov | API Key | Maya, Rosa | Opportunities, entity verification |
+| FPDS | None | David, James | Contract history, incumbents |
+| USASpending | None | David | Agency budgets |
+| SerpAPI | API Key | Maya, David | News search (GovCon sources) |
+| FAR (Supabase) | API Key | David, James | Regulation citations |
+| Anthropic | API Key | All | Response generation |
+
+---
+
+## Monitoring & Scheduling
+
+### Award Monitor
+Polls FPDS for new contract awards:
+- Agencies: VA, HHS, DOL, DHS, GSA
+- Minimum value: $50K
+- Filters out government-to-government transfers
+- Saves to `seen_awards` to prevent duplicates
+- Maya posts new awards to Slack
+
+### Scheduled Jobs
+| Script | Schedule | Purpose |
+|--------|----------|---------|
+| `award-scheduler.ts` | Mon/Thu 9am | Check for new awards |
+| (planned) | Daily | Competitor news scan |
+| (planned) | Weekly | Pipeline status summary |
