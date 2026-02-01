@@ -64,6 +64,31 @@
 - [x] No false promises: agents don't say "give me 20 minutes" or "I'll check" - they use data they have NOW or say they don't have it
 - [x] Source everything: agents cite FPDS, USASpending, FAR sections, news links
 - [x] Confidence levels: HIGH (official source), MEDIUM (inference), LOW (guess)
+- [x] Article links required: when citing news, must include actual URL
+- [x] Follow-up responses: agents respond to thread questions with substance, not just emoji reactions
+
+### Competitor Intelligence
+- [x] Automatic competitor news search when incumbents/competitors mentioned
+- [x] Searches for: protests, GAO decisions, performance issues, recent wins
+- [x] Knows major GovCon competitors: Booz Allen, Deloitte, SAIC, Leidos, GDIT, etc.
+- [x] Saves intel to `competitor_intel` table for future reference
+- [x] David reports findings naturally with strategic implications
+
+### Proactive Behavior (Connect the Dots)
+All agents now:
+- [x] Surface relevant info beyond the literal question asked
+- [x] Connect patterns and intel across conversations
+- [x] Ask strategic follow-up questions
+- [x] Tag teammates when their input would help
+- [x] Think about timing, dependencies, and next steps
+
+### Domain Expertise Prompts
+Each agent has deep expertise they apply to interpret situations:
+- [x] Maya: Spots wired RFPs, interprets SOW red flags, reads set-aside codes
+- [x] David: Reads FPDS patterns, spots vulnerable incumbents, knows protest dynamics
+- [x] Rosa: Knows prime vs sub strategy, structures teaming agreements, identifies partner red flags
+- [x] James: Assesses win probability, knows bid/no-bid criteria, architects discriminators
+- [x] Patricia: Runs compliance matrices, sets realistic schedules, knows proposal failures
 
 ### Memory System (Supabase Tables)
 - [x] `user_context` - personal info about Lapedra/Tamara
@@ -72,6 +97,8 @@
 - [x] `decision_patterns` - go/no-go tendencies
 - [x] `message_claims` - prevents multiple agents responding
 - [x] `agent_memory` - response logging with sources/confidence
+- [x] `seen_awards` - tracks reported awards (prevents duplicates)
+- [x] `competitor_intel` - stored intel on competitors (protests, performance, wins)
 
 ---
 
@@ -92,8 +119,8 @@
 
 ### Known Limitations
 - FPDS keyword search can't find contract vehicles by name (e.g., "SPRUCE IDIQ") - needs contract number
-- News sources are general - no GovCon-specific sources like OrangeSlices/GovWin yet
-- Thread replies with short answers may not always trigger agent responses
+- ~~News sources are general~~ - Now includes GovCon sources: OrangeSlices, GovConWire, WashTech, FCW, Nextgov
+- ~~Thread replies with short answers may not always trigger agent responses~~ - Fixed: agents respond to follow-ups
 
 ---
 
