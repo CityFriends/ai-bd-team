@@ -25,7 +25,8 @@
     "check-awards": "tsx src/scripts/check-awards.ts",
     "award-scheduler": "tsx src/scripts/award-scheduler.ts",
     "scrape-company": "tsx src/scripts/scrape-company.ts",
-    "onboard": "tsx src/scripts/onboard-company.ts"
+    "onboard": "tsx src/scripts/onboard-company.ts",
+    "import-notion": "tsx src/scripts/import-notion.ts"
   },
   "keywords": [
     "ai",

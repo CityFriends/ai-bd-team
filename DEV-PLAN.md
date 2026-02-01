@@ -176,6 +176,12 @@ Comprehensive docs for repeatable product deployment:
   - 10 case studies (VA, CMS, Maryland, agency work)
   - 4 news items as proposal content
   - Agency experience: VA, CMS, IRS, HHS, Maryland, NY State Parks
+- [x] Notion integration (`npm run import-notion`)
+  - Imports from Contracts Overview → past_performance (22 contracts)
+  - Imports from CRM → teaming_partners (38 partners)
+  - Imports from GSA MAS Rates → labor_rates (13 categories)
+  - Infers agency from contract name, maps fields automatically
+  - Supports incremental updates (won't duplicate on re-run)
 
 ### Priority 3: Memory Persistence
 - [ ] Auto-save personal context when Lapedra/Tamara share something
