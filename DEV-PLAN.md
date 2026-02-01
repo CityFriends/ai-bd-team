@@ -90,6 +90,21 @@ Each agent has deep expertise they apply to interpret situations:
 - [x] James: Assesses win probability, knows bid/no-bid criteria, architects discriminators
 - [x] Patricia: Runs compliance matrices, sets realistic schedules, knows proposal failures
 
+### Strategic Context & Reasoning ✓
+Company profile now includes strategic intelligence:
+- [x] `strategic_goals` - What we're building toward (Innovation Lab, dev past performance)
+- [x] `capability_gaps` - Honest about weaknesses (limited dev PP, no cloud migration yet)
+- [x] `growth_areas` - Where we want contracts to build muscle
+- [x] `innovation_initiatives` - AI BD Team, Qori, Truebid, Innovation Lab
+- [x] `risk_tolerance` - Willing to sub, take lower margins for strategic value
+
+Agent-specific strategic reasoning:
+- [x] Maya: Distinguishes "core fit" vs "strategic fit", flags capability builders
+- [x] David: Honest about gaps, recommends teaming/subbing for stretch opportunities
+- [x] Rosa: Identifies partners to fill gaps, looks for mentor-protégé opportunities
+- [x] James: Weighs strategic value vs win probability, considers Innovation Lab alignment
+- [x] Patricia: Tracks progress on strategic goals, different metrics for capability builders
+
 ### Memory System (Supabase Tables)
 - [x] `user_context` - personal info about Lapedra/Tamara
 - [x] `conversation_memory` - key moments to reference
@@ -194,24 +209,40 @@ Comprehensive docs for repeatable product deployment:
 - [ ] Surface relevant memories in responses ("You mentioned last week...")
 - [ ] Inside jokes get referenced naturally over time
 
-### Priority 4: Proactive Check-ins
-- [ ] Scheduled agent messages (not just reactive)
-- [ ] Patricia: "We haven't talked about that DOL thing in a week"
-- [ ] Maya: "Slow morning on SAM but found this article..."
+### Priority 4: Proactive Check-ins ✓
+- [x] Maya's automated SAM.gov scanner (`npm run maya:scan`)
+  - Weekday scan at 8am (Mon-Fri only)
+  - Posts opportunities 60+ score, immediate for 80+
+  - Weekly summary on Mondays at 8:30am
+  - Quiet morning message when nothing found
+  - Run scheduled: `npm run maya:schedule`
+- [x] Patricia's team management (`npm run patricia:checkin`)
+  - Morning check-in at 9am weekdays
+  - Afternoon nudge check at 2pm for pending items
+  - Tracks opportunities needing decisions
+  - Run scheduled: `npm run patricia:schedule`
+- [x] Opportunity scoring system (`src/config/opportunity-filters.ts`)
+  - 0-100 scoring based on NAICS, keywords, agency, set-aside, timeline
+  - Comprehensive keyword lists for Design, Digital, Software, Strategy
+  - Priority agencies and eligible set-asides
 - [ ] David: "That opportunity we passed on got re-posted"
-- [ ] Implement via Supabase cron or external scheduler
+- [ ] Rosa: Proactive partner check-ins
 
 ### Priority 5: Realistic Availability
 - [ ] Agents occasionally "away" (dentist, kid thing, heads down)
 - [ ] Stagger responses more naturally
 - [ ] "Sorry, just seeing this - was in a meeting"
 
-### Priority 6: Full Opportunity Workflow
-- [ ] Maya finds opp → posts to channel
-- [ ] David auto-researches incumbent, agency
-- [ ] Rosa checks partner options
-- [ ] James synthesizes for go/no-go
-- [ ] Patricia tracks action items
+### Priority 6: Full Opportunity Workflow ✓
+- [x] Maya finds opp → posts to channel
+- [x] David auto-researches incumbent, agency (FPDS, USASpending, news)
+- [x] Rosa checks partner options
+- [x] James synthesizes for go/no-go
+- [x] Patricia tracks action items and summarizes for Lapedra
+- [x] Full system test (`npm run full-system-test`)
+  - 30-second delays between agents for realistic feel
+  - Uses real company data from Supabase
+  - Integrates all external APIs
 - [ ] Store opportunity in Supabase, track through pipeline
 
 ### Priority 7: Refinements
@@ -231,8 +262,18 @@ Comprehensive docs for repeatable product deployment:
 
 ## Running the Agents
 ```bash
-npm run live          # Start all 5 agents
-npm run full-cycle    # Run a demo opportunity cycle
+npm run live              # Start all 5 agents in Slack
+npm run full-system-test  # Run full BD team demo with real data
+
+# Maya's Automated Scanner
+npm run maya:scan         # One-time scan of SAM.gov
+npm run maya:schedule     # Run on schedule (8am Mon-Fri, 8:30am Monday weekly)
+npm run maya:weekly       # Weekly summary only
+
+# Patricia's Team Management
+npm run patricia:checkin  # Morning check-in
+npm run patricia:nudge    # Check for pending items
+npm run patricia:schedule # Run on schedule (9am/2pm weekdays)
 ```
 
 ## Environment Variables Required

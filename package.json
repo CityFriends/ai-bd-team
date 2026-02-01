@@ -27,8 +27,16 @@
     "scrape-company": "tsx src/scripts/scrape-company.ts",
     "onboard": "tsx src/scripts/onboard-company.ts",
     "import-notion": "tsx src/scripts/import-notion.ts",
+    "add-strategic-context": "tsx src/scripts/add-strategic-context.ts",
     "sync": "tsx src/scripts/sync-scheduler.ts",
-    "sync:schedule": "tsx src/scripts/sync-scheduler.ts --schedule"
+    "sync:schedule": "tsx src/scripts/sync-scheduler.ts --schedule",
+    "maya:scan": "tsx src/scripts/maya-scanner.ts",
+    "maya:schedule": "tsx src/scripts/maya-scanner.ts --schedule",
+    "maya:weekly": "tsx src/scripts/maya-scanner.ts --weekly",
+    "patricia:checkin": "tsx src/scripts/patricia-checkin.ts",
+    "patricia:nudge": "tsx src/scripts/patricia-checkin.ts --nudge",
+    "patricia:schedule": "tsx src/scripts/patricia-checkin.ts --schedule",
+    "full-system-test": "tsx src/scripts/full-system-test.ts"
   },
   "keywords": [
     "ai",

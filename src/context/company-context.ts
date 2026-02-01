@@ -23,6 +23,12 @@ export interface CompanyProfile {
   website?: string;
   cage_code?: string;
   uei?: string;
+  // Strategic context
+  strategic_goals?: string[];
+  capability_gaps?: string[];
+  growth_areas?: string[];
+  innovation_initiatives?: string[];
+  risk_tolerance?: string;
 }
 
 export interface PastPerformance {
@@ -192,6 +198,70 @@ TEAM SIZE: ${profile.team_size || 'Unknown'}
 LOCATION: ${profile.location || 'Unknown'}
 `;
 
+  // Add strategic context for all agents
+  if (profile.strategic_goals?.length || profile.capability_gaps?.length) {
+    prompt += `
+=== STRATEGIC CONTEXT (IMPORTANT) ===
+
+STRATEGIC GOALS (What we're building toward):
+${profile.strategic_goals?.map(g => `• ${g}`).join('\n') || '• Not defined'}
+
+CAPABILITY GAPS (Be honest about these):
+${profile.capability_gaps?.map(g => `• ${g}`).join('\n') || '• None identified'}
+
+GROWTH AREAS (Where we want to build experience):
+${profile.growth_areas?.map(g => `• ${g}`).join('\n') || '• Not defined'}
+
+INNOVATION INITIATIVES:
+${profile.innovation_initiatives?.map(i => `• ${i}`).join('\n') || '• None'}
+
+RISK TOLERANCE:
+${profile.risk_tolerance || 'Not specified'}
+
+`;
+
+    // Agent-specific strategic reasoning guidance
+    const strategicGuidance: Record<string, string> = {
+      Maya: `STRATEGIC REASONING FOR MAYA:
+• Flag opportunities that build strategic capabilities even if not a perfect fit
+• Distinguish between "core fit" (our sweet spot) and "strategic fit" (builds capabilities we need)
+• For stretch opportunities: "This is mostly dev work and we're light there, BUT it could be a good sub opportunity to build that past performance"
+• For AI/ML work: "This mentions AI/ML - could be a pilot for Innovation Lab capabilities"
+• Be honest about our gaps while still seeing opportunity`,
+
+      David: `STRATEGIC REASONING FOR DAVID:
+• Be honest about our capability gaps when analyzing opportunities
+• For stretch opportunities: "We don't have the dev past performance to prime this. But if we sub to someone strong..."
+• Assess risk vs reward: "This is a reach, but winning it would open doors"
+• Consider strategic value, not just technical fit
+• When we're weak: recommend teaming or subbing, don't just say no`,
+
+      Rosa: `STRATEGIC REASONING FOR ROSA:
+• Think about teaming to fill our gaps
+• For capabilities we lack: "We'd need a dev partner to be credible here. Nava or Skylight could cover that."
+• Look for mentor-protégé opportunities
+• Identify partners who could help us grow, not just win
+• Consider: "This could be a good opportunity to sub and learn"`,
+
+      James: `STRATEGIC REASONING FOR JAMES:
+• Weigh strategic value, not just win probability
+• Sometimes go even when probability is low: "Low win probability, but high strategic value. I say we go."
+• For capability builders: "This builds the dev past performance we need. Worth the investment."
+• Consider Innovation Lab alignment: "This AI work could feed directly into the Innovation Lab. Even if margins are thin, the learning is valuable."
+• Use terms: "capability builder" vs "core win" - different success metrics`,
+
+      Patricia: `STRATEGIC REASONING FOR PATRICIA:
+• Track progress on strategic goals across opportunities
+• Note patterns: "We've bid 3 dev opportunities this quarter. Let's make sure we're learning from each."
+• Remind team of strategic priorities: "Reminder: we said we wanted to build AI past performance. This one counts."
+• Different success metrics for capability builders vs core wins
+• Track which opportunities advance which strategic goals`,
+    };
+
+    prompt += strategicGuidance[agentRole] || '';
+    prompt += '\n';
+  }
+
   // Add past performance for analysts/strategists
   if (['David', 'James', 'Rosa'].includes(agentRole) && context.pastPerformance.length > 0) {
     prompt += `\n\nPAST PERFORMANCE (Most Recent):\n`;
@@ -234,12 +304,26 @@ LOCATION: ${profile.location || 'Unknown'}
   prompt += `
 === END COMPANY CONTEXT ===
 
-Use this company context when:
-- Evaluating fit for opportunities (match our NAICS, capabilities, agency experience)
-- Assessing competitive position (leverage our differentiators, past performance)
-- Suggesting teaming strategies (know our partners, what we need)
-- Making go/no-go recommendations (check against no-bid criteria)
-- Discussing proposals (reference real case studies, key personnel)
+OPPORTUNITY EVALUATION FRAMEWORK:
+
+1. CORE FIT (Our sweet spot - high confidence):
+   - Match our NAICS, capabilities, agency experience
+   - Leverage our differentiators and past performance
+   - We can prime, strong win probability
+
+2. STRATEGIC FIT (Builds capabilities we need - worth the stretch):
+   - Aligns with strategic goals or growth areas
+   - Could sub to build experience
+   - Lower margin OK if it advances our position
+   - Worth teaming to fill gaps
+
+3. NO-BID (Walk away):
+   - Triggers no-bid criteria
+   - No strategic value
+   - Can't team to cover gaps
+   - Distraction from strategic priorities
+
+Always consider: Is this a "core win" or a "capability builder"? Different success metrics apply.
 `;
 
   return prompt;
