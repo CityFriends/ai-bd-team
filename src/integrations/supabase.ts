@@ -369,3 +369,279 @@ export async function getAgentMemory(
   }
   return data || [];
 }
+
+// Message coordination - prevent multiple agents responding to same message
+export interface MessageClaim {
+  message_ts: string;
+  thread_ts?: string;
+  agent: string;
+  claimed_at: string;
+  responded: boolean;
+}
+
+export async function claimMessage(
+  messageTs: string,
+  agent: string,
+  threadTs?: string
+): Promise<boolean> {
+  try {
+    // Try to insert a claim - will fail if message already claimed
+    const { error } = await getSupabase()
+      .from('message_claims')
+      .insert({
+        message_ts: messageTs,
+        thread_ts: threadTs,
+        agent,
+        claimed_at: new Date().toISOString(),
+        responded: false,
+      });
+
+    if (error) {
+      // Unique constraint violation = already claimed
+      if (error.code === '23505') {
+        return false;
+      }
+      // Table might not exist - allow response
+      console.warn('Could not claim message:', error.message);
+      return true;
+    }
+    return true;
+  } catch (err) {
+    console.warn('Could not claim message:', err);
+    return true; // Allow response if claiming fails
+  }
+}
+
+export async function getMessageClaim(messageTs: string): Promise<MessageClaim | null> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('message_claims')
+      .select()
+      .eq('message_ts', messageTs)
+      .single();
+
+    if (error) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+export async function markMessageResponded(messageTs: string, agent: string): Promise<void> {
+  try {
+    await getSupabase()
+      .from('message_claims')
+      .update({ responded: true })
+      .eq('message_ts', messageTs)
+      .eq('agent', agent);
+  } catch (err) {
+    console.warn('Could not mark message responded:', err);
+  }
+}
+
+// Get recent responses in a thread (to check if another agent just responded)
+export async function getRecentThreadResponses(
+  threadTs: string,
+  withinSeconds: number = 30
+): Promise<AgentMemoryEntry[]> {
+  const since = new Date(Date.now() - withinSeconds * 1000).toISOString();
+
+  try {
+    const { data, error } = await getSupabase()
+      .from('agent_memory')
+      .select()
+      .eq('thread_ts', threadTs)
+      .gte('created_at', since)
+      .order('created_at', { ascending: false });
+
+    if (error) return [];
+    return data || [];
+  } catch {
+    return [];
+  }
+}
+
+// ============================================
+// CONVERSATIONAL MEMORY FUNCTIONS
+// ============================================
+
+// User context (personal info about Lapedra/Tamara)
+export interface UserContext {
+  id?: string;
+  user_name: string;
+  context_type: 'personal' | 'preference' | 'pattern' | 'family' | 'mood';
+  content: string;
+  mentioned_by?: string;
+  still_relevant?: boolean;
+}
+
+export async function saveUserContext(context: UserContext): Promise<void> {
+  try {
+    await getSupabase().from('user_context').insert({
+      ...context,
+      mentioned_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn('Could not save user context:', err);
+  }
+}
+
+export async function getUserContext(userName: string, limit: number = 10): Promise<UserContext[]> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('user_context')
+      .select()
+      .eq('user_name', userName)
+      .eq('still_relevant', true)
+      .order('mentioned_at', { ascending: false })
+      .limit(limit);
+
+    if (error) return [];
+    return data || [];
+  } catch {
+    return [];
+  }
+}
+
+// Conversation memory (key moments)
+export interface ConversationMemory {
+  id?: string;
+  memory_type: 'milestone' | 'decision' | 'joke' | 'frustration' | 'win' | 'loss';
+  summary: string;
+  full_context?: string;
+  participants?: string[];
+  importance?: number;
+}
+
+export async function saveConversationMemory(memory: ConversationMemory): Promise<void> {
+  try {
+    await getSupabase().from('conversation_memory').insert({
+      ...memory,
+      created_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn('Could not save conversation memory:', err);
+  }
+}
+
+export async function getConversationMemories(limit: number = 10): Promise<ConversationMemory[]> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('conversation_memory')
+      .select()
+      .order('importance', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) return [];
+    return data || [];
+  } catch {
+    return [];
+  }
+}
+
+// Inside jokes
+export interface InsideJoke {
+  id?: string;
+  reference: string;
+  full_context: string;
+  origin_story?: string;
+  times_used?: number;
+}
+
+export async function saveInsideJoke(joke: InsideJoke): Promise<void> {
+  try {
+    await getSupabase().from('inside_jokes').insert({
+      ...joke,
+      created_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn('Could not save inside joke:', err);
+  }
+}
+
+export async function getInsideJokes(limit: number = 5): Promise<InsideJoke[]> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('inside_jokes')
+      .select()
+      .order('times_used', { ascending: false })
+      .limit(limit);
+
+    if (error) return [];
+    return data || [];
+  } catch {
+    return [];
+  }
+}
+
+export async function incrementJokeUsage(reference: string): Promise<void> {
+  try {
+    const { data } = await getSupabase()
+      .from('inside_jokes')
+      .select('times_used')
+      .eq('reference', reference)
+      .single();
+
+    if (data) {
+      await getSupabase()
+        .from('inside_jokes')
+        .update({ times_used: (data.times_used || 0) + 1, last_used: new Date().toISOString() })
+        .eq('reference', reference);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+// Decision patterns
+export interface DecisionPattern {
+  decision: 'go' | 'no_go' | 'passed';
+  reasoning?: string;
+  agency?: string;
+  opportunity_type?: string;
+  key_factors?: string[];
+}
+
+export async function saveDecisionPattern(pattern: DecisionPattern): Promise<void> {
+  try {
+    await getSupabase().from('decision_patterns').insert({
+      ...pattern,
+      created_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn('Could not save decision pattern:', err);
+  }
+}
+
+export async function getDecisionPatterns(limit: number = 10): Promise<DecisionPattern[]> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('decision_patterns')
+      .select()
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) return [];
+    return data || [];
+  } catch {
+    return [];
+  }
+}
+
+// Get all context for conversation (combines everything)
+export async function getConversationalContext(): Promise<{
+  userContext: UserContext[];
+  memories: ConversationMemory[];
+  insideJokes: InsideJoke[];
+  decisionPatterns: DecisionPattern[];
+}> {
+  const [userContext, memories, insideJokes, decisionPatterns] = await Promise.all([
+    getUserContext('lapedra', 5),
+    getConversationMemories(5),
+    getInsideJokes(3),
+    getDecisionPatterns(5),
+  ]);
+
+  return { userContext, memories, insideJokes, decisionPatterns };
+}

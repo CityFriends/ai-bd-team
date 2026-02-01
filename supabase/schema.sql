@@ -200,3 +200,119 @@ ALTER TABLE research_cache ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Service role has full access to research_cache" ON research_cache
   FOR ALL USING (auth.role() = 'service_role');
+
+-- Message coordination (prevent multiple agents responding to same message)
+CREATE TABLE IF NOT EXISTS message_claims (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  message_ts TEXT NOT NULL,
+  thread_ts TEXT,
+  agent TEXT NOT NULL,
+  claimed_at TIMESTAMPTZ DEFAULT NOW(),
+  responded BOOLEAN DEFAULT FALSE,
+  UNIQUE(message_ts) -- Only one agent can claim a message
+);
+
+-- Indexes for message_claims
+CREATE INDEX IF NOT EXISTS idx_message_claims_ts ON message_claims(message_ts);
+CREATE INDEX IF NOT EXISTS idx_message_claims_thread ON message_claims(thread_ts);
+CREATE INDEX IF NOT EXISTS idx_message_claims_claimed ON message_claims(claimed_at);
+
+-- RLS for message_claims
+ALTER TABLE message_claims ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service role has full access to message_claims" ON message_claims
+  FOR ALL USING (auth.role() = 'service_role');
+
+-- Auto-cleanup old claims (messages older than 1 hour)
+-- Run this periodically or set up a cron job
+-- DELETE FROM message_claims WHERE claimed_at < NOW() - INTERVAL '1 hour';
+
+-- ============================================
+-- ADVANCED CONVERSATIONAL MEMORY
+-- ============================================
+
+-- Personal context about Lapedra and Tamara (things they share about their lives)
+CREATE TABLE IF NOT EXISTS user_context (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_name TEXT NOT NULL, -- 'lapedra' or 'tamara'
+  context_type TEXT NOT NULL, -- 'personal', 'preference', 'pattern', 'family', 'mood'
+  content TEXT NOT NULL, -- what was shared
+  mentioned_by TEXT, -- which agent heard this
+  mentioned_at TIMESTAMPTZ DEFAULT NOW(),
+  still_relevant BOOLEAN DEFAULT TRUE,
+  expires_at TIMESTAMPTZ -- optional expiry for temporary context
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_context_user ON user_context(user_name);
+CREATE INDEX IF NOT EXISTS idx_user_context_type ON user_context(context_type);
+
+-- Decision patterns (what gets go/no-go and why)
+CREATE TABLE IF NOT EXISTS decision_patterns (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  decision TEXT NOT NULL, -- 'go', 'no_go', 'passed'
+  reasoning TEXT,
+  agency TEXT,
+  opportunity_type TEXT,
+  key_factors TEXT[], -- what drove the decision
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_decision_patterns_decision ON decision_patterns(decision);
+
+-- Conversation memory (key moments to reference later)
+CREATE TABLE IF NOT EXISTS conversation_memory (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  memory_type TEXT NOT NULL, -- 'milestone', 'decision', 'joke', 'frustration', 'win', 'loss'
+  summary TEXT NOT NULL, -- short description
+  full_context TEXT, -- longer context if needed
+  participants TEXT[], -- who was involved
+  thread_ts TEXT,
+  importance INTEGER DEFAULT 5, -- 1-10, higher = more likely to reference
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_memory_type ON conversation_memory(memory_type);
+CREATE INDEX IF NOT EXISTS idx_conversation_memory_importance ON conversation_memory(importance DESC);
+
+-- Inside jokes and shared references
+CREATE TABLE IF NOT EXISTS inside_jokes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  reference TEXT NOT NULL, -- the shorthand reference
+  full_context TEXT NOT NULL, -- what it actually means
+  origin_story TEXT, -- how it started
+  times_used INTEGER DEFAULT 1,
+  last_used TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_inside_jokes_used ON inside_jokes(times_used DESC);
+
+-- Agent availability (realistic schedules)
+CREATE TABLE IF NOT EXISTS agent_availability (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  agent TEXT NOT NULL,
+  status TEXT NOT NULL, -- 'available', 'busy', 'away', 'offline'
+  reason TEXT, -- 'dentist appointment', 'kid thing', 'heads down on something'
+  until_time TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_availability_agent ON agent_availability(agent);
+
+-- RLS policies
+ALTER TABLE user_context ENABLE ROW LEVEL SECURITY;
+ALTER TABLE decision_patterns ENABLE ROW LEVEL SECURITY;
+ALTER TABLE conversation_memory ENABLE ROW LEVEL SECURITY;
+ALTER TABLE inside_jokes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE agent_availability ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service role has full access to user_context" ON user_context
+  FOR ALL USING (auth.role() = 'service_role');
+CREATE POLICY "Service role has full access to decision_patterns" ON decision_patterns
+  FOR ALL USING (auth.role() = 'service_role');
+CREATE POLICY "Service role has full access to conversation_memory" ON conversation_memory
+  FOR ALL USING (auth.role() = 'service_role');
+CREATE POLICY "Service role has full access to inside_jokes" ON inside_jokes
+  FOR ALL USING (auth.role() = 'service_role');
+CREATE POLICY "Service role has full access to agent_availability" ON agent_availability
+  FOR ALL USING (auth.role() = 'service_role');

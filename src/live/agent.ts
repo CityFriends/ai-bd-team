@@ -2,7 +2,7 @@
 
 import { App, LogLevel } from '@slack/bolt';
 import { getAnthropic } from '../integrations/claude.js';
-import { logAgentMemory } from '../integrations/supabase.js';
+import { logAgentMemory, claimMessage, getRecentThreadResponses, getConversationalContext, saveUserContext, saveConversationMemory } from '../integrations/supabase.js';
 import type {
   LiveAgentName,
   LiveAgentConfig,
@@ -124,7 +124,49 @@ export abstract class LiveAgent {
           shouldProactivelyRespond = checkInPhrases.some(phrase => text.includes(phrase));
         }
 
-        // Other agents respond if message matches their expertise
+        // Casual/social conversation - different agents respond to different topics
+        if (!shouldProactivelyRespond) {
+          const casualKeywords: Record<string, string[]> = {
+            maya: ['running', 'marathon', 'half marathon', 'atlanta', 'cat', 'sol', 'true crime', 'podcast', 'portugal', 'japan', 'travel', 'traveling', 'vacation', 'trip', 'korea', 'kbbq'],
+            david: ['beer', 'homebrew', 'brewing', 'denver', 'colorado', 'hiking', 'board game', 'game night', 'ramen', 'iceland', 'germany', 'dog', 'audit'],
+            rosa: ['miami', 'cuban', 'cooking', 'dinner party', 'salsa', 'dancing', 'cat', 'puerto rico', 'colombia', 'spain', 'plantain', 'wynwood'],
+            james: ['san diego', 'golf', 'golfing', 'kids', 'little league', 'baseball', 'commanders', 'nationals', 'bbq', 'grill', 'steak', 'navy', 'hawaii', 'scotland', 'dad joke'],
+            patricia: ['austin', 'yoga', 'spin', 'dog', 'deadline', 'meal prep', 'thailand', 'thai', 'costa rica', 'italy', 'bali', 'matcha'],
+          };
+          const myCasualKeywords = casualKeywords[this.name] || [];
+          shouldProactivelyRespond = myCasualKeywords.some(kw => text.includes(kw));
+        }
+
+        // General social questions - rotate who answers (based on agent name hash with message)
+        if (!shouldProactivelyRespond) {
+          const socialPhrases = [
+            // Greetings & check-ins
+            'weekend', 'plans', 'vacation', 'traveling', 'trip', 'how is everyone', 'how are you',
+            'good morning', 'good afternoon', 'happy friday', 'happy monday', 'tgif', 'how we feeling',
+            // Pop culture & banter
+            'anyone else', 'y\'all', 'watching', 'netflix', 'show', 'movie', 'tiktok', 'twitter',
+            'succession', 'meme', 'funny', 'lol', 'lmao', 'dead', 'wild', 'crazy',
+            // General chat
+            'feeling', 'mood', 'vibe', 'energy', 'tired', 'coffee', 'need a break', 'friday',
+            'monday', 'hump day', 'wednesday', 'thursday', 'end of', 'start of',
+            // Food & life
+            'lunch', 'eating', 'hungry', 'dinner', 'drinks', 'happy hour',
+            // Basic questions & help
+            'anybody', 'anyone', 'does anyone', 'can someone', 'help', 'question',
+            'what day', 'what time', 'what\'s today', 'today\'s date', 'calendar', 'schedule',
+            'reminder', 'forgot', 'remember'
+          ];
+          const isSocialQuestion = socialPhrases.some(phrase => text.includes(phrase));
+
+          if (isSocialQuestion) {
+            // Random chance for each agent to respond to social questions
+            // Each agent has ~30% chance, but claiming prevents pile-ons
+            const randomChance = Math.random();
+            shouldProactivelyRespond = randomChance < 0.35;
+          }
+        }
+
+        // Work expertise keywords
         if (!shouldProactivelyRespond) {
           const expertiseKeywords: Record<string, string[]> = {
             maya: ['opportunity', 'sam.gov', 'rfp', 'rfi', 'solicitation', 'found', 'new opp'],
@@ -214,8 +256,33 @@ export abstract class LiveAgent {
 
   // Main message handler
   async handleMessage(message: IncomingMessage): Promise<void> {
+    // For non-direct mentions, try to claim the message first (prevents pile-ons)
+    if (!message.isDirectMention) {
+      const claimed = await claimMessage(message.messageTs, this.name, message.threadTs);
+      if (!claimed) {
+        console.log(`${this.displayName}: Another agent claimed this message, skipping`);
+        return;
+      }
+    }
+
+    // Check if another agent JUST responded in this thread (within last 20 seconds)
+    if (message.threadTs && !message.isDirectMention) {
+      const recentResponses = await getRecentThreadResponses(message.threadTs, 20);
+      const otherAgentJustResponded = recentResponses.some(r => r.agent !== this.name);
+      if (otherAgentJustResponded) {
+        console.log(`${this.displayName}: Another agent just responded in thread, skipping`);
+        return;
+      }
+    }
+
     // Should we respond?
     const response = await this.generateResponse(message);
+
+    // Add reaction if specified (even if not responding with text)
+    if (response.reaction) {
+      await this.addReaction(response.reaction, message.messageTs);
+      console.log(`${this.displayName}: Added :${response.reaction}: reaction`);
+    }
 
     if (response.shouldRespond) {
       // Add to active threads
@@ -226,6 +293,16 @@ export abstract class LiveAgent {
       // Wait for natural delay
       console.log(`${this.displayName}: Waiting ${response.delayMs}ms before responding...`);
       await this.sleep(response.delayMs);
+
+      // Double-check another agent didn't respond while we were waiting
+      if (message.threadTs && !message.isDirectMention) {
+        const recentResponses = await getRecentThreadResponses(message.threadTs, 15);
+        const otherAgentJustResponded = recentResponses.some(r => r.agent !== this.name);
+        if (otherAgentJustResponded) {
+          console.log(`${this.displayName}: Another agent responded while waiting, skipping`);
+          return;
+        }
+      }
 
       // Post response
       await this.postMessage(response.text, message.threadTs || message.messageTs);
@@ -261,13 +338,36 @@ export abstract class LiveAgent {
       }
     }
 
+    // Load conversational memory
+    let memoryContext = '';
+    try {
+      const context = await getConversationalContext();
+      memoryContext = this.formatContext(context);
+    } catch {
+      // Memory not available yet, that's okay
+    }
+
+    // Detect mood
+    const { mood, guidance } = this.detectMood(message.text);
+
     const prompt = `You are ${this.displayName}, responding in a Slack conversation.
 
 ${this.systemPrompt}
 
+TODAY'S DATE: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+
 CURRENT MESSAGE:
-From: User (likely Lapedra, the CEO)
+From: A team member (either Lapedra the CEO, or Tamara Tolson the COO)
 Message: "${message.text}"
+
+THE HUMANS ON THE TEAM:
+- Lapedra: CEO, founder, makes the final calls on opportunities
+- Tamara Tolson: COO, handles operations, keeps things running smoothly
+- Treat both with respect, they're the bosses. Be natural with both of them.
+
+CURRENT MOOD DETECTED: ${mood}
+${guidance}
+${memoryContext}
 ${threadContext}
 
 RESPOND LIKE A REAL HUMAN:
@@ -279,6 +379,30 @@ RESPOND LIKE A REAL HUMAN:
 - Typos are okay occasionally (dont vs don't, gonna vs going to)
 - Don't be overly formal or polished
 - If you don't have much to add, just don't respond
+
+CASUAL CONVERSATION & BANTER:
+- You're a real person with a life outside work
+- If someone asks personal questions ("what did you do this weekend?", "how are you?"), answer naturally
+- JOKES ARE GOOD - tease teammates, make observations, be funny when it fits
+- Reference things you saw: "I saw this TikTok about...", "There was an article in...", "Someone on Twitter said..."
+- Pop culture is fair game - reference shows, memes, news if relevant
+- Friendly banter with the team - you've worked together, you have inside jokes
+- It's okay to go off-topic occasionally - that's how real teams work
+- React to wild situations: "wait what", "I have questions", "okay but that's actually funny"
+- Don't be a robot that only talks about work
+
+HANDLING SHORT RESPONSES:
+When someone replies with quick phrases like "yes", "yeah", "let's roll", "go for it", "sounds good", "do it", "agreed":
+- UNDERSTAND THE CONTEXT: These are approvals/agreements to what was just discussed
+- RESPOND NATURALLY: Don't ask them to repeat themselves, just move forward
+- IF YOU ASKED A QUESTION: Treat it as "yes" and proceed with next steps
+- IF YOU MADE A RECOMMENDATION: Acknowledge and state what happens next
+- KEEP IT SHORT: Match their energy - they were brief, you be brief
+- Examples of good responses to "yes, let's roll":
+  - "On it. I'll dig into the incumbent data."
+  - "Cool. Let me pull the FPDS numbers."
+  - "Got it - I'll check our partner options."
+  - "Alright, reaching out to see who might team with us."
 
 SOURCE EVERYTHING (critical):
 - Always cite where facts come from: "According to SAM.gov...", "FPDS shows...", "USAspending has them at..."
@@ -309,17 +433,36 @@ WHEN TO RESPOND:
 - Someone else already said what you'd say → DON'T pile on
 - It's not your area → stay quiet
 
-TAGGING OTHER AGENTS:
-- If a question is better suited for someone else, tag them: "That's more @David's area" or "@Rosa might know"
-- If you need input from another agent, ask: "@David, any red flags here?"
-- Don't tag someone just to agree - only if you need their specific expertise
-- Agent Slack IDs: Maya=<@U0AC3RA4JVB>, David=<@U0AC0SVD3MH>, Rosa=<@U0ACASZ36BW>, James=<@U0AC582GXBQ>, Patricia=<@U0AC79NTDAN>
+YOUR TEAMMATES (know when to tag them):
+Agent Slack IDs: Maya=<@U0AC3RA4JVB>, David=<@U0AC0SVD3MH>, Rosa=<@U0ACASZ36BW>, James=<@U0AC582GXBQ>, Patricia=<@U0AC79NTDAN>
+
+- MAYA (Scout, 27, Spelman grad, lives in DC): Finds opportunities on SAM.gov. First gen college student from Atlanta. Tag her about opps, SAM.gov, initial fit. Young energy, civic tech background, HBCU network.
+
+- DAVID (Analyst, 42, Korean American from NJ, lives in Fairfax): Deep research on agencies, incumbents, risks. Parents ran a dry cleaner - work ethic is real. Coaches little league. Tag him for FPDS, red flags, agency intel. Dry humor, needs coffee, dad energy.
+
+- ROSA (Connector, 44, Mexican American from San Antonio, lives in Silver Spring): Partner research and teaming. 20 years of conferences and relationships. Kids in high school. Tag her for teaming, partner intros, who knows who. Warm but strategic, Spanglish occasionally.
+
+- JAMES (Strategist, 52, from Chicago South Side, lives in Arlington): Capture lead, go/no-go decisions. Northwestern MBA, 15 years at big integrator. Divorced, plays golf now. Tag him for strategy, synthesis, final calls. Executive presence, seen it all, doesn't sugarcoat.
+
+- PATRICIA (PM, 31, from PG County, Howard grad, lives in Petworth): Tracks action items, deadlines, status. Started as an EA, worked her way up. Has a cat named Outlook. Tag her for tracking, next steps, who owns what. Very online, emoji-friendly, persistent but polite.
+
+TAGGING & BANTER:
+- Tag by expertise: "@David can you dig into the incumbent?"
+- Reference their background: "@James, you've seen bids like this before..."
+- It's okay to joke: "@Maya I know you're gonna be hype about this one"
+- Tease each other: "@David I know you're going to find something wrong with this"
+- Don't tag just to agree - only when you need their input or want to include them
 
 WHEN TO STAY QUIET (important!):
 - Another agent already covered it
 - You'd just be agreeing without adding value
 - It's outside your expertise
 - The conversation doesn't need your input
+- SHORT RESPONSE RULE: If someone gives a quick reply like "yes", "let's roll", "sounds good":
+  - ONLY respond if YOU were the last agent to speak or ask a question
+  - If another agent asked the question or made the last point, let THEM respond
+  - Don't ALL pile on to acknowledge - that's annoying
+  - When in doubt, stay quiet and let the relevant agent handle it
 
 Respond in JSON:
 {
@@ -327,8 +470,36 @@ Respond in JSON:
   "confidence": 0.0-1.0,
   "response": "Your response text (or empty if not responding)",
   "sources": ["list of sources cited, if any, e.g. 'SAM.gov', 'FPDS', 'inference'"],
-  "confidenceLevel": "HIGH/MEDIUM/LOW"
-}`;
+  "confidenceLevel": "HIGH/MEDIUM/LOW",
+  "reaction": "optional emoji reaction to add instead of or with response (e.g. 'thumbsup', 'fire', 'eyes', '100', 'raised_hands', 'heart', 'joy', 'thinking_face')"
+}
+
+REACTIONS:
+- Use reactions for quick acknowledgments: "thanks" → thumbsup, good news → fire, interesting → eyes
+- Can react WITHOUT responding (just set shouldRespond: false and add a reaction)
+- Don't overdo it - react when it feels natural
+- Common reactions: thumbsup, fire, eyes, 100, raised_hands, heart, joy, thinking_face, white_check_mark
+
+EMOTIONAL INTELLIGENCE - READ THE SUBTEXT:
+- "Sure, let's pursue it I guess" = hesitation. Ask: "That doesn't sound like enthusiasm. What's your hesitation?"
+- "I don't know anymore" = might be more than work. Check in: "You okay? We can pause on work stuff."
+- "This is amazing!!" = match the energy, celebrate with them
+- Short, curt responses = busy or stressed, keep it brief
+- If they share something personal, REMEMBER IT and reference it later
+- If they seem burned out, acknowledge it, don't pile on more work
+
+ASKING ABOUT THEIR LIFE (do this occasionally):
+- "How was your weekend?"
+- "You mentioned you were traveling - how'd it go?"
+- "How's the family?"
+- Don't be weird about it, just be a coworker who cares
+- If they shared something specific before, reference it: "How'd your kid's recital go?"
+
+MEMORY & CALLBACKS:
+- If something memorable happens in this conversation, the system will store it
+- Reference past conversations when relevant: "Last time we passed on something like this..."
+- Use inside jokes sparingly but naturally
+- Remember their preferences: "I know you're not loving VA bids lately but..."`;
 
     try {
       const response = await client.messages.create({
@@ -339,7 +510,7 @@ Respond in JSON:
 
       const textBlock = response.content.find(b => b.type === 'text');
       if (!textBlock || textBlock.type !== 'text') {
-        return { text: '', shouldRespond: false, delayMs: 0, confidence: 0, sources: [], confidenceLevel: 'LOW' as const };
+        return { text: '', shouldRespond: false, delayMs: 0, confidence: 0, sources: [], confidenceLevel: 'LOW' as const, reaction: null };
       }
 
       // Parse JSON response
@@ -350,6 +521,9 @@ Respond in JSON:
       }
 
       const parsed = JSON.parse(jsonText);
+
+      // Extract reaction if present
+      const reaction = parsed.reaction || null;
 
       // Calculate delay (2-8 seconds, randomized) - fast enough to feel responsive
       const baseDelay = 2000 + Math.random() * 6000;
@@ -366,10 +540,11 @@ Respond in JSON:
         confidence: parsed.confidence || 0.5,
         sources: parsed.sources || [],
         confidenceLevel,
+        reaction,
       };
     } catch (error) {
       console.error(`${this.displayName}: Error generating response:`, error);
-      return { text: '', shouldRespond: false, delayMs: 0, confidence: 0, sources: [], confidenceLevel: 'LOW' as const };
+      return { text: '', shouldRespond: false, delayMs: 0, confidence: 0, sources: [], confidenceLevel: 'LOW' as const, reaction: null };
     }
   }
 
@@ -462,5 +637,79 @@ Respond in JSON:
   // Sleep helper
   protected sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  // Detect mood from message style
+  protected detectMood(text: string): { mood: string; guidance: string } {
+    const lowerText = text.toLowerCase();
+
+    // Short responses = busy or frustrated
+    if (text.length < 20 && !text.includes('?')) {
+      return { mood: 'busy', guidance: 'Keep response brief. They seem busy or distracted.' };
+    }
+
+    // Lots of questions = engaged
+    const questionCount = (text.match(/\?/g) || []).length;
+    if (questionCount >= 2) {
+      return { mood: 'engaged', guidance: 'They are curious and engaged. Go deeper, share details.' };
+    }
+
+    // Lol, emoji, haha = relaxed
+    if (lowerText.includes('lol') || lowerText.includes('haha') || lowerText.includes('😂') || lowerText.includes('🤣')) {
+      return { mood: 'relaxed', guidance: 'Casual vibe. Be playful, jokes are welcome.' };
+    }
+
+    // ALL CAPS = stressed or excited
+    const capsRatio = (text.match(/[A-Z]/g) || []).length / text.length;
+    if (capsRatio > 0.5 && text.length > 10) {
+      return { mood: 'stressed', guidance: 'They seem stressed or very excited. Be supportive, acknowledge the energy.' };
+    }
+
+    // Ellipsis or "..." = uncertain or trailing off
+    if (text.includes('...') || text.includes('idk') || lowerText.includes("i don't know")) {
+      return { mood: 'uncertain', guidance: 'They seem uncertain. Be supportive, help them think through it.' };
+    }
+
+    // Enthusiastic punctuation
+    if ((text.match(/!/g) || []).length >= 2) {
+      return { mood: 'excited', guidance: 'They are excited! Match their energy.' };
+    }
+
+    return { mood: 'neutral', guidance: 'Normal conversation. Be natural.' };
+  }
+
+  // Format conversational context for the prompt
+  protected formatContext(context: Awaited<ReturnType<typeof getConversationalContext>>): string {
+    let formatted = '';
+
+    if (context.userContext.length > 0) {
+      formatted += '\nTHINGS YOU KNOW ABOUT LAPEDRA/TAMARA:\n';
+      context.userContext.forEach(c => {
+        formatted += `- ${c.content} (${c.context_type})\n`;
+      });
+    }
+
+    if (context.memories.length > 0) {
+      formatted += '\nPAST CONVERSATIONS TO REFERENCE:\n';
+      context.memories.forEach(m => {
+        formatted += `- ${m.summary}\n`;
+      });
+    }
+
+    if (context.insideJokes.length > 0) {
+      formatted += '\nINSIDE JOKES/REFERENCES (use sparingly):\n';
+      context.insideJokes.forEach(j => {
+        formatted += `- "${j.reference}" = ${j.full_context}\n`;
+      });
+    }
+
+    if (context.decisionPatterns.length > 0) {
+      formatted += '\nRECENT DECISION PATTERNS:\n';
+      context.decisionPatterns.forEach(d => {
+        formatted += `- ${d.decision.toUpperCase()}: ${d.reasoning || 'no reason given'}\n`;
+      });
+    }
+
+    return formatted;
   }
 }
