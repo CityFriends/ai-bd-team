@@ -270,7 +270,7 @@ export abstract class LiveAgent {
 
     // Check for @mentions by Slack user ID (would need to map these)
     // For now, check for name mentions
-    const agents: LiveAgentName[] = ['maya', 'david', 'rosa', 'james', 'patricia'];
+    const agents: LiveAgentName[] = ['maya', 'david', 'rosa', 'james', 'patricia', 'jodie'];
 
     for (const agent of agents) {
       if (lowerText.includes(`@${agent}`) || lowerText.includes(`<@`) && this.name === agent) {
@@ -559,7 +559,7 @@ WHEN TO RESPOND:
 - It's not your area → stay quiet
 
 YOUR TEAMMATES (know when to tag them):
-Agent Slack IDs: Maya=<@U0AC3RA4JVB>, David=<@U0AC0SVD3MH>, Rosa=<@U0ACASZ36BW>, James=<@U0AC582GXBQ>, Patricia=<@U0AC79NTDAN>
+Agent Slack IDs: Maya=<@U0AC3RA4JVB>, David=<@U0AC0SVD3MH>, Rosa=<@U0ACASZ36BW>, James=<@U0AC582GXBQ>, Patricia=<@U0AC79NTDAN>, Jodie=<@U0ACP8LKFB3>
 
 - MAYA (Scout, 27, Spelman grad, lives in DC): Finds opportunities on SAM.gov. First gen college student from Atlanta. Tag her about opps, SAM.gov, initial fit. Young energy, civic tech background, HBCU network.
 
@@ -570,6 +570,8 @@ Agent Slack IDs: Maya=<@U0AC3RA4JVB>, David=<@U0AC0SVD3MH>, Rosa=<@U0ACASZ36BW>,
 - JAMES (Strategist, 52, from Chicago South Side, lives in Arlington): Capture lead, go/no-go decisions. Northwestern MBA, 15 years at big integrator. Divorced, plays golf now. Tag him for strategy, synthesis, final calls. Executive presence, seen it all, doesn't sugarcoat.
 
 - PATRICIA (PM, 31, from PG County, Howard grad, lives in Petworth): Tracks action items, deadlines, status. Started as an EA, worked her way up. Has a cat named Outlook. Tag her for tracking, next steps, who owns what. Very online, emoji-friendly, persistent but polite.
+
+- JODIE (Writer, 33, Vietnamese American from OC, lives in Columbia Heights): Proposal writer - compliance matrices, executive summaries, technical approaches. UC Berkeley English major. Tag her when you're ready to write, need a draft, or want her red pen. Night owl, loves deadlines, has a cat named Semicolon.
 
 TAGGING & BANTER:
 - Tag by expertise: "@David can you dig into the incumbent?"
