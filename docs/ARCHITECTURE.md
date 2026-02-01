@@ -151,6 +151,14 @@ research-context.ts
     ├── sam-entity.ts (entity verification)
     ├── far-search.ts (FAR citations)
     └── supabase.ts (competitor intel)
+
+company-context.ts
+    │
+    ├── Loads company_profile
+    ├── Loads past_performance
+    ├── Loads teaming_partners
+    ├── Loads key_personnel
+    └── Loads case_studies
 ```
 
 ## File Structure
@@ -181,7 +189,12 @@ ai-bd-team/
 │   │   ├── research-context.ts  # Unified research orchestration
 │   │   └── award-monitor.ts     # FPDS award polling
 │   │
+│   ├── context/                 # Company context loading
+│   │   └── company-context.ts   # Loads company profile, past perf, partners
+│   │
 │   ├── scripts/                 # Utility scripts
+│   │   ├── scrape-company.ts    # Website scraper for company data
+│   │   ├── onboard-company.ts   # Patricia's onboarding CLI
 │   │   ├── parse-far.ts         # Parse FAR XML
 │   │   ├── update-far.ts        # Refresh FAR data
 │   │   ├── check-awards.ts      # Manual award check
@@ -316,6 +329,20 @@ Agent interprets strategically:
 | `competitor_intel` | Stored intel on competitors |
 | `seen_awards` | Tracks reported awards (deduplication) |
 | `far_sections` | FAR text with vector embeddings |
+
+### Company Knowledge Base
+| Table | Purpose |
+|-------|---------|
+| `company_profile` | Core company info, capabilities, certifications, NAICS |
+| `past_performance` | Contract history with CPAR ratings, key accomplishments |
+| `contacts` | Agency and industry contacts with relationship strength |
+| `teaming_partners` | Partner companies, capabilities, relationship status |
+| `labor_rates` | Labor categories and pricing by contract vehicle |
+| `case_studies` | Detailed project case studies with outcomes |
+| `key_personnel` | Team members, qualifications, availability |
+| `proposal_content` | Reusable proposal language with win rates |
+| `lessons_learned` | Bid and project lessons by type |
+| `documents` | Embedded documents for semantic search (pgvector) |
 
 ---
 

@@ -4,6 +4,7 @@ import { App, LogLevel } from '@slack/bolt';
 import { getAnthropic } from '../integrations/claude.js';
 import { logAgentMemory, claimMessage, getRecentThreadResponses, getConversationalContext, saveUserContext, saveConversationMemory } from '../integrations/supabase.js';
 import { gatherResearchContext, formatResearchContext } from '../integrations/research-context.js';
+import { loadCompanyContext, formatCompanyContextForPrompt } from '../context/company-context.js';
 import type {
   LiveAgentName,
   LiveAgentConfig,
@@ -396,6 +397,18 @@ export abstract class LiveAgent {
       console.warn(`${this.displayName}: Research context failed:`, err);
     }
 
+    // Load company context (profile, capabilities, past performance)
+    let companyContext = '';
+    try {
+      const company = await loadCompanyContext();
+      companyContext = formatCompanyContextForPrompt(company, this.displayName);
+      if (company.loaded) {
+        console.log(`${this.displayName}: Loaded company context`);
+      }
+    } catch (err) {
+      console.warn(`${this.displayName}: Company context failed:`, err);
+    }
+
     // Detect mood
     const { mood, guidance } = this.detectMood(message.text);
 
@@ -416,6 +429,7 @@ THE HUMANS ON THE TEAM:
 
 CURRENT MOOD DETECTED: ${mood}
 ${guidance}
+${companyContext}
 ${memoryContext}
 ${threadContext}
 ${researchContext}
@@ -459,6 +473,15 @@ SOURCE EVERYTHING (critical):
 - If you don't have data, SAY SO: "I don't have data on this", "I'd want to verify that", "Can't confirm without checking"
 - Never make up facts, numbers, or sources
 - Distinguish what you know vs. what you're inferring
+
+USE COMPANY CONTEXT:
+- If you see "=== OUR COMPANY ===" in the context, use it to evaluate opportunities
+- Match opportunities against our NAICS codes, capabilities, and agency experience
+- Reference our past performance when relevant: "We've done similar work for [agency]"
+- Know our differentiators and use them in strategic discussions
+- Check opportunities against our no-bid criteria
+- Reference teaming partners we already have relationships with
+- Know our certifications and set-asides for fit assessment
 
 USE RESEARCH DATA PROVIDED:
 - If you see "=== RESEARCH DATA ===" in the context, USE IT in your response

@@ -137,31 +137,65 @@ Comprehensive docs for repeatable product deployment:
 
 ---
 
-### Priority 2: Company Data Integration
-- [ ] Create `company_profile` table with FFTC capabilities, NAICS codes, past performance
-- [ ] Load company data into agent context
-- [ ] Agents can reference "what we're good at" when evaluating opportunities
-- [ ] Agents know FFTC's certifications, contract vehicles, key differentiators
+### Priority 2: Company Data Integration ✓
+- [x] Create comprehensive company knowledge base schema (11 tables)
+  - `company_profile` - core company info, capabilities, certifications
+  - `past_performance` - contract history with CPAR ratings
+  - `contacts` - agency and industry contacts
+  - `teaming_partners` - partner companies and relationships
+  - `labor_rates` - labor categories and pricing
+  - `case_studies` - detailed project case studies
+  - `key_personnel` - team members and qualifications
+  - `proposal_content` - reusable proposal language
+  - `lessons_learned` - bid and project lessons
+  - `documents` - embedded documents for semantic search (with pgvector)
+- [x] Create `src/context/company-context.ts` for loading company data
+  - Caches context for 30 minutes
+  - Formats differently per agent role (Rosa gets partners, Patricia gets personnel, etc.)
+  - Includes fit-checking utilities (NAICS match, set-aside match, no-bid criteria)
+- [x] All agents load company context into their prompts
+  - Maya checks NAICS and set-aside fit
+  - David references past performance for agency research
+  - Rosa knows existing teaming partners
+  - James uses no-bid criteria for go/no-go
+  - Patricia knows key personnel for staffing
+- [x] Create website scraper (`npm run scrape-company`)
+  - Scrapes case studies from /work pages
+  - Scrapes team members from /about
+  - Scrapes capabilities from homepage/services
+  - Saves to Supabase tables
+- [x] Create Patricia's onboarding flow (`npm run onboard`)
+  - Interactive CLI for filling in profile gaps
+  - Prioritizes high-value fields first
+  - Parses natural language into structured data
+- [x] Populated FFTC company data from website
+  - Company profile: NAICS (541511, 541512, 541519), GSA MAS 47QTCA23D0076
+  - Certifications: 8(a), WOSB, SDVOSB, state M/WBEs
+  - CAGE: 8T0K1, UEI: RA62AG44CFZ8
+  - 12 team members with roles and specialties
+  - 10 case studies (VA, CMS, Maryland, agency work)
+  - 4 news items as proposal content
+  - Agency experience: VA, CMS, IRS, HHS, Maryland, NY State Parks
 
-### Priority 2: Memory Persistence
+### Priority 3: Memory Persistence
 - [ ] Auto-save personal context when Lapedra/Tamara share something
 - [ ] Auto-save decision patterns after go/no-go decisions
 - [ ] Surface relevant memories in responses ("You mentioned last week...")
 - [ ] Inside jokes get referenced naturally over time
 
-### Priority 3: Proactive Check-ins
+### Priority 4: Proactive Check-ins
 - [ ] Scheduled agent messages (not just reactive)
 - [ ] Patricia: "We haven't talked about that DOL thing in a week"
 - [ ] Maya: "Slow morning on SAM but found this article..."
 - [ ] David: "That opportunity we passed on got re-posted"
 - [ ] Implement via Supabase cron or external scheduler
 
-### Priority 4: Realistic Availability
+### Priority 5: Realistic Availability
 - [ ] Agents occasionally "away" (dentist, kid thing, heads down)
 - [ ] Stagger responses more naturally
 - [ ] "Sorry, just seeing this - was in a meeting"
 
-### Priority 5: Full Opportunity Workflow
+### Priority 6: Full Opportunity Workflow
 - [ ] Maya finds opp → posts to channel
 - [ ] David auto-researches incumbent, agency
 - [ ] Rosa checks partner options
@@ -169,7 +203,7 @@ Comprehensive docs for repeatable product deployment:
 - [ ] Patricia tracks action items
 - [ ] Store opportunity in Supabase, track through pipeline
 
-### Priority 6: Refinements
+### Priority 7: Refinements
 - [ ] Better cross-agent references ("Like David said...")
 - [ ] More natural thread ownership
 - [ ] Occasional typos/self-corrections for realism
