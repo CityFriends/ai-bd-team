@@ -52,9 +52,18 @@ async function main() {
   }
   console.log('');
 
-  // Connect all configured agents
+  // Connect agents one by one to identify any auth issues
   try {
-    await Promise.all(configuredAgents.map(a => a.agent.connect()));
+    for (const a of configuredAgents) {
+      console.log(`Connecting ${a.name}...`);
+      try {
+        await a.agent.connect();
+        console.log(`✓ ${a.name} connected successfully`);
+      } catch (err) {
+        console.error(`✗ ${a.name} FAILED TO CONNECT:`, err);
+        throw err;
+      }
+    }
 
     console.log('');
     console.log('═══════════════════════════════════════════════════════════');
