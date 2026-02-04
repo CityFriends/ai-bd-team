@@ -49,13 +49,6 @@ export abstract class LiveAgent {
       appToken: appToken,
       socketMode: true,
       logLevel: LogLevel.WARN,
-      clientOptions: {
-        slackApiUrl: 'https://slack.com/api/',
-      },
-      socketModeOptions: {
-        clientPingTimeout: 30000,   // 30s instead of 5s
-        serverPingTimeout: 30000,
-      },
     });
 
     // Get this bot's user ID
