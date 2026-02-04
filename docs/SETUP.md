@@ -58,6 +58,8 @@ Go to "OAuth & Permissions" and add these Bot Token Scopes:
 3. Subscribe to bot events:
    - `app_mention`
    - `message.channels`
+   - `message.groups` (for private channels)
+   - `file_shared` (optional, for file upload notifications)
 
 ### 2.5 Install to Workspace
 1. Go to "Install App"

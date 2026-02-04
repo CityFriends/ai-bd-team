@@ -88,6 +88,12 @@ export abstract class LiveAgent {
 
       console.log(`${this.displayName}: Mentioned in message`);
 
+      // Debug: Log if files are present
+      if (msg.files && msg.files.length > 0) {
+        console.log(`${this.displayName}: Message has ${msg.files.length} file(s) attached`);
+        msg.files.forEach((f: any) => console.log(`  - ${f.name} (${f.filetype})`));
+      }
+
       const message = this.parseIncomingMessage(event);
       if (message) {
         await this.handleMessage(message);
@@ -234,6 +240,11 @@ export abstract class LiveAgent {
     const isInActiveThread = this.activeThreads.has(threadTs);
 
     // Extract file attachments if present
+    // Debug: log raw event to see file structure
+    if (event.files) {
+      console.log(`${this.displayName || 'Agent'}: Event has ${event.files.length} files attached`);
+    }
+
     const files: SlackFileAttachment[] | undefined = event.files?.map((f: any) => ({
       id: f.id,
       name: f.name,
