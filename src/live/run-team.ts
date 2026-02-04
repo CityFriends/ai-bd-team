@@ -5,7 +5,7 @@ import { david } from './david.js';
 import { rosa } from './rosa.js';
 import { james } from './james.js';
 import { patricia } from './patricia.js';
-// import { jodie } from './jodie.js'; // TODO: Enable once Slack app is configured
+import { jodie } from './jodie.js';
 
 const agents = [
   { agent: maya, name: 'Maya (Scout)', tokenEnv: 'MAYA_BOT_TOKEN' },
@@ -13,7 +13,7 @@ const agents = [
   { agent: rosa, name: 'Rosa (Connector)', tokenEnv: 'ROSA_BOT_TOKEN' },
   { agent: james, name: 'James (Strategist)', tokenEnv: 'JAMES_BOT_TOKEN' },
   { agent: patricia, name: 'Patricia (PM)', tokenEnv: 'PATRICIA_BOT_TOKEN' },
-  // { agent: jodie, name: 'Jodie (Writer)', tokenEnv: 'JODIE_BOT_TOKEN' }, // TODO: Enable once Slack app is configured
+  { agent: jodie, name: 'Jodie (Writer)', tokenEnv: 'JODIE_BOT_TOKEN' },
 ];
 
 async function main() {

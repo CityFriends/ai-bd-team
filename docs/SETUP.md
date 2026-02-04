@@ -24,9 +24,9 @@ cd ai-bd-team
 npm install
 ```
 
-## Step 2: Create Slack Apps (5 agents)
+## Step 2: Create Slack Apps (6 agents)
 
-You need to create 5 separate Slack apps, one for each agent. Repeat these steps for Maya, David, Rosa, James, and Patricia.
+You need to create 6 separate Slack apps, one for each agent. Repeat these steps for Maya, David, Rosa, James, Patricia, and Jodie.
 
 ### 2.1 Create the App
 1. Go to https://api.slack.com/apps
@@ -38,8 +38,10 @@ You need to create 5 separate Slack apps, one for each agent. Repeat these steps
 ### 2.2 Configure OAuth Scopes
 Go to "OAuth & Permissions" and add these Bot Token Scopes:
 - `app_mentions:read` - Receive @mentions
-- `channels:history` - Read channel messages
-- `channels:read` - Access channel info
+- `channels:history` - Read public channel messages
+- `channels:read` - Access public channel info
+- `groups:history` - Read private channel messages
+- `groups:read` - Access private channel info
 - `chat:write` - Send messages
 - `reactions:write` - Add emoji reactions
 - `users:read` - Read user info
@@ -262,6 +264,10 @@ JAMES_APP_TOKEN=xapp-...
 PATRICIA_BOT_TOKEN=xoxb-...
 PATRICIA_APP_TOKEN=xapp-...
 
+# Jodie (Writer)
+JODIE_BOT_TOKEN=xoxb-...
+JODIE_APP_TOKEN=xapp-...
+
 # Anthropic
 ANTHROPIC_API_KEY=sk-ant-...
 
@@ -305,6 +311,7 @@ Starting agents:
   - Rosa (Connector)
   - James (Strategist)
   - Patricia (PM)
+  - Jodie (Writer)
 
 Maya: Connected as <@U0XXXXXXXX>
 David: Connected as <@U0XXXXXXXX>
@@ -320,6 +327,7 @@ Go to your `#ai-bd-team` channel and try:
 - `@Maya what opportunities are there at VA?`
 - `@David who's the incumbent on VA IT services?`
 - `@Rosa do you know anyone at Booz Allen?`
+- `@Jodie can you build a compliance matrix for this RFP?`
 
 ## Step 8: Optional - Award Monitoring
 
