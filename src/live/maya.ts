@@ -3,6 +3,7 @@
 import { LiveAgent } from './agent.js';
 import type { LiveAgentName, IncomingMessage } from './types.js';
 import { getOpportunityByNoticeId, getSAMOpportunityURL } from '../integrations/sam-gov.js';
+import { addToBacklog, detectBacklogIntent } from './notion-actions.js';
 
 export class MayaAgent extends LiveAgent {
   name: LiveAgentName = 'maya';
@@ -131,7 +132,7 @@ Remember: You're a professional who's also a real person. The voice comes throug
     return process.env.MAYA_APP_TOKEN;
   }
 
-  // Override handleMessage to check for verification requests
+  // Override handleMessage to check for verification requests and handle Notion backlog
   async handleMessage(message: IncomingMessage): Promise<void> {
     // Check for verification commands
     const verifyResult = await this.handleVerificationIfPresent(message);
@@ -141,8 +142,46 @@ Remember: You're a professional who's also a real person. The voice comes throug
       return; // Don't continue to normal processing
     }
 
-    // Continue with normal message handling
-    await super.handleMessage(message);
+    // Generate response (don't post yet)
+    const response = await this.generateResponse(message);
+
+    if (response.shouldRespond) {
+      // Add reaction if specified
+      if (response.reaction) {
+        await this.addReaction(response.reaction, message.messageTs);
+      }
+
+      // Wait for natural delay
+      await this.sleep(response.delayMs);
+
+      // Post the response
+      await this.postMessage(response.text, message.threadTs || message.messageTs);
+
+      // Check if Maya indicated she wants to add to backlog
+      const backlogItem = detectBacklogIntent(
+        response.text,
+        message.text,
+        message.fileContent
+      );
+
+      if (backlogItem) {
+        console.log(`Maya: Detected backlog intent for "${backlogItem.name}"`);
+        const result = await addToBacklog(backlogItem, 'Maya');
+
+        if (result.success) {
+          // Post a follow-up confirming the add
+          await this.postMessage(
+            `✅ Added "${backlogItem.name}" to the Notion backlog`,
+            message.threadTs || message.messageTs
+          );
+        } else {
+          console.warn(`Maya: Failed to add to Notion: ${result.error}`);
+        }
+      }
+    } else if (response.reaction) {
+      // Just add reaction without responding
+      await this.addReaction(response.reaction, message.messageTs);
+    }
   }
 
   // Handle "verify that opportunity" requests
