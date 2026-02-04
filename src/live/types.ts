@@ -1,6 +1,6 @@
 // Types for the live conversational agent system
 
-export type LiveAgentName = 'maya' | 'david' | 'rosa' | 'james' | 'patricia';
+export type LiveAgentName = 'maya' | 'david' | 'rosa' | 'james' | 'patricia' | 'jodie';
 
 export interface LiveAgentConfig {
   name: LiveAgentName;
@@ -66,11 +66,13 @@ export const NAME_TO_AGENT: Record<string, LiveAgentName> = {
   'rosa': 'rosa',
   'james': 'james',
   'patricia': 'patricia',
+  'jodie': 'jodie',
   'scout': 'maya',
   'analyst': 'david',
   'connector': 'rosa',
   'strategist': 'james',
   'pm': 'patricia',
+  'writer': 'jodie',
 };
 
 // Agent expertise areas (for deciding who should chime in)
@@ -80,4 +82,5 @@ export const AGENT_EXPERTISE: Record<LiveAgentName, string[]> = {
   rosa: ['partners', 'teaming', 'relationships', 'contacts', 'outreach', 'connections', 'introductions'],
   james: ['strategy', 'decision', 'go/no-go', 'win probability', 'approach', 'capture', 'bid'],
   patricia: ['timeline', 'deadlines', 'status', 'standup', 'tracking', 'follow-up', 'action items'],
+  jodie: ['proposal', 'writing', 'draft', 'compliance matrix', 'executive summary', 'technical approach', 'past performance', 'editing', 'section l', 'section m'],
 };
