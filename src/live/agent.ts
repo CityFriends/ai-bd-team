@@ -5,6 +5,7 @@ import { getAnthropic } from '../integrations/claude.js';
 import { logAgentMemory, claimMessage, getRecentThreadResponses, getConversationalContext, saveUserContext, saveConversationMemory } from '../integrations/supabase.js';
 import { gatherResearchContext, formatResearchContext } from '../integrations/research-context.js';
 import { loadCompanyContext, formatCompanyContextForPrompt } from '../context/company-context.js';
+import { parseSlackFiles, formatFilesForContext, type SlackFile } from '../integrations/slack-files.js';
 import type {
   LiveAgentName,
   LiveAgentConfig,
@@ -14,6 +15,7 @@ import type {
   AgentResponse,
   NAME_TO_AGENT,
   AGENT_EXPERTISE,
+  SlackFileAttachment,
 } from './types.js';
 
 export abstract class LiveAgent {
@@ -231,6 +233,17 @@ export abstract class LiveAgent {
     const isDirectMention = mentionedAgents.includes(this.name);
     const isInActiveThread = this.activeThreads.has(threadTs);
 
+    // Extract file attachments if present
+    const files: SlackFileAttachment[] | undefined = event.files?.map((f: any) => ({
+      id: f.id,
+      name: f.name,
+      mimetype: f.mimetype,
+      filetype: f.filetype,
+      size: f.size,
+      url_private: f.url_private,
+      url_private_download: f.url_private_download,
+    }));
+
     return {
       text: this.cleanMessageText(text),
       userId,
@@ -240,6 +253,7 @@ export abstract class LiveAgent {
       mentionedAgents,
       isDirectMention,
       isInActiveThread,
+      files: files?.length ? files : undefined,
     };
   }
 
@@ -421,6 +435,29 @@ export abstract class LiveAgent {
       console.warn(`${this.displayName}: Company context failed:`, err);
     }
 
+    // Parse attached files if present
+    let fileContext = '';
+    if (message.files && message.files.length > 0 && this.app) {
+      try {
+        console.log(`${this.displayName}: Parsing ${message.files.length} attached file(s)...`);
+        const botToken = this.getBotToken();
+        if (botToken) {
+          const parsedFiles = await parseSlackFiles(
+            this.app.client,
+            message.files as SlackFile[],
+            botToken
+          );
+          fileContext = formatFilesForContext(parsedFiles);
+          if (fileContext) {
+            console.log(`${this.displayName}: File content extracted successfully`);
+          }
+        }
+      } catch (err) {
+        console.warn(`${this.displayName}: File parsing failed:`, err);
+        fileContext = '\n📎 ATTACHED FILES:\n[Error: Could not read attached files]\n';
+      }
+    }
+
     // Detect mood
     const { mood, guidance } = this.detectMood(message.text);
 
@@ -445,6 +482,7 @@ ${companyContext}
 ${memoryContext}
 ${threadContext}
 ${researchContext}
+${fileContext}
 
 RESPOND LIKE A REAL HUMAN:
 - Vary your sentence structure - don't always start the same way

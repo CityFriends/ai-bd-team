@@ -10,6 +10,16 @@ export interface LiveAgentConfig {
   slackUserId?: string; // Populated after connecting
 }
 
+export interface SlackFileAttachment {
+  id: string;
+  name: string;
+  mimetype: string;
+  filetype: string;
+  size: number;
+  url_private: string;
+  url_private_download?: string;
+}
+
 export interface IncomingMessage {
   text: string;
   userId: string;
@@ -20,6 +30,8 @@ export interface IncomingMessage {
   mentionedAgents: LiveAgentName[];
   isDirectMention: boolean;
   isInActiveThread: boolean;
+  files?: SlackFileAttachment[]; // Attached files
+  fileContent?: string; // Parsed file content (added during processing)
 }
 
 export interface ThreadContext {
