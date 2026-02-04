@@ -5,6 +5,18 @@
  * Runs: Live agents + Maya scanner + Patricia check-ins
  */
 import 'dotenv/config';
+import cron from 'node-cron';
+
+// Import scanner functions
+async function runMayaDailyScan() {
+  const { runDailyScan } = await import('./maya-scanner.js');
+  await runDailyScan();
+}
+
+async function runMayaWeeklySummary() {
+  const { runWeeklySummary } = await import('./maya-scanner.js');
+  await runWeeklySummary();
+}
 
 async function main() {
   console.log('='.repeat(60));
@@ -30,29 +42,41 @@ async function main() {
     }
   }
 
-  // Start Maya's scanner schedule (inline to avoid process conflicts)
+  // Start Maya's scanner schedule
   console.log('  Starting: Maya Scanner Schedule');
-  const cron = await import('node-cron');
 
-  // Maya: Weekdays at 8am
-  cron.default.schedule('0 8 * * 1-5', async () => {
+  // Maya: Weekdays at 8am - ACTUALLY RUN THE SCAN
+  cron.schedule('0 8 * * 1-5', async () => {
     console.log(`[${new Date().toLocaleString()}] Maya: Running daily scan...`);
-    // Live agents handle opportunity posting via Slack interaction
+    try {
+      await runMayaDailyScan();
+      console.log(`[${new Date().toLocaleString()}] Maya: Daily scan complete`);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Maya: Daily scan failed:`, err);
+    }
   });
 
   // Maya: Weekly summary Monday 8:30am
-  cron.default.schedule('30 8 * * 1', async () => {
+  cron.schedule('30 8 * * 1', async () => {
     console.log(`[${new Date().toLocaleString()}] Maya: Running weekly summary...`);
+    try {
+      await runMayaWeeklySummary();
+      console.log(`[${new Date().toLocaleString()}] Maya: Weekly summary complete`);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Maya: Weekly summary failed:`, err);
+    }
   });
 
   // Patricia: Morning check-in 9am weekdays
-  cron.default.schedule('0 9 * * 1-5', async () => {
+  cron.schedule('0 9 * * 1-5', async () => {
     console.log(`[${new Date().toLocaleString()}] Patricia: Morning check-in...`);
+    // TODO: Add Patricia check-in logic
   });
 
   // Patricia: Nudge check 2pm weekdays
-  cron.default.schedule('0 14 * * 1-5', async () => {
+  cron.schedule('0 14 * * 1-5', async () => {
     console.log(`[${new Date().toLocaleString()}] Patricia: Checking pending items...`);
+    // TODO: Add Patricia nudge logic
   });
 
   console.log('  ✓ Scheduled jobs configured\n');

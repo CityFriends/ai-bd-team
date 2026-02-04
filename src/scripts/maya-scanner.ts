@@ -349,7 +349,7 @@ async function postToSlack(app: App | null, message: string, threadTs?: string) 
   }
 }
 
-async function runDailyScan() {
+export async function runDailyScan() {
   console.log('\n' + '='.repeat(60));
   console.log(`  Maya's Daily Scan - ${new Date().toLocaleString()}`);
   console.log('='.repeat(60) + '\n');
@@ -478,7 +478,7 @@ async function runDailyScan() {
   console.log('\nDaily scan complete');
 }
 
-async function runWeeklySummary() {
+export async function runWeeklySummary() {
   console.log('\n' + '='.repeat(60));
   console.log(`  Maya's Weekly Summary - ${new Date().toLocaleString()}`);
   console.log('='.repeat(60) + '\n');
