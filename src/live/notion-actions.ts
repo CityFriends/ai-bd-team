@@ -108,12 +108,46 @@ export async function addToBacklog(
         'Pre-Solicitation': 'Pre-Solicitation',
         'Task Order': 'RFQ',
         'BPA Call': 'RFQ',
+        'BPA': 'RFQ',
+        'IDIQ': 'RFQ',
       };
       const mappedType = typeMap[opportunity.type] || opportunity.type;
       if (['RFQ', 'RFP', 'RFI', 'SSN', 'Pre-Solicitation'].includes(mappedType)) {
         properties['Solicitation Type'] = {
           select: { name: mappedType }
         };
+      }
+    }
+
+    // Add Due Date if we have it (try to parse it)
+    if (opportunity.dueDate) {
+      try {
+        // Try to parse various date formats
+        const dateStr = opportunity.dueDate;
+        let parsedDate: Date | null = null;
+
+        // Try ISO format first (2024-03-15)
+        if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+          parsedDate = new Date(dateStr);
+        }
+        // Try MM/DD/YYYY or M/D/YYYY
+        else if (/^\d{1,2}\/\d{1,2}\/\d{2,4}/.test(dateStr)) {
+          const parts = dateStr.split('/');
+          const year = parts[2].length === 2 ? '20' + parts[2] : parts[2];
+          parsedDate = new Date(`${year}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`);
+        }
+        // Try "Month DD, YYYY" format
+        else {
+          parsedDate = new Date(dateStr);
+        }
+
+        if (parsedDate && !isNaN(parsedDate.getTime())) {
+          properties['Due Date'] = {
+            date: { start: parsedDate.toISOString().split('T')[0] }
+          };
+        }
+      } catch (e) {
+        console.warn(`[Notion] Could not parse due date: ${opportunity.dueDate}`);
       }
     }
 
@@ -139,6 +173,14 @@ export async function addToBacklog(
 /**
  * Parse agent response to detect if they want to add something to backlog
  * Returns opportunity details if detected, null otherwise
+ *
+ * Enhanced to extract structured data from Maya's formatted backlog entries:
+ * 📋 **Adding to Pipeline**
+ * **Title:** [name]
+ * **Agency:** [agency]
+ * **Type:** [RFP/RFQ/etc]
+ * **Due:** [date]
+ * **Link:** [url]
  */
 export function detectBacklogIntent(
   agentResponse: string,
@@ -162,6 +204,8 @@ export function detectBacklogIntent(
     'pipeline',
     'adding it to the backlog',
     'add to our pipeline',
+    '📋', // Maya uses this emoji when logging
+    'adding to pipeline',
   ];
 
   const hasIntent = trackingPhrases.some(phrase => lowerResponse.includes(phrase));
@@ -169,65 +213,114 @@ export function detectBacklogIntent(
 
   const combinedText = `${agentResponse} ${originalMessage} ${fileContent || ''}`;
 
-  // Try to extract opportunity details from the response
+  // Try to extract opportunity details
   let name = '';
   let agency = '';
   let type = '';
   let samLink = '';
+  let dueDate = '';
 
-  // Extract SAM.gov links
-  const samLinkPattern = /https?:\/\/sam\.gov\/opp\/[a-f0-9\-]+\/view/i;
-  const samMatch = combinedText.match(samLinkPattern);
-  if (samMatch) {
-    samLink = samMatch[0];
+  // First, try to parse Maya's structured format (if she used it)
+  // Format: **Title:** value or **Agency:** value
+  const structuredPatterns = {
+    title: /\*\*(?:Title|Name|Opportunity)[:\*]*\*?\s*(.+?)(?:\n|\*\*|$)/i,
+    agency: /\*\*Agency[:\*]*\*?\s*(.+?)(?:\n|\*\*|$)/i,
+    type: /\*\*(?:Type|Solicitation Type)[:\*]*\*?\s*(.+?)(?:\n|\*\*|$)/i,
+    dueDate: /\*\*(?:Due|Due Date|Deadline|Response Date)[:\*]*\*?\s*(.+?)(?:\n|\*\*|$)/i,
+    samLink: /\*\*(?:SAM Link|Link|URL)[:\*]*\*?\s*(https?:\/\/[^\s\n]+)/i,
+  };
+
+  // Try structured extraction first
+  const titleMatch = agentResponse.match(structuredPatterns.title);
+  if (titleMatch) name = titleMatch[1].trim();
+
+  const agencyMatch = agentResponse.match(structuredPatterns.agency);
+  if (agencyMatch) agency = agencyMatch[1].trim();
+
+  const typeMatch = agentResponse.match(structuredPatterns.type);
+  if (typeMatch) type = typeMatch[1].trim();
+
+  const dueDateMatch = agentResponse.match(structuredPatterns.dueDate);
+  if (dueDateMatch) dueDate = dueDateMatch[1].trim();
+
+  const samLinkMatch = agentResponse.match(structuredPatterns.samLink);
+  if (samLinkMatch) samLink = samLinkMatch[1].trim();
+
+  // Fall back to general extraction if structured didn't work
+  if (!samLink) {
+    const samLinkPattern = /https?:\/\/sam\.gov\/opp\/[a-f0-9\-]+\/view/i;
+    const match = combinedText.match(samLinkPattern);
+    if (match) samLink = match[0];
   }
 
-  // Extract opportunity type
-  const typePatterns = [
-    /\b(RFP|RFQ|RFI|BPA|IDIQ|Task Order|Sources Sought|Pre-Solicitation)\b/i,
-  ];
-  for (const pattern of typePatterns) {
-    const match = combinedText.match(pattern);
-    if (match) {
-      type = match[1].toUpperCase();
-      if (type === 'SOURCES SOUGHT') type = 'SSN';
-      if (type === 'TASK ORDER') type = 'RFQ';
-      break;
+  // Extract opportunity type if not found
+  if (!type) {
+    const typePatterns = [
+      /\b(RFP|RFQ|RFI|BPA|IDIQ|Task Order|Sources Sought|Pre-Solicitation)\b/i,
+    ];
+    for (const pattern of typePatterns) {
+      const match = combinedText.match(pattern);
+      if (match) {
+        type = match[1].toUpperCase();
+        if (type === 'SOURCES SOUGHT') type = 'SSN';
+        if (type === 'TASK ORDER') type = 'RFQ';
+        break;
+      }
     }
   }
 
-  // Look for common patterns in the response for the name
-  const namePatterns = [
-    // GSA TTS specific patterns
-    /GSA\s+TTS\s+[\w\s\-]+(?:BPA|RFP|RFI|contract|solicitation)/i,
-    /TTS\s+[\w\s\-]+(?:BPA|IDIQ)/i,
-    // General patterns
-    /this is (?:the |a )?([A-Z][A-Za-z0-9\s\-]+(?:BPA|RFP|RFI|contract|solicitation|opportunity))/i,
-    /([A-Z][A-Z\s\-]+(?:BPA|IDIQ|contract))/,
-    /([A-Z]{2,}\s+[A-Za-z\s\-]+(?:modernization|services|support))/i,
-    // Title-like patterns from documents
-    /title[:\s]+["']?([^"'\n]+)["']?/i,
-    /subject[:\s]+["']?([^"'\n]+)["']?/i,
-  ];
+  // Extract name if not found from structured
+  if (!name) {
+    const namePatterns = [
+      // GSA TTS specific patterns
+      /GSA\s+TTS\s+[\w\s\-]+(?:BPA|RFP|RFI|contract|solicitation)/i,
+      /TTS\s+[\w\s\-]+(?:BPA|IDIQ)/i,
+      // General patterns
+      /this is (?:the |a )?([A-Z][A-Za-z0-9\s\-]+(?:BPA|RFP|RFI|contract|solicitation|opportunity))/i,
+      /([A-Z][A-Z\s\-]+(?:BPA|IDIQ|contract))/,
+      /([A-Z]{2,}\s+[A-Za-z\s\-]+(?:modernization|services|support))/i,
+      // Title-like patterns from documents
+      /title[:\s]+["']?([^"'\n]+)["']?/i,
+      /subject[:\s]+["']?([^"'\n]+)["']?/i,
+    ];
 
-  for (const pattern of namePatterns) {
-    const match = combinedText.match(pattern);
-    if (match) {
-      name = match[1] || match[0];
-      break;
+    for (const pattern of namePatterns) {
+      const match = combinedText.match(pattern);
+      if (match) {
+        name = match[1] || match[0];
+        break;
+      }
     }
   }
 
-  // Try to extract agency
-  const agencyPatterns = [
-    /\b(GSA|VA|HHS|DOL|DHS|DOD|DOE|DOT|HUD|USDA|DOJ|State|Treasury|Commerce|Interior|EPA|NASA|SBA|OPM|CMS|ED|SSA)\b/i,
-  ];
+  // Extract agency if not found
+  if (!agency) {
+    const agencyPatterns = [
+      /\b(GSA|VA|HHS|DOL|DHS|DOD|DOE|DOT|HUD|USDA|DOJ|State|Treasury|Commerce|Interior|EPA|NASA|SBA|OPM|CMS|ED|SSA)\b/i,
+    ];
 
-  for (const pattern of agencyPatterns) {
-    const match = combinedText.match(pattern);
-    if (match) {
-      agency = match[1].toUpperCase();
-      break;
+    for (const pattern of agencyPatterns) {
+      const match = combinedText.match(pattern);
+      if (match) {
+        agency = match[1].toUpperCase();
+        break;
+      }
+    }
+  }
+
+  // Try to extract due date from various formats if not found
+  if (!dueDate) {
+    const datePatterns = [
+      /(?:due|deadline|closes?|response date)[:\s]+(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
+      /(?:due|deadline|closes?|response date)[:\s]+(\w+\s+\d{1,2},?\s+\d{4})/i,
+      /(?:due|deadline|closes?|response date)[:\s]+(\d{4}-\d{2}-\d{2})/i,
+    ];
+    for (const pattern of datePatterns) {
+      const match = combinedText.match(pattern);
+      if (match) {
+        dueDate = match[1];
+        break;
+      }
     }
   }
 
@@ -250,6 +343,7 @@ export function detectBacklogIntent(
     agency: agency || undefined,
     type: type || undefined,
     samLink: samLink || undefined,
+    dueDate: dueDate || undefined,
     description: agentResponse.substring(0, 500),
     source: 'Slack conversation',
   };
