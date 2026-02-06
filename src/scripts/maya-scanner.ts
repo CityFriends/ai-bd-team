@@ -173,9 +173,11 @@ const OPENERS_BY_SCORE = {
   hot: [ // 90+
     "Okay wait, this one is actually good.",
     "👀 Y'all. Look at this.",
-    "Not gonna lie, I'm lowkey excited about this one.",
     "Aight so hear me out on this one.",
     "This is giving exactly what we need.",
+    "Hold up, this might be the one.",
+    "Okay I need everyone to see this.",
+    "This just came through and I'm already hyped.",
   ],
   interested: [ // 70-89
     "Found something worth looking at.",
@@ -183,13 +185,16 @@ const OPENERS_BY_SCORE = {
     "Might be something here.",
     "Hmm, this could work.",
     "Interesting one from SAM today.",
+    "Spotted this and wanted to flag it.",
+    "This popped up and it's worth a look.",
   ],
   lukewarm: [ // 60-69
-    "Flagging this, but not super hyped.",
+    "Flagging this, but I'm not super hyped.",
     "Worth mentioning but not urgent.",
     "This exists. Take a look if you want.",
     "Eh, it's something.",
-    "Not the best fit but posting anyway.",
+    "Putting this here for visibility.",
+    "Not my fave but figured I'd share.",
   ],
 };
 
@@ -262,7 +267,7 @@ REQUIREMENTS:
 - Mention why it fits FFTC based on our capabilities
 ${opp.score >= 80 ? '- Tag <@U0AC0SVD3MH> (David) to research since this is hot' : ''}
 - Keep it to 3-4 sentences max
-- Your voice: "not gonna lie", "lowkey", "this is giving", "wait", "aight"
+- Your voice: conversational, Gen-Z energy, vary your phrases - use "lowkey", "this is giving", "wait", "aight", "okay so" but mix it up
 - End with the link on its own line`;
 
   console.log(`[GENERATING] Maya post for ${opp.opportunity.noticeId} (score: ${opp.score})`);

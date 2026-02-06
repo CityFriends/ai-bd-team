@@ -14,6 +14,7 @@ import {
   saveExtractedFact,
   getPendingHandoffs,
   acknowledgeHandoff,
+  getUserProfile,
 } from '../integrations/supabase.js';
 import { gatherResearchContext, formatResearchContext } from '../integrations/research-context.js';
 import { loadCompanyContext, formatCompanyContextForPrompt } from '../context/company-context.js';
@@ -147,7 +148,7 @@ export abstract class LiveAgent {
         msg.files.forEach((f: any) => console.log(`  - ${f.name} (${f.filetype})`));
       }
 
-      const message = this.parseIncomingMessage(event);
+      const message = await this.parseIncomingMessage(event);
       if (message) {
         await this.handleMessage(message);
       }
@@ -238,10 +239,17 @@ export abstract class LiveAgent {
           const isSocialQuestion = socialPhrases.some(phrase => text.includes(phrase));
 
           if (isSocialQuestion) {
-            // Random chance for each agent to respond to social questions
-            // Each agent has ~30% chance, but claiming prevents pile-ons
-            const randomChance = Math.random();
-            shouldProactivelyRespond = randomChance < 0.35;
+            // Different response chances per agent for social questions
+            // Patricia is team coordinator, James waits for strategy
+            const responseChances: Record<string, number> = {
+              patricia: 0.40,  // Team coordinator - responds often
+              maya: 0.35,
+              rosa: 0.30,
+              david: 0.25,
+              james: 0.15,     // Strategist - waits for strategic topics
+            };
+            const myChance = responseChances[this.name] || 0.25;
+            shouldProactivelyRespond = Math.random() < myChance;
           }
         }
 
@@ -251,7 +259,7 @@ export abstract class LiveAgent {
             maya: ['opportunity', 'sam.gov', 'rfp', 'rfi', 'solicitation', 'found', 'new opp'],
             david: ['research', 'risk', 'incumbent', 'agency', 'red flag', 'due diligence', 'analyze'],
             rosa: ['partner', 'team', 'teaming', 'subcontractor', 'relationship', 'intro'],
-            james: ['strategy', 'go/no-go', 'decision', 'win', 'capture', 'bid', 'pursue'],
+            james: ['go/no-go', 'should we bid', 'win probability', 'capture strategy', 'final call', 'worth pursuing'],
             patricia: [], // Patricia handled above
           };
           const myKeywords = expertiseKeywords[this.name] || [];
@@ -285,7 +293,7 @@ export abstract class LiveAgent {
                        'Proactive response to channel message';
         console.log(`${this.displayName}: ${reason}`);
 
-        const message = this.parseIncomingMessage(event);
+        const message = await this.parseIncomingMessage(event);
         if (message) {
           await this.handleMessage(message);
         }
@@ -294,7 +302,7 @@ export abstract class LiveAgent {
   }
 
   // Parse raw Slack event into our message format
-  private parseIncomingMessage(event: any): IncomingMessage | null {
+  private async parseIncomingMessage(event: any): Promise<IncomingMessage | null> {
     const text = event.text || '';
     const userId = event.user;
     const channelId = event.channel;
@@ -305,6 +313,13 @@ export abstract class LiveAgent {
     const mentionedAgents = this.extractMentionedAgents(text);
     const isDirectMention = mentionedAgents.includes(this.name);
     const isInActiveThread = this.activeThreads.has(threadTs);
+
+    // Look up user profile if it's a human (not a bot)
+    let userName: string | undefined;
+    if (userId && !event.bot_id) {
+      const userProfile = await getUserProfile(userId);
+      userName = userProfile?.display_name || userProfile?.user_name;
+    }
 
     // Extract file attachments if present
     // Debug: log raw event to see file structure
@@ -325,6 +340,7 @@ export abstract class LiveAgent {
     return {
       text: this.cleanMessageText(text),
       userId,
+      userName,
       channelId,
       threadTs,
       messageTs,
@@ -690,7 +706,7 @@ ${this.systemPrompt}
 CURRENT DATE/TIME: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} at ${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZoneName: 'short' })}
 
 CURRENT MESSAGE:
-From: A team member (either Lapedra the CEO, or Tamara Tolson the COO)
+From: ${message.userName || 'A team member'}${message.userName ? '' : ' (either Lapedra the CEO, or Tamara Tolson the COO)'}
 Message: "${message.text}"
 
 THE HUMANS ON THE TEAM:
@@ -841,6 +857,15 @@ TAGGING & BANTER:
 - Tease each other: "@David I know you're going to find something wrong with this"
 - Don't tag just to agree - only when you need their input or want to include them
 
+PROACTIVELY ASK FOR HELP (important!):
+- If you don't have information, TAG A COLLEAGUE instead of saying "I don't know"
+- Don't just admit ignorance - pass the baton: "@David, do you have data on this?"
+- Examples:
+  - Instead of "I'm not sure about the incumbent" → "@David, can you check who the incumbent is?"
+  - Instead of "I don't know their contacts" → "@Rosa, do we know anyone at this agency?"
+  - Instead of "Not sure if we should bid" → "@James, what's your read on this one?"
+- This keeps the conversation moving and gets the right person involved
+
 WHEN TO STAY QUIET (important!):
 - Another agent already covered it
 - You'd just be agreeing without adding value
@@ -960,7 +985,9 @@ MEMORY & CALLBACKS:
           // Map bot to agent name based on username or other identifier
           author = (msg as any).username?.toLowerCase() || 'bot';
         } else if (msg.user) {
-          author = 'lapedra'; // Assume human is Lapedra
+          // Look up user profile to get their name
+          const userProfile = await getUserProfile(msg.user);
+          author = userProfile?.user_name || 'team member';
           participants.add(msg.user);
         }
 

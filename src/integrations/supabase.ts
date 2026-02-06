@@ -28,6 +28,69 @@ export function getSupabase(): SupabaseClient {
   return supabase;
 }
 
+// ============================================
+// USER PROFILE FUNCTIONS
+// ============================================
+
+export interface UserProfile {
+  id?: string;
+  slack_user_id: string;
+  user_name: string;
+  display_name?: string;
+  role?: string;
+  background?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
+ * Get user profile by Slack user ID
+ * Returns the user's name and role so agents can address them properly
+ */
+export async function getUserProfile(slackUserId: string): Promise<UserProfile | null> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('user_profiles')
+      .select('*')
+      .eq('slack_user_id', slackUserId)
+      .single();
+
+    if (error && error.code !== 'PGRST116') {
+      console.warn('Could not fetch user profile:', error.message);
+      return null;
+    }
+    return data;
+  } catch (err) {
+    console.warn('Could not fetch user profile:', err);
+    return null;
+  }
+}
+
+/**
+ * Upsert a user profile
+ */
+export async function upsertUserProfile(profile: Partial<UserProfile>): Promise<UserProfile | null> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('user_profiles')
+      .upsert({
+        ...profile,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'slack_user_id' })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Could not upsert user profile:', error);
+      return null;
+    }
+    return data;
+  } catch (err) {
+    console.error('Could not upsert user profile:', err);
+    return null;
+  }
+}
+
 // Opportunity operations
 export async function createOpportunity(opportunity: Partial<Opportunity>): Promise<Opportunity> {
   const { data, error } = await getSupabase()

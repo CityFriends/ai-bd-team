@@ -1,7 +1,7 @@
 /**
  * Patricia's Team Management System
  *
- * Morning (9am): Daily standup / check-in
+ * Morning (10am CST): Daily standup with the team
  * Throughout day: Nudges for pending items
  * As needed: Decision requests for Lapedra
  *
@@ -18,6 +18,10 @@ import { getAnthropic } from '../integrations/claude.js';
 import { loadCompanyContext, formatCompanyContextForPrompt } from '../context/company-context.js';
 
 const CHANNEL_ID = process.env.SLACK_CHANNEL_ID || '';
+
+// Slack IDs for tagging the humans
+const LAPEDRA_ID = 'U01SC2TNYKU';
+const TAMARA_ID = 'U01RXBVUA0P';
 
 // Initialize Patricia's Slack app
 async function getPatriciaApp(): Promise<App | null> {
@@ -126,11 +130,15 @@ TEAM STATUS:
 - Rosa: Available for partner outreach
 - James: Available for strategy calls
 
-Write a morning check-in message for #bd-team. Be conversational - you're a millennial PM, organized but chill. Keep it to 4-5 sentences max. Include:
+Write a morning standup message for #bd-team. Be conversational - you're a millennial PM, organized but chill. Keep it to 4-6 sentences max. Include:
 1. Quick vibe check (acknowledge the day)
 2. Any hot items needing attention
 3. What the team should focus on today
-4. ${isMonday ? 'Quick preview of the week' : 'Any deadlines coming up'}`;
+4. ${isMonday ? 'Quick preview of the week' : 'Any deadlines coming up'}
+5. Tag <@${LAPEDRA_ID}> and <@${TAMARA_ID}> at the end
+6. Ask if there's anything blocking them or priorities to discuss
+
+Use emoji naturally - you love them. End with a question for the team.`;
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
@@ -216,7 +224,7 @@ async function postToSlack(app: App | null, message: string, threadTs?: string) 
 
 async function runMorningCheckin() {
   console.log('\n' + '='.repeat(60));
-  console.log(`  Patricia's Morning Check-in - ${new Date().toLocaleString()}`);
+  console.log(`  Patricia's Daily Standup - ${new Date().toLocaleString()}`);
   console.log('='.repeat(60) + '\n');
 
   const app = await getPatriciaApp();
@@ -231,7 +239,7 @@ async function runMorningCheckin() {
     await app.stop();
   }
 
-  console.log('\nMorning check-in complete');
+  console.log('\nDaily standup complete');
 }
 
 async function runNudgeCheck() {
@@ -277,18 +285,21 @@ async function main() {
     console.log('='.repeat(60));
     console.log('  Patricia Team Management - Scheduled Mode');
     console.log('='.repeat(60));
-    console.log('\nSchedule:');
-    console.log('  - Weekdays at 9:00 AM: Morning check-in');
-    console.log('  - Weekdays at 2:00 PM: Nudge check for pending items');
+    console.log('\nSchedule (CST):');
+    console.log('  - Weekdays at 10:00 AM CST: Daily standup');
+    console.log('  - Weekdays at 2:00 PM CST: Nudge check for pending items');
     console.log('  - Press Ctrl+C to stop\n');
 
-    // Morning check-in at 9am weekdays
-    cron.schedule('0 9 * * 1-5', async () => {
+    // Run standup immediately on start
+    await runMorningCheckin();
+
+    // Daily standup at 10am CST (16:00 UTC)
+    cron.schedule('0 16 * * 1-5', async () => {
       await runMorningCheckin();
     });
 
-    // Afternoon nudge check at 2pm weekdays
-    cron.schedule('0 14 * * 1-5', async () => {
+    // Afternoon nudge check at 2pm CST (20:00 UTC)
+    cron.schedule('0 20 * * 1-5', async () => {
       await runNudgeCheck();
     });
 
