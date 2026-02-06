@@ -60,6 +60,9 @@ export const OPPORTUNITY_FILTERS = {
 
   // Keywords that DECREASE relevance (skip if these are primary focus)
   excludeKeywords: [
+    // Award notices (not actionable opportunities)
+    'award notice', 'contract award', 'intent to award', 'sole source award',
+    // Not our work
     'manufacturing', 'construction', 'facilities',
     'janitorial', 'maintenance', 'grounds', 'landscaping',
     'weapons', 'munitions', 'artillery', 'ammunition',
@@ -68,6 +71,10 @@ export const OPPORTUNITY_FILTERS = {
     'help desk', 'tier 1 support', 'tier 1', 'call center',
     'security clearance required', 'ts/sci', 'top secret',
     'hardware procurement', 'equipment purchase',
+    // Infrastructure/ops work we don't do
+    'network operations', 'noc', 'data center', 'sysadmin', 'system administrator',
+    'cybersecurity operations', 'soc', 'security operations center',
+    'telecommunications', 'voip', 'pbx',
   ],
 
   // Keywords that only matter if paired with modernization

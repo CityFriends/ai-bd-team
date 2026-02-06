@@ -257,6 +257,20 @@ export abstract class LiveAgent {
           const myKeywords = expertiseKeywords[this.name] || [];
           shouldProactivelyRespond = myKeywords.some(kw => text.includes(kw));
         }
+
+        // Catch-all: respond to any direct question or conversation starter
+        // This ensures team members get responses even without specific keywords
+        if (!shouldProactivelyRespond) {
+          const isQuestion = text.includes('?');
+          const isGreeting = /^(hey|hi|hello|yo|sup|what's up|morning|afternoon)/i.test(text.trim());
+
+          if (isQuestion || isGreeting) {
+            // For general questions/greetings, one agent should respond
+            // Patricia is the natural "team coordinator" so she has higher chance
+            const responseChance = this.name === 'patricia' ? 0.5 : 0.2;
+            shouldProactivelyRespond = Math.random() < responseChance;
+          }
+        }
       }
 
       const shouldHandle = isMentioned || isInActiveThread || shouldProactivelyRespond;

@@ -109,6 +109,8 @@ async function scanOpportunities(): Promise<ScoredOpportunity[]> {
         naicsCodes: [naics],
         postedFrom: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
         limit: 20,
+        // Only search for actionable opportunities - exclude awards
+        types: ['p', 'r', 's', 'o', 'k'], // presolicitation, RFI, sources sought, solicitation, combined
       });
       const results = response.opportunitiesData || [];
 
