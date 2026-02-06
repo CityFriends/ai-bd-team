@@ -68,9 +68,9 @@ export async function searchOpportunities(options: SearchOptions = {}): Promise<
     offset: String(options.offset || 0),
   });
 
-  // Add NAICS codes
+  // Add NAICS codes (SAM.gov v2 API uses 'ncode' parameter)
   const naics = options.naicsCodes || TARGET_NAICS;
-  params.append('naicsCodes', naics.join(','));
+  params.append('ncode', naics.join(','));
 
   // Add types if specified
   if (options.types && options.types.length > 0) {
