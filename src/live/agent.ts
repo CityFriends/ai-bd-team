@@ -2,10 +2,28 @@
 
 import { App, LogLevel } from '@slack/bolt';
 import { getAnthropic } from '../integrations/claude.js';
-import { logAgentMemory, claimMessage, getRecentThreadResponses, getConversationalContext, saveUserContext, saveConversationMemory } from '../integrations/supabase.js';
+import {
+  logAgentMemory,
+  claimMessage,
+  getRecentThreadResponses,
+  getConversationalContext,
+  saveUserContext,
+  saveConversationMemory,
+  recordThreadParticipation,
+  getAgentThreads,
+  saveExtractedFact,
+  getPendingHandoffs,
+  acknowledgeHandoff,
+} from '../integrations/supabase.js';
 import { gatherResearchContext, formatResearchContext } from '../integrations/research-context.js';
 import { loadCompanyContext, formatCompanyContextForPrompt } from '../context/company-context.js';
 import { parseSlackFiles, formatFilesForContext, type SlackFile } from '../integrations/slack-files.js';
+import { createMemoryManager, type MemoryManager } from '../integrations/memory-manager.js';
+import { buildHierarchicalContext, formatHierarchicalContext } from '../integrations/summarization.js';
+import { getCachedResearch } from '../integrations/semantic-cache.js';
+import { embed } from '../integrations/embeddings.js';
+import { trackAgentResponse, detectRephrasedQuestion, setupFeedbackListeners } from './feedback-listener.js';
+import { checkForHandoff, formatHandoffForPrompt, handoffToAgent, detectAgentTag } from './handoff.js';
 import type {
   LiveAgentName,
   LiveAgentConfig,
@@ -17,6 +35,16 @@ import type {
   AGENT_EXPERTISE,
   SlackFileAttachment,
 } from './types.js';
+
+// Agent Slack IDs for handoffs
+const AGENT_SLACK_IDS: Record<string, LiveAgentName> = {
+  'U0AC3RA4JVB': 'maya',
+  'U0AC0SVD3MH': 'david',
+  'U0ACASZ36BW': 'rosa',
+  'U0AC582GXBQ': 'james',
+  'U0AC79NTDAN': 'patricia',
+  'U0ACP8LKFB3': 'jodie',
+};
 
 export abstract class LiveAgent {
   abstract name: LiveAgentName;
@@ -33,8 +61,13 @@ export abstract class LiveAgent {
   // Track recently processed messages to avoid duplicates
   protected processedMessages: Set<string> = new Set();
 
+  // Memory manager for three-tier memory
+  protected memoryManager: MemoryManager;
+
   constructor() {
     this.channelId = process.env.SLACK_CHANNEL_ID || '';
+    // Memory manager will be initialized in connect() once agent name is available
+    this.memoryManager = createMemoryManager('agent');
   }
 
   // Initialize the Slack app for this agent
@@ -58,12 +91,32 @@ export abstract class LiveAgent {
     this.slackUserId = authResult.user_id as string;
     console.log(`${this.displayName}: Connected as <@${this.slackUserId}>`);
 
+    // Initialize memory manager with agent name
+    this.memoryManager = createMemoryManager(this.name);
+
+    // Restore active threads from database (persistent across restarts)
+    await this.restoreActiveThreads();
+
     // Set up event handlers
     this.setupEventHandlers();
+
+    // Set up feedback listeners (reaction tracking)
+    setupFeedbackListeners(this.app);
 
     // Start the app
     await this.app.start();
     console.log(`${this.displayName}: Listening for messages...`);
+  }
+
+  // Restore active threads from database
+  private async restoreActiveThreads(): Promise<void> {
+    try {
+      const threads = await getAgentThreads(this.name, { hours: 72 });
+      threads.forEach(t => this.activeThreads.add(t.thread_ts));
+      console.log(`${this.displayName}: Restored ${this.activeThreads.size} active threads from database`);
+    } catch (err) {
+      console.warn(`${this.displayName}: Could not restore active threads:`, err);
+    }
   }
 
   // Get bot token from env
@@ -338,8 +391,30 @@ export abstract class LiveAgent {
       }
     }
 
+    // Check for handoffs from other agents
+    let handoffContext = '';
+    if (message.threadTs) {
+      const handoff = await checkForHandoff(this.name, message.threadTs);
+      if (handoff) {
+        console.log(`${this.displayName}: Found handoff from ${handoff.from_agent}`);
+        handoffContext = formatHandoffForPrompt(handoff);
+        // Acknowledge the handoff
+        if (handoff.id) {
+          await acknowledgeHandoff(handoff.id);
+        }
+      }
+    }
+
+    // Check for rephrased questions (frustration detection)
+    if (message.threadTs) {
+      const rephraseCheck = await detectRephrasedQuestion(message.text, message.threadTs);
+      if (rephraseCheck?.isRephrase) {
+        console.log(`${this.displayName}: Detected rephrased question - user may be frustrated`);
+      }
+    }
+
     // Should we respond?
-    const response = await this.generateResponse(message);
+    const response = await this.generateResponse(message, handoffContext);
 
     // Add reaction if specified (even if not responding with text)
     if (response.reaction) {
@@ -348,9 +423,11 @@ export abstract class LiveAgent {
     }
 
     if (response.shouldRespond) {
-      // Add to active threads
+      // Add to active threads and persist participation
       if (message.threadTs) {
         this.activeThreads.add(message.threadTs);
+        // Persist to database for recovery after restarts
+        await recordThreadParticipation(this.name, message.threadTs, message.channelId);
       }
 
       // Wait for natural delay
@@ -368,7 +445,18 @@ export abstract class LiveAgent {
       }
 
       // Post response
-      await this.postMessage(response.text, message.threadTs || message.messageTs);
+      const postedMessage = await this.postMessage(response.text, message.threadTs || message.messageTs);
+
+      // Track response for feedback learning
+      if (postedMessage?.ts) {
+        trackAgentResponse(
+          postedMessage.ts,
+          this.name,
+          response.text,
+          message.text, // original question
+          message.threadTs
+        );
+      }
 
       // Log to agent_memory for auditing
       await logAgentMemory({
@@ -380,6 +468,20 @@ export abstract class LiveAgent {
         confidence_level: response.confidenceLevel,
       });
 
+      // Extract and store facts from the conversation (async, non-blocking)
+      this.extractAndStoreFacts(message.text, response.text, message.threadTs).catch(err => {
+        console.warn(`${this.displayName}: Fact extraction failed:`, err);
+      });
+
+      // Check if we tagged another agent - create handoff
+      const taggedAgent = detectAgentTag(response.text, AGENT_SLACK_IDS);
+      if (taggedAgent && taggedAgent !== this.name && message.threadTs) {
+        const threadContext = await this.loadThreadContext(message.threadTs, message.channelId);
+        handoffToAgent(this.name, taggedAgent, message.threadTs, threadContext.messages).catch(err => {
+          console.warn(`${this.displayName}: Handoff creation failed:`, err);
+        });
+      }
+
       // Log sources to console for visibility
       if (response.sources.length > 0) {
         console.log(`${this.displayName}: Sources: ${response.sources.join(', ')} (${response.confidenceLevel} confidence)`);
@@ -387,27 +489,122 @@ export abstract class LiveAgent {
     }
   }
 
-  // Generate a response using Claude
-  async generateResponse(message: IncomingMessage): Promise<AgentResponse> {
+  // Extract facts from conversation and store with embeddings
+  private async extractAndStoreFacts(
+    userMessage: string,
+    agentResponse: string,
+    threadTs?: string
+  ): Promise<void> {
     const client = getAnthropic();
 
-    // Load thread context if in a thread
+    const prompt = `Extract any facts worth remembering from this exchange:
+
+User: ${userMessage}
+Agent: ${agentResponse}
+
+Look for:
+- User preferences ("I prefer...", "Don't...", "I like...", "I hate...")
+- Decisions made ("Let's go with...", "Pass on this", "We're pursuing...")
+- Important context ("We worked with X before", "Our NAICS is...", "We're 8(a) certified")
+- Patterns ("We always...", "We never...", "Typically we...")
+
+Return JSON array of facts (empty array if none found):
+{
+  "facts": [
+    {"type": "preference|decision|context|pattern", "subject": "lapedra|tamara|company", "content": "the fact"}
+  ]
+}
+
+Only extract clear, specific facts. Don't infer or guess.`;
+
+    try {
+      const response = await client.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 300,
+        messages: [{ role: 'user', content: prompt }],
+      });
+
+      const textBlock = response.content.find(b => b.type === 'text');
+      if (!textBlock || textBlock.type !== 'text') return;
+
+      const jsonMatch = textBlock.text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return;
+
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (!parsed.facts || parsed.facts.length === 0) return;
+
+      // Save each extracted fact with embedding
+      for (const fact of parsed.facts) {
+        try {
+          const factEmbedding = await embed(fact.content);
+          await saveExtractedFact(
+            {
+              fact_type: fact.type || 'context',
+              subject: fact.subject || 'company',
+              content: fact.content,
+              source_thread_ts: threadTs,
+              extracted_by: this.name,
+              confidence: 0.8,
+              still_relevant: true,
+            },
+            factEmbedding
+          );
+          console.log(`${this.displayName}: Extracted fact: "${fact.content.slice(0, 50)}..."`);
+        } catch (err) {
+          console.warn(`${this.displayName}: Could not save extracted fact:`, err);
+        }
+      }
+    } catch (err) {
+      // Extraction failed, that's okay - it's best-effort
+    }
+  }
+
+  // Generate a response using Claude
+  async generateResponse(message: IncomingMessage, handoffContext: string = ''): Promise<AgentResponse> {
+    const client = getAnthropic();
+
+    // Load thread context if in a thread (with hierarchical summarization for long threads)
     let threadContext = '';
+    let threadMessages: Array<{ author: string; text: string; ts: string }> = [];
     if (message.threadTs) {
       const context = await this.loadThreadContext(message.threadTs, message.channelId);
+      threadMessages = context.messages;
+
       if (context.messages.length > 0) {
-        threadContext = '\n\nTHREAD CONTEXT (previous messages):\n' +
-          context.messages.map(m => `${m.author}: ${m.text}`).join('\n');
+        // Use hierarchical summarization for long threads
+        try {
+          const hierarchical = await buildHierarchicalContext(
+            context.messages,
+            message.threadTs
+          );
+          threadContext = '\n\n' + formatHierarchicalContext(hierarchical);
+        } catch (err) {
+          // Fallback to simple context
+          console.warn(`${this.displayName}: Hierarchical context failed, using simple:`, err);
+          threadContext = '\n\nTHREAD CONTEXT (previous messages):\n' +
+            context.messages.map(m => `${m.author}: ${m.text}`).join('\n');
+        }
       }
     }
 
-    // Load conversational memory
+    // Load three-tier memory context (semantic search enabled)
     let memoryContext = '';
     try {
-      const context = await getConversationalContext();
-      memoryContext = this.formatContext(context);
-    } catch {
-      // Memory not available yet, that's okay
+      const memory = await this.memoryManager.buildMemoryContext(
+        message.text,
+        threadMessages,
+        { useSemanticSearch: true }
+      );
+      memoryContext = this.memoryManager.formatForPrompt(memory);
+    } catch (err) {
+      // Fallback to legacy memory retrieval
+      console.warn(`${this.displayName}: Memory manager failed, using legacy:`, err);
+      try {
+        const context = await getConversationalContext();
+        memoryContext = this.formatContext(context);
+      } catch {
+        // Memory not available yet, that's okay
+      }
     }
 
     // Load research context (news, USASpending, SAM Entity, FAR)
@@ -492,6 +689,7 @@ ${guidance}
 ${companyContext}
 ${memoryContext}
 ${threadContext}
+${handoffContext}
 ${researchContext}
 ${fileContext}
 
@@ -771,11 +969,11 @@ MEMORY & CALLBACKS:
   }
 
   // Post a message
-  async postMessage(text: string, threadTs?: string): Promise<void> {
-    if (!this.app) return;
+  async postMessage(text: string, threadTs?: string): Promise<{ ts: string } | null> {
+    if (!this.app) return null;
 
     try {
-      await this.app.client.chat.postMessage({
+      const result = await this.app.client.chat.postMessage({
         channel: this.channelId,
         text,
         thread_ts: threadTs,
@@ -783,8 +981,10 @@ MEMORY & CALLBACKS:
         unfurl_media: false,
       });
       console.log(`${this.displayName}: Posted response`);
+      return { ts: result.ts as string };
     } catch (error) {
       console.error(`${this.displayName}: Error posting message:`, error);
+      return null;
     }
   }
 

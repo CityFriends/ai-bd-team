@@ -877,3 +877,527 @@ export async function resolveFeedback(id: string, resolution: string): Promise<b
     return false;
   }
 }
+
+// ============================================
+// PERSISTENT THREAD PARTICIPATION
+// ============================================
+
+export interface ThreadParticipation {
+  id?: string;
+  agent: string;
+  thread_ts: string;
+  channel_id?: string;
+  first_response_at?: string;
+  last_response_at?: string;
+  response_count?: number;
+}
+
+/**
+ * Record that an agent participated in a thread
+ */
+export async function recordThreadParticipation(
+  agent: string,
+  threadTs: string,
+  channelId?: string
+): Promise<void> {
+  try {
+    // Try to upsert - increment count if exists, create if not
+    const { data: existing } = await getSupabase()
+      .from('agent_thread_participation')
+      .select('id, response_count')
+      .eq('agent', agent)
+      .eq('thread_ts', threadTs)
+      .single();
+
+    if (existing) {
+      // Update existing participation
+      await getSupabase()
+        .from('agent_thread_participation')
+        .update({
+          last_response_at: new Date().toISOString(),
+          response_count: (existing.response_count || 1) + 1,
+        })
+        .eq('id', existing.id);
+    } else {
+      // Create new participation record
+      await getSupabase()
+        .from('agent_thread_participation')
+        .insert({
+          agent,
+          thread_ts: threadTs,
+          channel_id: channelId,
+          first_response_at: new Date().toISOString(),
+          last_response_at: new Date().toISOString(),
+          response_count: 1,
+        });
+    }
+  } catch (err) {
+    console.warn('Could not record thread participation:', err);
+  }
+}
+
+/**
+ * Get threads an agent has participated in recently
+ */
+export async function getAgentThreads(
+  agent: string,
+  options: { hours?: number; limit?: number } = {}
+): Promise<ThreadParticipation[]> {
+  const { hours = 72, limit = 100 } = options;
+
+  try {
+    const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+
+    const { data, error } = await getSupabase()
+      .from('agent_thread_participation')
+      .select('*')
+      .eq('agent', agent)
+      .gte('last_response_at', since)
+      .order('last_response_at', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      console.warn('Could not get agent threads:', error);
+      return [];
+    }
+
+    return data || [];
+  } catch (err) {
+    console.warn('Could not get agent threads:', err);
+    return [];
+  }
+}
+
+/**
+ * Check if an agent has participated in a specific thread
+ */
+export async function hasParticipatedInThread(
+  agent: string,
+  threadTs: string
+): Promise<boolean> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('agent_thread_participation')
+      .select('id')
+      .eq('agent', agent)
+      .eq('thread_ts', threadTs)
+      .single();
+
+    return !error && !!data;
+  } catch {
+    return false;
+  }
+}
+
+// ============================================
+// AGENT HANDOFFS
+// ============================================
+
+export interface AgentHandoff {
+  id?: string;
+  from_agent: string;
+  to_agent: string;
+  thread_ts: string;
+  context_summary: string;
+  user_intent?: string;
+  relevant_facts?: string[];
+  open_questions?: string[];
+  recommended_action?: string;
+  acknowledged?: boolean;
+  acknowledged_at?: string;
+  created_at?: string;
+}
+
+/**
+ * Create a handoff from one agent to another
+ */
+export async function createHandoff(handoff: Omit<AgentHandoff, 'id' | 'created_at'>): Promise<AgentHandoff | null> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('agent_handoffs')
+      .insert({
+        ...handoff,
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Could not create handoff:', error);
+      return null;
+    }
+
+    return data;
+  } catch (err) {
+    console.error('Could not create handoff:', err);
+    return null;
+  }
+}
+
+/**
+ * Get pending handoffs for an agent
+ */
+export async function getPendingHandoffs(
+  toAgent: string,
+  threadTs?: string
+): Promise<AgentHandoff[]> {
+  try {
+    let query = getSupabase()
+      .from('agent_handoffs')
+      .select('*')
+      .eq('to_agent', toAgent)
+      .eq('acknowledged', false)
+      .order('created_at', { ascending: false });
+
+    if (threadTs) {
+      query = query.eq('thread_ts', threadTs);
+    }
+
+    const { data, error } = await query.limit(10);
+
+    if (error) {
+      console.warn('Could not get pending handoffs:', error);
+      return [];
+    }
+
+    return data || [];
+  } catch (err) {
+    console.warn('Could not get pending handoffs:', err);
+    return [];
+  }
+}
+
+/**
+ * Acknowledge a handoff
+ */
+export async function acknowledgeHandoff(handoffId: string): Promise<void> {
+  try {
+    await getSupabase()
+      .from('agent_handoffs')
+      .update({
+        acknowledged: true,
+        acknowledged_at: new Date().toISOString(),
+      })
+      .eq('id', handoffId);
+  } catch (err) {
+    console.warn('Could not acknowledge handoff:', err);
+  }
+}
+
+// ============================================
+// AGENT FEEDBACK TRACKING
+// ============================================
+
+export interface AgentFeedback {
+  id?: string;
+  agent: string;
+  message_ts: string;
+  thread_ts?: string;
+  feedback_type: 'reaction_positive' | 'reaction_negative' | 'rephrased_question' | 'follow_up';
+  reaction_emoji?: string;
+  original_response?: string;
+  user_follow_up?: string;
+  similarity_score?: number;
+  created_at?: string;
+}
+
+/**
+ * Record feedback on an agent response
+ */
+export async function recordAgentFeedback(feedback: Omit<AgentFeedback, 'id' | 'created_at'>): Promise<void> {
+  try {
+    await getSupabase()
+      .from('agent_feedback')
+      .upsert({
+        ...feedback,
+        created_at: new Date().toISOString(),
+      }, {
+        onConflict: 'message_ts,feedback_type,reaction_emoji',
+        ignoreDuplicates: true,
+      });
+  } catch (err) {
+    console.warn('Could not record agent feedback:', err);
+  }
+}
+
+/**
+ * Get feedback statistics for an agent
+ */
+export async function getAgentFeedbackStats(
+  agent: string,
+  daysBack: number = 7
+): Promise<{
+  positiveReactions: number;
+  negativeReactions: number;
+  rephrasedQuestions: number;
+  followUps: number;
+}> {
+  try {
+    const since = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString();
+
+    const { data, error } = await getSupabase()
+      .from('agent_feedback')
+      .select('feedback_type')
+      .eq('agent', agent)
+      .gte('created_at', since);
+
+    if (error || !data) {
+      return { positiveReactions: 0, negativeReactions: 0, rephrasedQuestions: 0, followUps: 0 };
+    }
+
+    const stats = {
+      positiveReactions: 0,
+      negativeReactions: 0,
+      rephrasedQuestions: 0,
+      followUps: 0,
+    };
+
+    for (const fb of data) {
+      if (fb.feedback_type === 'reaction_positive') stats.positiveReactions++;
+      else if (fb.feedback_type === 'reaction_negative') stats.negativeReactions++;
+      else if (fb.feedback_type === 'rephrased_question') stats.rephrasedQuestions++;
+      else if (fb.feedback_type === 'follow_up') stats.followUps++;
+    }
+
+    return stats;
+  } catch {
+    return { positiveReactions: 0, negativeReactions: 0, rephrasedQuestions: 0, followUps: 0 };
+  }
+}
+
+// ============================================
+// EXTRACTED FACTS
+// ============================================
+
+export interface ExtractedFact {
+  id?: string;
+  fact_type: 'preference' | 'decision' | 'context' | 'pattern';
+  subject?: string;
+  content: string;
+  source_thread_ts?: string;
+  source_message_ts?: string;
+  extracted_by: string;
+  confidence?: number;
+  embedding?: string;
+  verified?: boolean;
+  still_relevant?: boolean;
+  expires_at?: string;
+  created_at?: string;
+}
+
+/**
+ * Save an extracted fact with optional embedding
+ */
+export async function saveExtractedFact(
+  fact: Omit<ExtractedFact, 'id' | 'created_at'>,
+  embedding?: number[]
+): Promise<ExtractedFact | null> {
+  try {
+    const insertData: any = {
+      ...fact,
+      created_at: new Date().toISOString(),
+    };
+
+    if (embedding) {
+      insertData.embedding = `[${embedding.join(',')}]`;
+    }
+
+    const { data, error } = await getSupabase()
+      .from('extracted_facts')
+      .insert(insertData)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Could not save extracted fact:', error);
+      return null;
+    }
+
+    return data;
+  } catch (err) {
+    console.error('Could not save extracted fact:', err);
+    return null;
+  }
+}
+
+/**
+ * Get extracted facts by type and subject
+ */
+export async function getExtractedFacts(
+  options: { factType?: string; subject?: string; limit?: number } = {}
+): Promise<ExtractedFact[]> {
+  const { factType, subject, limit = 20 } = options;
+
+  try {
+    let query = getSupabase()
+      .from('extracted_facts')
+      .select('*')
+      .eq('still_relevant', true)
+      .order('created_at', { ascending: false });
+
+    if (factType) {
+      query = query.eq('fact_type', factType);
+    }
+    if (subject) {
+      query = query.eq('subject', subject);
+    }
+
+    const { data, error } = await query.limit(limit);
+
+    if (error) {
+      console.warn('Could not get extracted facts:', error);
+      return [];
+    }
+
+    return data || [];
+  } catch (err) {
+    console.warn('Could not get extracted facts:', err);
+    return [];
+  }
+}
+
+// ============================================
+// THREAD SUMMARIES
+// ============================================
+
+export interface ThreadSummary {
+  id?: string;
+  thread_ts: string;
+  channel_id?: string;
+  summary: string;
+  message_count: number;
+  summarized_up_to_ts?: string;
+  participants?: string[];
+  key_topics?: string[];
+  embedding?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
+ * Save or update a thread summary
+ */
+export async function saveThreadSummary(
+  summary: Omit<ThreadSummary, 'id' | 'created_at' | 'updated_at'>,
+  embedding?: number[]
+): Promise<ThreadSummary | null> {
+  try {
+    const upsertData: any = {
+      ...summary,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (embedding) {
+      upsertData.embedding = `[${embedding.join(',')}]`;
+    }
+
+    const { data, error } = await getSupabase()
+      .from('thread_summaries')
+      .upsert(upsertData, {
+        onConflict: 'thread_ts',
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Could not save thread summary:', error);
+      return null;
+    }
+
+    return data;
+  } catch (err) {
+    console.error('Could not save thread summary:', err);
+    return null;
+  }
+}
+
+/**
+ * Get a thread summary by thread timestamp
+ */
+export async function getThreadSummary(threadTs: string): Promise<ThreadSummary | null> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('thread_summaries')
+      .select('*')
+      .eq('thread_ts', threadTs)
+      .single();
+
+    if (error) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+// ============================================
+// SAVE WITH EMBEDDINGS (Enhanced versions)
+// ============================================
+
+/**
+ * Save user context with embedding for semantic search
+ */
+export async function saveUserContextWithEmbedding(
+  context: UserContext,
+  embedding?: number[]
+): Promise<void> {
+  try {
+    const insertData: any = {
+      ...context,
+      mentioned_at: new Date().toISOString(),
+    };
+
+    if (embedding) {
+      insertData.embedding = `[${embedding.join(',')}]`;
+    }
+
+    await getSupabase().from('user_context').insert(insertData);
+  } catch (err) {
+    console.warn('Could not save user context:', err);
+  }
+}
+
+/**
+ * Save conversation memory with embedding for semantic search
+ */
+export async function saveConversationMemoryWithEmbedding(
+  memory: ConversationMemory,
+  embedding?: number[]
+): Promise<void> {
+  try {
+    const insertData: any = {
+      ...memory,
+      created_at: new Date().toISOString(),
+    };
+
+    if (embedding) {
+      insertData.embedding = `[${embedding.join(',')}]`;
+    }
+
+    await getSupabase().from('conversation_memory').insert(insertData);
+  } catch (err) {
+    console.warn('Could not save conversation memory:', err);
+  }
+}
+
+/**
+ * Save decision pattern with embedding for semantic search
+ */
+export async function saveDecisionPatternWithEmbedding(
+  pattern: DecisionPattern,
+  embedding?: number[]
+): Promise<void> {
+  try {
+    const insertData: any = {
+      ...pattern,
+      created_at: new Date().toISOString(),
+    };
+
+    if (embedding) {
+      insertData.embedding = `[${embedding.join(',')}]`;
+    }
+
+    await getSupabase().from('decision_patterns').insert(insertData);
+  } catch (err) {
+    console.warn('Could not save decision pattern:', err);
+  }
+}

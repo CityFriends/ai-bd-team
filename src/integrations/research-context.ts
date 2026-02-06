@@ -5,6 +5,8 @@ import { getAgencySpending, formatUSASpendingForAgent } from './usaspending.js';
 import { verifyRegistration, formatSAMEntityForAgent } from './sam-entity.js';
 import { searchFAR, formatFARResults } from './far-search.js';
 import { saveCompetitorIntel, getCompetitorIntel, hasRecentIntel, type CompetitorIntel } from './supabase.js';
+import { searchOpportunities, mapOpportunityType, getSAMOpportunityURL, type SearchOptions as SAMSearchOptions } from './sam-gov.js';
+import type { SAMOpportunity } from '../types/index.js';
 
 // Agency name mappings for detection
 const AGENCY_PATTERNS: Record<string, { code: string; name: string; keywords: string[] }> = {
@@ -57,6 +59,11 @@ export interface ResearchContext {
     awards: NewsArticle[];
     savedIntel: CompetitorIntel[];
     summary: string;
+    source: string;
+  };
+  samOpportunities?: {
+    opportunities: SAMOpportunity[];
+    totalFound: number;
     source: string;
   };
 }
@@ -185,6 +192,7 @@ function detectTopics(text: string): {
   needsSpending: boolean;
   needsPartnerCheck: boolean;
   needsFAR: boolean;
+  needsSAMOpportunities: boolean;
   agency: { code: string; name: string } | null;
   companyName: string | null;
   competitorName: string | null;
@@ -217,6 +225,7 @@ function detectTopics(text: string): {
   const spendingKeywords = ['budget', 'spending', 'usaspending', 'obligat', 'fund', 'money', 'fiscal'];
   const partnerKeywords = ['partner', 'team', 'verify', 'registration', 'sam.gov', 'certified', 'certification', '8(a)', 'wosb', 'sdvosb', 'hubzone'];
   const farKeywords = ['far ', 'far.', 'regulation', 'cfr', 'acquisition', 'evaluation', 'past performance', 'source selection', 'protest'];
+  const samOpportunityKeywords = ['opportunity', 'opportunities', 'opp', 'opps', 'rfp', 'rfi', 'solicitation', 'sam.gov', 'search', 'find', 'look for', 'looking for', 'hunt', 'scan', 'what\'s out there', 'what\'s available', 'health it', 'healthcare', 'modernization'];
 
   // Detect competitor/incumbent mentions
   const competitorName = detectCompetitorMention(cleanedText);
@@ -253,6 +262,7 @@ function detectTopics(text: string): {
     needsSpending: spendingKeywords.some(kw => lowerText.includes(kw)),
     needsPartnerCheck: partnerKeywords.some(kw => lowerText.includes(kw)),
     needsFAR: farKeywords.some(kw => lowerText.includes(kw)),
+    needsSAMOpportunities: samOpportunityKeywords.some(kw => lowerText.includes(kw)),
     agency: detectAgency(cleanedText),
     companyName: detectCompanyName(cleanedText),
     competitorName,
@@ -284,6 +294,23 @@ export async function gatherResearchContext(
 
   const shouldFetchFAR = (agentName === 'david' || agentName === 'james') &&
                          topics.needsFAR;
+
+  // Maya should ALWAYS search SAM.gov when asked about opportunities, searching, or finding work
+  // She has access to company NAICS codes and should use them proactively
+  const lowerTextForSAM = text.toLowerCase();
+  const shouldFetchSAMOpportunities = agentName === 'maya' && (
+    topics.needsSAMOpportunities ||
+    lowerTextForSAM.includes('search') ||
+    lowerTextForSAM.includes('find') ||
+    lowerTextForSAM.includes('look') ||
+    lowerTextForSAM.includes('opportunities') ||
+    lowerTextForSAM.includes('opps') ||
+    lowerTextForSAM.includes('what\'s out there') ||
+    lowerTextForSAM.includes('sam.gov') ||
+    lowerTextForSAM.includes('health') ||
+    lowerTextForSAM.includes('rfp') ||
+    lowerTextForSAM.includes('rfi')
+  );
 
   // Fetch in parallel
   const promises: Promise<void>[] = [];
@@ -443,6 +470,36 @@ export async function gatherResearchContext(
           }
         } catch (err) {
           console.warn('FAR search failed:', err);
+        }
+      })()
+    );
+  }
+
+  // SAM.gov Opportunities: Search for current opportunities
+  if (shouldFetchSAMOpportunities) {
+    promises.push(
+      (async () => {
+        try {
+          console.log(`Research: Searching SAM.gov for opportunities`);
+          // Search last 14 days by default
+          const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+          const result = await searchOpportunities({
+            postedFrom: twoWeeksAgo,
+            postedTo: new Date(),
+            limit: 10,
+          });
+          if (result.opportunitiesData && result.opportunitiesData.length > 0) {
+            context.samOpportunities = {
+              opportunities: result.opportunitiesData,
+              totalFound: result.totalRecords,
+              source: 'SAM.gov',
+            };
+            console.log(`Research: Found ${result.opportunitiesData.length} opportunities from SAM.gov`);
+          } else {
+            console.log(`Research: No opportunities found on SAM.gov`);
+          }
+        } catch (err) {
+          console.warn('SAM.gov opportunity search failed:', err);
         }
       })()
     );
@@ -617,6 +674,29 @@ export function formatResearchContext(context: ResearchContext): string {
     }
 
     parts.push(`Source: ${intel.source}`);
+  }
+
+  // SAM.gov Opportunities
+  if (context.samOpportunities && context.samOpportunities.opportunities.length > 0) {
+    const opps = context.samOpportunities;
+    parts.push(`\nSAM.GOV OPPORTUNITIES (${opps.totalFound} total found, showing top ${opps.opportunities.length}):`);
+    opps.opportunities.forEach((opp, i) => {
+      const dueDate = opp.responseDeadLine ? ` | Due: ${opp.responseDeadLine}` : '';
+      const type = opp.type ? mapOpportunityType(opp.type) : 'Unknown';
+      parts.push(`\n${i + 1}. ${opp.title}`);
+      parts.push(`   Agency: ${(opp as any).fullParentPathName || opp.department || 'Unknown'}`);
+      parts.push(`   Type: ${type}${dueDate}`);
+      if (opp.naicsCode) {
+        parts.push(`   NAICS: ${opp.naicsCode}`);
+      }
+      if (opp.description) {
+        // Truncate long descriptions
+        const desc = opp.description.length > 200 ? opp.description.slice(0, 200) + '...' : opp.description;
+        parts.push(`   Description: ${desc}`);
+      }
+      parts.push(`   Link: ${opp.uiLink || getSAMOpportunityURL(opp.noticeId)}`);
+    });
+    parts.push(`\nSource: ${opps.source}`);
   }
 
   if (parts.length === 0) {
