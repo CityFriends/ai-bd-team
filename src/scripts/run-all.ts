@@ -45,8 +45,8 @@ async function main() {
   // Start Maya's scanner schedule
   console.log('  Starting: Maya Scanner Schedule');
 
-  // Maya: Weekdays at 8am - ACTUALLY RUN THE SCAN
-  cron.schedule('0 8 * * 1-5', async () => {
+  // Maya: Weekdays at 8am CST (14:00 UTC)
+  cron.schedule('0 14 * * 1-5', async () => {
     console.log(`[${new Date().toLocaleString()}] Maya: Running daily scan...`);
     try {
       await runMayaDailyScan();
@@ -56,8 +56,8 @@ async function main() {
     }
   });
 
-  // Maya: Weekly summary Monday 8:30am
-  cron.schedule('30 8 * * 1', async () => {
+  // Maya: Weekly summary Monday 8:30am CST (14:30 UTC)
+  cron.schedule('30 14 * * 1', async () => {
     console.log(`[${new Date().toLocaleString()}] Maya: Running weekly summary...`);
     try {
       await runMayaWeeklySummary();
@@ -67,14 +67,14 @@ async function main() {
     }
   });
 
-  // Patricia: Morning check-in 9am weekdays
-  cron.schedule('0 9 * * 1-5', async () => {
+  // Patricia: Morning check-in 9am CST (15:00 UTC)
+  cron.schedule('0 15 * * 1-5', async () => {
     console.log(`[${new Date().toLocaleString()}] Patricia: Morning check-in...`);
     // TODO: Add Patricia check-in logic
   });
 
-  // Patricia: Nudge check 2pm weekdays
-  cron.schedule('0 14 * * 1-5', async () => {
+  // Patricia: Nudge check 2pm CST (20:00 UTC)
+  cron.schedule('0 20 * * 1-5', async () => {
     console.log(`[${new Date().toLocaleString()}] Patricia: Checking pending items...`);
     // TODO: Add Patricia nudge logic
   });
@@ -83,12 +83,12 @@ async function main() {
 
   console.log('='.repeat(60));
   console.log('  All services running');
-  console.log('  Schedule:');
+  console.log('  Schedule (CST):');
   console.log('    - Live agents: Always listening');
-  console.log('    - Maya scan: 8:00 AM Mon-Fri');
-  console.log('    - Maya weekly: 8:30 AM Monday');
-  console.log('    - Patricia check-in: 9:00 AM Mon-Fri');
-  console.log('    - Patricia nudge: 2:00 PM Mon-Fri');
+  console.log('    - Maya scan: 8:00 AM CST Mon-Fri');
+  console.log('    - Maya weekly: 8:30 AM CST Monday');
+  console.log('    - Patricia check-in: 9:00 AM CST Mon-Fri');
+  console.log('    - Patricia nudge: 2:00 PM CST Mon-Fri');
   console.log('='.repeat(60));
 
   // Keep process alive

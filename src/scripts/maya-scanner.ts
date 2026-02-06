@@ -510,21 +510,21 @@ async function main() {
     console.log('='.repeat(60));
     console.log('  Maya Opportunity Scanner - Scheduled Mode');
     console.log('='.repeat(60));
-    console.log('\nSchedule:');
-    console.log('  - Weekdays at 8:00 AM: Scan for new opportunities');
-    console.log('  - Monday at 8:30 AM: Weekly summary');
+    console.log('\nSchedule (CST):');
+    console.log('  - Weekdays at 8:00 AM CST: Scan for new opportunities');
+    console.log('  - Monday at 8:30 AM CST: Weekly summary');
     console.log('  - Press Ctrl+C to stop\n');
 
     // Run immediately on start
     await runDailyScan();
 
-    // Weekdays at 8am (Mon-Fri)
-    cron.schedule('0 8 * * 1-5', async () => {
+    // Weekdays at 8am CST (14:00 UTC)
+    cron.schedule('0 14 * * 1-5', async () => {
       await runDailyScan();
     });
 
-    // Weekly on Monday at 8:30am (after daily scan)
-    cron.schedule('30 8 * * 1', async () => {
+    // Weekly on Monday at 8:30am CST (14:30 UTC)
+    cron.schedule('30 14 * * 1', async () => {
       await runWeeklySummary();
     });
 
