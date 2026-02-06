@@ -23,6 +23,12 @@ const CHANNEL_ID = process.env.SLACK_CHANNEL_ID || '';
 const LAPEDRA_ID = 'U01SC2TNYKU';
 const TAMARA_ID = 'U01RXBVUA0P';
 
+// Agent Slack IDs for tagging in standups
+const MAYA_ID = 'U0AC3RA4JVB';
+const DAVID_ID = 'U0AC0SVD3MH';
+const ROSA_ID = 'U0ACASZ36BW';
+const JAMES_ID = 'U0AC582GXBQ';
+
 // Initialize Patricia's Slack app
 async function getPatriciaApp(): Promise<App | null> {
   const botToken = process.env.PATRICIA_BOT_TOKEN;
@@ -49,6 +55,49 @@ interface PendingItem {
   daysOld: number;
   urgency: 'high' | 'medium' | 'low';
   context?: string;
+}
+
+interface RecentActivity {
+  agent: string;
+  message: string;
+  timestamp: string;
+}
+
+// Scan recent Slack channel messages to see what agents have posted
+async function getRecentChannelActivity(app: App | null): Promise<RecentActivity[]> {
+  if (!app) return [];
+
+  const activities: RecentActivity[] = [];
+  const oneDayAgo = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000);
+
+  try {
+    const result = await app.client.conversations.history({
+      channel: CHANNEL_ID,
+      oldest: oneDayAgo.toString(),
+      limit: 30,
+    });
+
+    // Agent bot IDs (we'll match by username in the message)
+    const agentNames = ['maya', 'david', 'rosa', 'james', 'patricia', 'jodie'];
+
+    for (const msg of result.messages || []) {
+      // Check if it's from one of our agents (bot messages)
+      const username = (msg as any).username?.toLowerCase() || '';
+      const matchedAgent = agentNames.find(a => username.includes(a));
+
+      if (matchedAgent && msg.text) {
+        activities.push({
+          agent: matchedAgent,
+          message: msg.text.slice(0, 200),
+          timestamp: msg.ts || '',
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('Could not fetch channel history:', err);
+  }
+
+  return activities;
 }
 
 async function getPendingItems(): Promise<PendingItem[]> {
@@ -104,7 +153,7 @@ async function getPendingItems(): Promise<PendingItem[]> {
   return pending;
 }
 
-async function generateMorningCheckin(pending: PendingItem[]): Promise<string> {
+async function generateMorningCheckin(pending: PendingItem[], recentActivity: RecentActivity[]): Promise<string> {
   const client = getAnthropic();
   const companyData = await loadCompanyContext();
   const companyContext = formatCompanyContextForPrompt(companyData, 'Patricia');
@@ -119,26 +168,34 @@ ${companyContext}
 Today is ${dayOfWeek}.
 ${isMonday ? 'It\'s Monday, so do a quick week-ahead preview.' : ''}
 
-PENDING ITEMS:
+PENDING ITEMS (from database):
 ${pending.length > 0
-  ? pending.map(p => `- [${p.urgency.toUpperCase()}] ${p.type}: ${p.title} (${p.daysOld} days) ${p.context || ''}`).join('\n')
-  : 'Nothing pending - clean slate!'}
+  ? pending.map(p => `- [${p.urgency.toUpperCase()}] ${p.type}: "${p.title}" (${p.daysOld} days old) ${p.context || ''}`).join('\n')
+  : 'Nothing pending in the tracker.'}
 
-TEAM STATUS:
-- Maya: Scanning SAM.gov daily
-- David: Available for research
-- Rosa: Available for partner outreach
-- James: Available for strategy calls
+RECENT CHANNEL ACTIVITY (last 24 hours):
+${recentActivity.length > 0
+  ? recentActivity.map(a => `- ${a.agent}: "${a.message.slice(0, 150)}..."`).join('\n')
+  : 'No agent messages in the last 24 hours.'}
 
-Write a morning standup message for #bd-team. Be conversational - you're a millennial PM, organized but chill. Keep it to 4-6 sentences max. Include:
+TEAM ROLES:
+- Maya: Scans SAM.gov for opportunities
+- David: Researches agencies, incumbents, risks
+- Rosa: Partner outreach and teaming
+- James: Strategy and go/no-go decisions
+
+Write a morning standup message for #bd-team. Be conversational - you're a millennial PM, organized but chill. Include:
 1. Quick vibe check (acknowledge the day)
-2. Any hot items needing attention
-3. What the team should focus on today
-4. ${isMonday ? 'Quick preview of the week' : 'Any deadlines coming up'}
-5. Tag <@${LAPEDRA_ID}> and <@${TAMARA_ID}> at the end
-6. Ask if there's anything blocking them or priorities to discuss
+2. Summarize pending items/opportunities if any
+3. Tag each team member for their update:
+   - <@${MAYA_ID}> (Maya) - any new opportunities?
+   - <@${DAVID_ID}> (David) - any research updates?
+   - <@${ROSA_ID}> (Rosa) - any partner conversations?
+   - <@${JAMES_ID}> (James) - any strategy decisions needed?
+4. Tag <@${LAPEDRA_ID}> and <@${TAMARA_ID}> for priorities/blockers
+5. ${isMonday ? 'Quick preview of the week' : 'Any deadlines coming up'}
 
-Use emoji naturally - you love them. End with a question for the team.`;
+Use emoji naturally - you love them. Ask each person for a quick update.`;
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
@@ -228,11 +285,15 @@ async function runMorningCheckin() {
   console.log('='.repeat(60) + '\n');
 
   const app = await getPatriciaApp();
+
+  // Gather data
   const pending = await getPendingItems();
+  const recentActivity = await getRecentChannelActivity(app);
 
   console.log(`Found ${pending.length} pending items`);
+  console.log(`Found ${recentActivity.length} recent agent messages`);
 
-  const message = await generateMorningCheckin(pending);
+  const message = await generateMorningCheckin(pending, recentActivity);
   await postToSlack(app, message);
 
   if (app) {
