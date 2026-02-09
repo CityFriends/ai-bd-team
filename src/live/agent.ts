@@ -15,6 +15,8 @@ import {
   getPendingHandoffs,
   acknowledgeHandoff,
   getUserProfile,
+  formatUserProfileForAgent,
+  trackUserInteraction,
 } from '../integrations/supabase.js';
 import { gatherResearchContext, formatResearchContext } from '../integrations/research-context.js';
 import { loadCompanyContext, formatCompanyContextForPrompt } from '../context/company-context.js';
@@ -107,6 +109,14 @@ export abstract class LiveAgent {
     // Start the app
     await this.app.start();
     console.log(`${this.displayName}: Listening for messages...`);
+  }
+
+  /**
+   * Get the Slack app instance for registering additional handlers
+   * (e.g., button action handlers)
+   */
+  getApp(): App | null {
+    return this.app;
   }
 
   // Restore active threads from database
@@ -589,6 +599,38 @@ Only extract clear, specific facts. Don't infer or guess.`;
     }
   }
 
+  // Extract topic from message for interaction tracking
+  private extractTopic(text: string): string | undefined {
+    const lowerText = text.toLowerCase();
+
+    // Agency detection
+    const agencies = ['va', 'hhs', 'cms', 'dol', 'sba', 'ssa', 'gsa', 'dod', 'dhs'];
+    for (const agency of agencies) {
+      if (lowerText.includes(agency)) {
+        return agency.toUpperCase();
+      }
+    }
+
+    // Topic detection by keywords
+    const topicKeywords: Record<string, string[]> = {
+      'teaming': ['partner', 'team', 'subcontract', 'prime'],
+      'pricing': ['price', 'cost', 'budget', 'bid'],
+      'incumbent': ['incumbent', 'current contractor'],
+      'compliance': ['far', 'dfar', 'compliance', 'regulation'],
+      'proposal': ['proposal', 'rfp', 'response', 'submission'],
+      'past performance': ['past performance', 'cpars', 'reference'],
+      'certifications': ['8a', 'wosb', 'sdvosb', 'hubzone', 'small business'],
+    };
+
+    for (const [topic, keywords] of Object.entries(topicKeywords)) {
+      if (keywords.some(kw => lowerText.includes(kw))) {
+        return topic;
+      }
+    }
+
+    return undefined;
+  }
+
   // Generate a response using Claude
   async generateResponse(message: IncomingMessage, handoffContext: string = ''): Promise<AgentResponse> {
     const client = getAnthropic();
@@ -673,6 +715,28 @@ Only extract clear, specific facts. Don't infer or guess.`;
       console.warn(`${this.displayName}: Company context failed:`, err);
     }
 
+    // Load user profile for personalization
+    let userProfileContext = '';
+    if (message.userId) {
+      try {
+        const userProfile = await getUserProfile(message.userId);
+        userProfileContext = formatUserProfileForAgent(userProfile);
+        if (userProfileContext) {
+          console.log(`${this.displayName}: Loaded user profile for personalization`);
+        }
+
+        // Track this interaction for learning
+        trackUserInteraction({
+          slack_user_id: message.userId,
+          agent: this.name,
+          interaction_type: 'question',
+          topic: this.extractTopic(message.text),
+        });
+      } catch (err) {
+        // Don't block on profile loading
+      }
+    }
+
     // Parse attached files if present
     let fileContext = '';
     if (message.files && message.files.length > 0 && this.app) {
@@ -717,11 +781,25 @@ THE HUMANS ON THE TEAM:
 CURRENT MOOD DETECTED: ${mood}
 ${guidance}
 ${companyContext}
+${userProfileContext}
 ${memoryContext}
 ${threadContext}
 ${handoffContext}
 ${researchContext}
 ${fileContext}
+
+SLACK FORMATTING (use these for clean, readable messages):
+- Bold: *text* (use for headers, key terms, emphasis)
+- Italic: _text_ (use for subtle emphasis)
+- Bullets: Start lines with • for lists (not - or *)
+- Code: \`code\` for technical terms, IDs, or commands
+- Links: Just paste the URL on its own line
+- Sections: Use *Bold Headers* to organize longer responses
+Example of good formatting:
+  *Incumbent Analysis*
+  • Company: Booz Allen
+  • Contract value: $4.2M
+  • Red flags: None found
 
 RESPOND LIKE A REAL HUMAN:
 - Vary your sentence structure - don't always start the same way

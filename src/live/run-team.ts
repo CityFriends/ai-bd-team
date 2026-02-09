@@ -5,6 +5,8 @@ import { david } from './david.js';
 import { rosa } from './rosa.js';
 import { james } from './james.js';
 import { patricia } from './patricia.js';
+import { registerButtonHandlers } from './button-handlers.js';
+import { registerSlashCommands } from './slash-commands.js';
 // import { jodie } from './jodie.js'; // Disabled - Slack app auth issue
 
 const agents = [
@@ -59,6 +61,17 @@ async function main() {
       try {
         await a.agent.connect();
         console.log(`✓ ${a.name} connected successfully`);
+
+        // Register button handlers and slash commands with Maya's app
+        if (a.agent === maya) {
+          const mayaApp = maya.getApp();
+          if (mayaApp) {
+            registerButtonHandlers(mayaApp);
+            registerSlashCommands(mayaApp);
+            console.log(`✓ Interactive button handlers registered with Maya`);
+            console.log(`✓ Slash commands (/pipeline) registered with Maya`);
+          }
+        }
       } catch (err) {
         console.error(`✗ ${a.name} FAILED TO CONNECT:`, err);
         throw err;

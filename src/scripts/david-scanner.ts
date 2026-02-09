@@ -1,0 +1,856 @@
+/**
+ * David's Proactive Intelligence Scanner
+ *
+ * Daily Schedule (CST):
+ *   7:00am - Competitor intel scan (Booz, Deloitte, Accenture wins/losses, news)
+ *   7:30am - GAO protest database check for target agencies
+ *   8:00am - Auto-research Maya's recent opportunities (incumbents, red flags)
+ *
+ * Auto-Trigger:
+ *   When Maya posts a 70+ opportunity, David auto-researches within 30 minutes
+ *
+ * Usage:
+ *   npm run david:scan         # Run full scan now
+ *   npm run david:schedule     # Run on daily schedule
+ *   npm run david:brief        # Run morning brief only
+ */
+import 'dotenv/config';
+import cron from 'node-cron';
+import { App } from '@slack/bolt';
+import { getAnthropic } from '../integrations/claude.js';
+import { getSupabase } from '../integrations/supabase.js';
+import { searchNews, searchCompetitorNews, type NewsArticle } from '../integrations/news-search.js';
+import { findIncumbent, formatFPDSForAgent } from '../integrations/fpds.js';
+import { loadCompanyContext, formatCompanyContextForPrompt } from '../context/company-context.js';
+import { gatherResearchContext, formatResearchContext } from '../integrations/research-context.js';
+import { bold, bullets, formatIntelBrief } from '../utils/slack-format.js';
+import {
+  saveCompetitorIntel,
+  getCompetitorIntelByAgency,
+  getRecentCompetitorIntel,
+  type CompetitorIntel,
+} from '../integrations/supabase.js';
+
+const CHANNEL_ID = process.env.SLACK_CHANNEL_ID || '';
+
+// Target agencies to monitor
+const TARGET_AGENCIES = [
+  { code: '036', name: 'VA', fullName: 'Department of Veterans Affairs' },
+  { code: '075', name: 'HHS', fullName: 'Department of Health and Human Services' },
+  { code: '012', name: 'DOL', fullName: 'Department of Labor' },
+  { code: '073', name: 'SBA', fullName: 'Small Business Administration' },
+  { code: '028', name: 'SSA', fullName: 'Social Security Administration' },
+];
+
+// Key competitors to watch
+const COMPETITORS = [
+  'Booz Allen Hamilton',
+  'Deloitte',
+  'Accenture Federal',
+  'SAIC',
+  'Leidos',
+  'GDIT',
+  'ManTech',
+  'CACI',
+  'Peraton',
+  'ICF',
+  'Maximus',
+  'Guidehouse',
+];
+
+// Initialize David's Slack app
+async function getDavidApp(): Promise<App | null> {
+  const botToken = process.env.DAVID_BOT_TOKEN;
+  const appToken = process.env.DAVID_APP_TOKEN;
+
+  if (!botToken || !appToken) {
+    console.log('David Slack tokens not configured, running in test mode');
+    return null;
+  }
+
+  const app = new App({
+    token: botToken,
+    appToken: appToken,
+    socketMode: true,
+  });
+
+  await app.start();
+  return app;
+}
+
+// David's voice patterns for morning briefs
+const MORNING_OPENERS = [
+  "Alright, here's what I found this morning.",
+  "Morning intel brief. Grabbed my coffee, here's what we're looking at.",
+  "So, did my rounds. Here's what's happening.",
+  "Okay, here's the morning rundown.",
+  "Quick brief before you all dive in.",
+];
+
+const QUIET_MORNING_MESSAGES = [
+  "Did my morning scan - nothing significant on the competitor front. Quiet day so far.",
+  "Checked the usual sources. It's quiet out there today. I'll keep watching.",
+  "Morning scan complete - no major moves from our competitors. Sometimes no news is good news.",
+  "Ran through everything. Nothing worth flagging right now. Will update if that changes.",
+];
+
+function getRandomOpener(): string {
+  return MORNING_OPENERS[Math.floor(Math.random() * MORNING_OPENERS.length)];
+}
+
+function getQuietMorningMessage(): string {
+  return QUIET_MORNING_MESSAGES[Math.floor(Math.random() * QUIET_MORNING_MESSAGES.length)];
+}
+
+interface CompetitorIntelItem {
+  company: string;
+  type: 'win' | 'loss' | 'protest' | 'news';
+  summary: string;
+  agency?: string;
+  source?: string;
+  url?: string;
+}
+
+interface IncumbentResearch {
+  opportunityTitle: string;
+  noticeId: string;
+  incumbent?: string;
+  contractValue?: string;
+  protestHistory?: string;
+  redFlags: string[];
+  threadTs?: string;
+}
+
+interface MorningBrief {
+  competitorIntel: CompetitorIntelItem[];
+  incumbentResearch: IncumbentResearch[];
+  redFlags: string[];
+  hasSignificantNews: boolean;
+  patterns: PatternInsight[];
+}
+
+interface PatternInsight {
+  type: 'competitor_trend' | 'agency_activity' | 'vulnerability' | 'alert';
+  insight: string;
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  data?: Record<string, unknown>;
+}
+
+// ===== PATTERN RECOGNITION =====
+
+// Analyze competitor patterns from historical data
+async function analyzeCompetitorPatterns(): Promise<PatternInsight[]> {
+  console.log('Analyzing competitor patterns...');
+  const insights: PatternInsight[] = [];
+
+  try {
+    // Get intel from last 90 days
+    const recentIntel = await getRecentCompetitorIntel(90, 100);
+
+    if (recentIntel.length < 5) {
+      console.log('  Not enough historical data for pattern analysis');
+      return insights;
+    }
+
+    // Group wins by competitor
+    const competitorWins: Record<string, { count: number; agencies: string[] }> = {};
+    const agencyActivity: Record<string, { count: number; competitors: string[] }> = {};
+
+    for (const intel of recentIntel) {
+      if (intel.intel_type === 'award') {
+        const company = intel.company_name;
+        const agency = intel.agency_code || 'Unknown';
+
+        // Track competitor wins
+        if (!competitorWins[company]) {
+          competitorWins[company] = { count: 0, agencies: [] };
+        }
+        competitorWins[company].count++;
+        if (!competitorWins[company].agencies.includes(agency)) {
+          competitorWins[company].agencies.push(agency);
+        }
+
+        // Track agency activity
+        if (agency !== 'Unknown') {
+          if (!agencyActivity[agency]) {
+            agencyActivity[agency] = { count: 0, competitors: [] };
+          }
+          agencyActivity[agency].count++;
+          if (!agencyActivity[agency].competitors.includes(company)) {
+            agencyActivity[agency].competitors.push(company);
+          }
+        }
+      }
+    }
+
+    // Detect competitors on winning streaks
+    for (const [company, data] of Object.entries(competitorWins)) {
+      if (data.count >= 3) {
+        insights.push({
+          type: 'competitor_trend',
+          insight: `${company} is on a hot streak - ${data.count} wins in 90 days across ${data.agencies.length} agencies`,
+          confidence: data.count >= 5 ? 'HIGH' : 'MEDIUM',
+          data: { company, wins: data.count, agencies: data.agencies },
+        });
+      }
+    }
+
+    // Detect agencies with high activity (potential consolidation or modernization)
+    for (const [agency, data] of Object.entries(agencyActivity)) {
+      if (data.count >= 3) {
+        insights.push({
+          type: 'agency_activity',
+          insight: `${agency} has awarded ${data.count} contracts recently - they're active in our space`,
+          confidence: 'MEDIUM',
+          data: { agency, awards: data.count, winners: data.competitors },
+        });
+      }
+    }
+
+    // Detect protest patterns (competitor vulnerability)
+    const protestsByCompetitor: Record<string, number> = {};
+    for (const intel of recentIntel) {
+      if (intel.intel_type === 'protest') {
+        const company = intel.company_name;
+        protestsByCompetitor[company] = (protestsByCompetitor[company] || 0) + 1;
+      }
+    }
+
+    for (const [company, count] of Object.entries(protestsByCompetitor)) {
+      if (count >= 2) {
+        insights.push({
+          type: 'vulnerability',
+          insight: `${company} has faced ${count} protests recently - may indicate vulnerabilities in their delivery`,
+          confidence: count >= 3 ? 'HIGH' : 'MEDIUM',
+          data: { company, protests: count },
+        });
+      }
+    }
+
+    console.log(`  Found ${insights.length} pattern insights`);
+  } catch (err) {
+    console.warn('  Error analyzing patterns:', err);
+  }
+
+  return insights;
+}
+
+// Save intel to database for future pattern analysis
+async function saveIntelToDatabase(intel: CompetitorIntelItem[]): Promise<void> {
+  // Map local types to database types
+  const typeMap: Record<string, 'protest' | 'performance' | 'award' | 'debarment' | 'general'> = {
+    'win': 'award',
+    'loss': 'general',
+    'protest': 'protest',
+    'news': 'general',
+  };
+
+  for (const item of intel) {
+    try {
+      await saveCompetitorIntel({
+        company_name: item.company,
+        intel_type: typeMap[item.type] || 'general',
+        summary: item.summary,
+        agency_code: item.agency,
+        source_url: item.url,
+        source_name: item.source,
+        confidence: 'MEDIUM', // Default to medium for news-sourced intel
+        discovered_by: 'david',
+      });
+    } catch (err) {
+      // Ignore duplicates or errors
+    }
+  }
+}
+
+// Check for alerts - significant competitor activity at our target agencies
+async function checkForAlerts(): Promise<PatternInsight[]> {
+  console.log('Checking for competitive alerts...');
+  const alerts: PatternInsight[] = [];
+
+  for (const agency of TARGET_AGENCIES.slice(0, 3)) {
+    try {
+      const agencyIntel = await getCompetitorIntelByAgency(agency.code, 10);
+
+      // Check for recent wins at this agency
+      const recentWins = agencyIntel.filter(i => {
+        const daysAgo = (Date.now() - new Date(i.discovered_at || 0).getTime()) / (1000 * 60 * 60 * 24);
+        return daysAgo <= 7 && i.intel_type === 'award';
+      });
+
+      if (recentWins.length > 0) {
+        const winners = [...new Set(recentWins.map(w => w.company_name))];
+        alerts.push({
+          type: 'alert',
+          insight: `🚨 ${agency.name}: ${winners.join(', ')} won contracts this week at our target agency`,
+          confidence: 'HIGH',
+          data: { agency: agency.name, winners, count: recentWins.length },
+        });
+      }
+    } catch (err) {
+      // Ignore errors
+    }
+  }
+
+  return alerts;
+}
+
+// Scan competitor news
+async function scanCompetitorNews(): Promise<CompetitorIntelItem[]> {
+  console.log('Scanning competitor news...');
+  const intel: CompetitorIntelItem[] = [];
+
+  for (const competitor of COMPETITORS.slice(0, 6)) { // Top 6 to avoid rate limits
+    try {
+      console.log(`  Checking ${competitor}...`);
+      const result = await searchCompetitorNews({
+        companyName: competitor,
+        daysBack: 2, // Last 2 days for morning brief
+      });
+
+      // Process wins
+      for (const article of result.awards.slice(0, 2)) {
+        intel.push({
+          company: competitor,
+          type: 'win',
+          summary: article.title,
+          source: article.source,
+          url: article.url,
+        });
+      }
+
+      // Process protests
+      for (const article of result.protests.slice(0, 2)) {
+        intel.push({
+          company: competitor,
+          type: 'protest',
+          summary: article.title,
+          source: article.source,
+          url: article.url,
+        });
+      }
+
+      // Process performance issues
+      for (const article of result.performance.slice(0, 1)) {
+        intel.push({
+          company: competitor,
+          type: 'news',
+          summary: article.title,
+          source: article.source,
+          url: article.url,
+        });
+      }
+
+      await new Promise(r => setTimeout(r, 500)); // Rate limit
+    } catch (err) {
+      console.warn(`  Error checking ${competitor}:`, err);
+    }
+  }
+
+  return intel;
+}
+
+// Check GAO protest database for target agencies
+async function checkGAOProtests(): Promise<CompetitorIntelItem[]> {
+  console.log('Checking GAO protests for target agencies...');
+  const intel: CompetitorIntelItem[] = [];
+
+  for (const agency of TARGET_AGENCIES.slice(0, 3)) {
+    try {
+      console.log(`  Checking ${agency.name} protests...`);
+      const result = await searchNews({
+        query: `${agency.fullName} GAO protest`,
+        limit: 3,
+        daysBack: 7,
+        govconOnly: true,
+      });
+
+      for (const article of result.articles) {
+        if (article.title.toLowerCase().includes('protest')) {
+          intel.push({
+            company: 'Unknown', // Will be extracted from article
+            type: 'protest',
+            summary: article.title,
+            agency: agency.name,
+            source: article.source,
+            url: article.url,
+          });
+        }
+      }
+
+      await new Promise(r => setTimeout(r, 500));
+    } catch (err) {
+      console.warn(`  Error checking ${agency.name} protests:`, err);
+    }
+  }
+
+  return intel;
+}
+
+// Get Maya's recent opportunities that need research
+async function getMayasRecentOpportunities(): Promise<Array<{
+  noticeId: string;
+  title: string;
+  agency: string;
+  score: number;
+  postedAt: string;
+  threadTs?: string;
+}>> {
+  try {
+    const supabase = getSupabase();
+
+    // Get opportunities posted in the last 24 hours with score >= 70
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+    const { data, error } = await supabase
+      .from('seen_opportunities')
+      .select('notice_id, title, score, posted_at')
+      .gte('posted_at', yesterday)
+      .gte('score', 70)
+      .order('score', { ascending: false })
+      .limit(5);
+
+    if (error) {
+      console.warn('Could not fetch recent opportunities:', error);
+      return [];
+    }
+
+    return (data || []).map(opp => ({
+      noticeId: opp.notice_id,
+      title: opp.title,
+      agency: 'Unknown', // Would need to store this in seen_opportunities
+      score: opp.score,
+      postedAt: opp.posted_at,
+    }));
+  } catch (err) {
+    console.warn('Error fetching Maya opportunities:', err);
+    return [];
+  }
+}
+
+// Research an opportunity (incumbent, history, red flags)
+async function researchOpportunity(
+  noticeId: string,
+  title: string,
+  agency: string
+): Promise<IncumbentResearch> {
+  console.log(`  Researching: ${title.slice(0, 50)}...`);
+
+  const research: IncumbentResearch = {
+    opportunityTitle: title,
+    noticeId,
+    redFlags: [],
+  };
+
+  try {
+    // Use FPDS to find incumbent
+    const fpdsResult = await findIncumbent({
+      agencyName: agency,
+      keywords: title.split(' ').slice(0, 5),
+    });
+
+    if (fpdsResult.incumbent) {
+      research.incumbent = fpdsResult.incumbent;
+    }
+
+    if (fpdsResult.contracts.length > 0) {
+      const contract = fpdsResult.contracts[0];
+      if (contract.obligatedAmount) {
+        research.contractValue = `$${(contract.obligatedAmount / 1000000).toFixed(1)}M`;
+      }
+    }
+
+    // Check for red flags in title
+    const lowerTitle = title.toLowerCase();
+    if (lowerTitle.includes('sole source')) {
+      research.redFlags.push('Sole source - likely wired');
+    }
+    if (lowerTitle.includes('incumbent')) {
+      research.redFlags.push('SOW mentions incumbent');
+    }
+    if (lowerTitle.includes('bridge')) {
+      research.redFlags.push('Bridge contract - incumbent advantage');
+    }
+    if (lowerTitle.includes('follow-on') || lowerTitle.includes('follow on')) {
+      research.redFlags.push('Follow-on contract - incumbent has advantage');
+    }
+    if (lowerTitle.includes('extension') || lowerTitle.includes('option year')) {
+      research.redFlags.push('Contract extension - not truly competitive');
+    }
+    if (lowerTitle.includes('brand name') || lowerTitle.includes('proprietary')) {
+      research.redFlags.push('Brand name/proprietary - limited competition');
+    }
+    if (lowerTitle.includes('j&a') || lowerTitle.includes('justification and approval')) {
+      research.redFlags.push('J&A indicates limited competition');
+    }
+
+  } catch (err) {
+    console.warn(`  Error researching ${noticeId}:`, err);
+  }
+
+  return research;
+}
+
+// Generate the morning brief using Claude
+async function generateMorningBrief(brief: MorningBrief): Promise<string> {
+  const client = getAnthropic();
+
+  // Format the intel for the prompt
+  const competitorSection = brief.competitorIntel.length > 0
+    ? brief.competitorIntel.map(i => `- ${i.company}: ${i.summary} (${i.type})`).join('\n')
+    : 'Nothing significant from competitors today.';
+
+  const incumbentSection = brief.incumbentResearch.length > 0
+    ? brief.incumbentResearch.map(r =>
+        `- ${r.opportunityTitle.slice(0, 60)}...\n  Incumbent: ${r.incumbent || 'No prior contract found (may be new work)'}, Value: ${r.contractValue || 'N/A'}${r.redFlags.length > 0 ? `\n  Red flags: ${r.redFlags.join(', ')}` : ''}`
+      ).join('\n')
+    : 'No new opportunities needed incumbent research.';
+
+  // Format patterns for the prompt
+  const patternsSection = brief.patterns.length > 0
+    ? brief.patterns.map(p => `- [${p.type.toUpperCase()}] ${p.insight} (confidence: ${p.confidence})`).join('\n')
+    : '';
+
+  const prompt = `You are David, the analyst for Friends From The City. You're posting a morning intel brief to #bd-team.
+
+YOUR VOICE:
+- 42 years old, Korean American from New Jersey
+- Measured, practical, no-nonsense
+- Jersey directness: "Look..." or "Here's the thing..."
+- Dad energy, mentions coffee, dry humor
+- You start with "Alright", "So", "Look"
+- NO Gen-Z slang (no "lowkey", "giving", "hits different")
+
+COMPETITOR INTEL (from this morning's scan):
+${competitorSection}
+
+INCUMBENT RESEARCH (for yesterday's opportunities):
+${incumbentSection}
+
+${brief.redFlags.length > 0 ? `RED FLAGS SURFACED:\n${brief.redFlags.map(r => `- ${r}`).join('\n')}` : ''}
+
+${patternsSection ? `PATTERN ANALYSIS (from historical data):\n${patternsSection}` : ''}
+
+Write a morning intel brief for Slack.
+
+SLACK FORMATTING (use these EXACTLY):
+- Bold: *text* (use for headers like *Morning Intel Brief*, *Competitor Watch*)
+- Italic: _text_ (use for emphasis)
+- Bullets: Start lines with • for lists
+- Links: Put URLs on their own line
+
+STRUCTURE YOUR POST LIKE THIS:
+
+*Morning Intel Brief*
+
+[Your opening line in David's voice]
+
+*Competitor Watch*
+• [Company]: [What happened] ([source if you have URL])
+• [Company]: [What happened]
+
+*Incumbent Research*
+• [Opportunity title] — Incumbent: [name], Value: [amount]
+• [Opportunity title] — [findings]
+
+${brief.redFlags.length > 0 ? '*Red Flags*\n• [Concern]\n• [Concern]' : ''}
+
+${brief.patterns.length > 0 ? `*Patterns I'm Tracking*
+• [Trend or insight from pattern analysis]
+• [What this means for our strategy]` : ''}
+
+[Closing line - offer to dig deeper]
+
+Keep it concise (under 450 words). Use the bullet format above - it's much easier to read.
+The patterns section is new - highlight trends that matter for our positioning.
+If there's nothing significant, say so briefly.`;
+
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 700,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  const textBlock = response.content.find(b => b.type === 'text');
+  return textBlock?.type === 'text' ? textBlock.text : '';
+}
+
+// Generate auto-research post for a specific opportunity
+async function generateOpportunityResearch(
+  research: IncumbentResearch,
+  companyContext: string
+): Promise<string> {
+  const client = getAnthropic();
+
+  const prompt = `You are David, the analyst for Friends From The City. You're auto-posting research on an opportunity Maya found.
+
+YOUR VOICE:
+- 42 years old, Korean American from New Jersey
+- Measured, practical, no-nonsense
+- Jersey directness: "Look..." or "Here's the thing..."
+- Dad energy, mentions coffee, dry humor
+- NO Gen-Z slang
+
+${companyContext}
+
+OPPORTUNITY: ${research.opportunityTitle}
+NOTICE ID: ${research.noticeId}
+INCUMBENT: ${research.incumbent || 'Unknown - could not identify'}
+CONTRACT VALUE: ${research.contractValue || 'Not found in FPDS'}
+${research.redFlags.length > 0 ? `RED FLAGS: ${research.redFlags.join(', ')}` : ''}
+
+Write a brief research update for this opportunity. Post this as a reply in the thread (not a new message).
+
+Format:
+*Incumbent Analysis*
+[What you found about the incumbent]
+
+${research.redFlags.length > 0 ? '*Red Flags*\n[Your concerns]' : ''}
+
+*My Take*
+[1-2 sentences on whether this looks competitive or wired]
+
+Keep it under 200 words. Be direct. If you couldn't find much, say so honestly.`;
+
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 400,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  const textBlock = response.content.find(b => b.type === 'text');
+  return textBlock?.type === 'text' ? textBlock.text : '';
+}
+
+async function postToSlack(
+  app: App | null,
+  message: string,
+  threadTs?: string
+): Promise<string | undefined> {
+  if (app) {
+    const result = await app.client.chat.postMessage({
+      channel: CHANNEL_ID,
+      text: message,
+      thread_ts: threadTs,
+    });
+    console.log('Posted to Slack');
+    return result.ts;
+  } else {
+    console.log('\n--- Would post to Slack ---');
+    console.log(message);
+    if (threadTs) console.log(`(In thread: ${threadTs})`);
+    console.log('----------------------------\n');
+    return undefined;
+  }
+}
+
+// Main daily scan - runs all three phases + pattern analysis
+export async function runDailyScan() {
+  console.log('\n' + '='.repeat(60));
+  console.log(`  David's Daily Scan - ${new Date().toLocaleString()}`);
+  console.log('='.repeat(60) + '\n');
+
+  const app = await getDavidApp();
+
+  // Phase 1: Competitor intel
+  console.log('\nPhase 1: Competitor Intel Scan');
+  const competitorIntel = await scanCompetitorNews();
+
+  // Phase 2: GAO protests
+  console.log('\nPhase 2: GAO Protest Check');
+  const protestIntel = await checkGAOProtests();
+
+  // Phase 3: Research Maya's opportunities
+  console.log('\nPhase 3: Auto-Research Maya\'s Opportunities');
+  const mayaOpps = await getMayasRecentOpportunities();
+  const incumbentResearch: IncumbentResearch[] = [];
+
+  for (const opp of mayaOpps) {
+    const research = await researchOpportunity(opp.noticeId, opp.title, opp.agency);
+    incumbentResearch.push(research);
+    await new Promise(r => setTimeout(r, 1000));
+  }
+
+  // Phase 4: Pattern analysis (new!)
+  console.log('\nPhase 4: Pattern Recognition');
+  const patterns = await analyzeCompetitorPatterns();
+  const alerts = await checkForAlerts();
+  const allPatterns = [...patterns, ...alerts];
+
+  // Save intel to database for future pattern analysis
+  const allIntel = [...competitorIntel, ...protestIntel];
+  console.log('\nSaving intel to database for pattern tracking...');
+  await saveIntelToDatabase(allIntel);
+
+  const allRedFlags = incumbentResearch.flatMap(r => r.redFlags);
+
+  const brief: MorningBrief = {
+    competitorIntel: allIntel,
+    incumbentResearch,
+    redFlags: allRedFlags,
+    hasSignificantNews: allIntel.length > 0 || incumbentResearch.some(r => r.incumbent) || allPatterns.length > 0,
+    patterns: allPatterns,
+  };
+
+  // Generate and post
+  if (brief.hasSignificantNews) {
+    const message = await generateMorningBrief(brief);
+    await postToSlack(app, message);
+
+    // Post alerts separately if significant
+    const highPriorityAlerts = alerts.filter(a => a.confidence === 'HIGH');
+    if (highPriorityAlerts.length > 0) {
+      const alertMessage = `🚨 *Competitive Alert*\n\n${highPriorityAlerts.map(a => `• ${a.insight}`).join('\n')}\n\nThese are target agencies - worth keeping an eye on.`;
+      await postToSlack(app, alertMessage);
+    }
+
+    // Log to database
+    try {
+      const supabase = getSupabase();
+      await supabase.from('agent_memory').insert({
+        agent: 'david',
+        response_text: message,
+        sources: ['competitor_news', 'gao_protests', 'fpds', 'pattern_analysis'],
+        confidence_level: 'MEDIUM',
+        created_at: new Date().toISOString(),
+      });
+    } catch {
+      // Ignore logging failures
+    }
+  } else {
+    const quietMessage = getQuietMorningMessage();
+    await postToSlack(app, quietMessage);
+  }
+
+  if (app) {
+    await app.stop();
+  }
+
+  console.log('\nDaily scan complete');
+}
+
+// Morning brief only (7:00am) - just competitor news
+export async function runMorningBrief() {
+  console.log('\n' + '='.repeat(60));
+  console.log(`  David's Morning Brief - ${new Date().toLocaleString()}`);
+  console.log('='.repeat(60) + '\n');
+
+  const app = await getDavidApp();
+
+  // Competitor intel scan
+  const competitorIntel = await scanCompetitorNews();
+  const protestIntel = await checkGAOProtests();
+
+  const allIntel = [...competitorIntel, ...protestIntel];
+
+  if (allIntel.length > 0) {
+    // Run quick pattern check for morning brief
+    const patterns = await analyzeCompetitorPatterns();
+
+    const brief: MorningBrief = {
+      competitorIntel: allIntel,
+      incumbentResearch: [],
+      redFlags: [],
+      hasSignificantNews: true,
+      patterns,
+    };
+    const message = await generateMorningBrief(brief);
+    await postToSlack(app, message);
+  } else {
+    await postToSlack(app, getQuietMorningMessage());
+  }
+
+  if (app) {
+    await app.stop();
+  }
+
+  console.log('\nMorning brief complete');
+}
+
+// Auto-research a specific opportunity (called by workflow processor)
+export async function autoResearchOpportunity(
+  noticeId: string,
+  title: string,
+  agency: string,
+  threadTs: string
+) {
+  console.log(`\nAuto-researching opportunity: ${title.slice(0, 50)}...`);
+
+  const app = await getDavidApp();
+  const companyData = await loadCompanyContext();
+  const companyContext = formatCompanyContextForPrompt(companyData, 'David');
+
+  const research = await researchOpportunity(noticeId, title, agency);
+  research.threadTs = threadTs;
+
+  if (research.incumbent || research.redFlags.length > 0) {
+    const message = await generateOpportunityResearch(research, companyContext);
+    await postToSlack(app, message, threadTs);
+  } else {
+    // Post a more informative "couldn't find much" message
+    const explanations = [
+      `Looked into this one. No clear incumbent data in USASpending - a few reasons this happens:`,
+      `• Could be genuinely new work (no prior contract)`,
+      `• Might be consolidating smaller contracts under a new vehicle`,
+      `• Could be replacing an expiring BPA or IDIQ task order`,
+      `• USASpending has a 2-4 week lag, so recent awards might not show yet`,
+      ``,
+      `No obvious red flags from my scan. If the SOW looks like a fit for our capabilities, it's worth a deeper look. Want me to check anything specific?`,
+    ];
+    await postToSlack(app, explanations.join('\n'), threadTs);
+  }
+
+  if (app) {
+    await app.stop();
+  }
+
+  console.log('Auto-research complete');
+}
+
+async function main() {
+  const args = process.argv.slice(2);
+  const scheduleMode = args.includes('--schedule') || args.includes('-s');
+  const briefMode = args.includes('--brief') || args.includes('-b');
+
+  if (briefMode) {
+    await runMorningBrief();
+    return;
+  }
+
+  if (scheduleMode) {
+    console.log('='.repeat(60));
+    console.log('  David Intelligence Scanner - Scheduled Mode');
+    console.log('='.repeat(60));
+    console.log('\nSchedule (CST - UTC-6):');
+    console.log('  - 7:00 AM CST (13:00 UTC): Competitor intel scan');
+    console.log('  - 7:30 AM CST (13:30 UTC): GAO protest check');
+    console.log('  - 8:00 AM CST (14:00 UTC): Auto-research Maya\'s opportunities');
+    console.log('  - Press Ctrl+C to stop\n');
+
+    // Run immediately on start
+    await runDailyScan();
+
+    // 7:00 AM CST = 13:00 UTC (standard time) / 12:00 UTC (daylight time)
+    // Using 13:00 UTC for consistency
+    cron.schedule('0 13 * * 1-5', async () => {
+      console.log('\n[CRON] Running morning competitor intel...');
+      await runMorningBrief();
+    });
+
+    // 7:30 AM CST = 13:30 UTC - GAO protest check (included in morning brief)
+
+    // 8:00 AM CST = 14:00 UTC - Full scan with opportunity research
+    cron.schedule('0 14 * * 1-5', async () => {
+      console.log('\n[CRON] Running full daily scan...');
+      await runDailyScan();
+    });
+
+    console.log('Scheduler running...');
+
+  } else {
+    // One-time scan
+    await runDailyScan();
+  }
+}
+
+main().catch(console.error);

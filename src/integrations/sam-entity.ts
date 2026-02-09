@@ -5,15 +5,24 @@ import { getSupabase } from './supabase.js';
 
 const SAM_API_BASE = 'https://api.sam.gov/entity-information/v3/entities';
 
+export interface SAMEntityCertifications {
+  is8a?: boolean;
+  isWOSB?: boolean;
+  isSDVOSB?: boolean;
+  isHUBZone?: boolean;
+  isEDWOSB?: boolean;
+}
+
 export interface SAMEntity {
   ueiSAM: string;
   legalBusinessName: string;
   dbaName?: string;
   cageCode?: string;
   physicalAddress: {
-    city: string;
-    state: string;
-    country: string;
+    city?: string;
+    state?: string;
+    stateOrProvinceCode?: string;
+    country?: string;
   };
   businessTypes: string[];
   naicsCodes: string[];
@@ -21,16 +30,11 @@ export interface SAMEntity {
   registrationStatus: string;
   registrationExpirationDate?: string;
   activationDate?: string;
+  purposeOfRegistration?: string;
   // Certifications
   sbaBusinessTypes?: string[];
   isSmallBusiness?: boolean;
-  certifications: {
-    is8a?: boolean;
-    isWOSB?: boolean;
-    isSDVOSB?: boolean;
-    isHUBZone?: boolean;
-    isEDWOSB?: boolean;
-  };
+  certifications: SAMEntityCertifications;
   // POC
   governmentBusinessPOC?: {
     firstName: string;
@@ -194,7 +198,7 @@ export async function checkCertification(
     };
   }
 
-  const certMap: Record<string, keyof SAMEntity['certifications']> = {
+  const certMap: Record<string, keyof SAMEntityCertifications> = {
     '8a': 'is8a',
     'WOSB': 'isWOSB',
     'SDVOSB': 'isSDVOSB',
@@ -356,6 +360,79 @@ async function cacheResult(cacheKey: string, result: any): Promise<void> {
       }, { onConflict: 'cache_key' });
   } catch (error) {
     console.warn('Failed to cache SAM entity result:', error);
+  }
+}
+
+// Search for entities with flexible filters (used by Rosa scanner)
+export async function searchSAMEntities(params: {
+  naicsCode?: string;
+  businessType?: 'small' | 'large' | 'all';
+  certifications?: ('8a' | 'WOSB' | 'SDVOSB' | 'HUBZone')[];
+  state?: string;
+  limit?: number;
+}): Promise<{ entities: SAMEntity[]; totalRecords: number }> {
+  const { naicsCode, businessType = 'all', certifications = [], state, limit = 20 } = params;
+
+  const apiKey = process.env.SAM_API_KEY;
+  if (!apiKey) {
+    console.warn('SAM_API_KEY not configured');
+    return { entities: [], totalRecords: 0 };
+  }
+
+  try {
+    const url = new URL(SAM_API_BASE);
+    url.searchParams.set('api_key', apiKey);
+    url.searchParams.set('registrationStatus', 'A');
+    url.searchParams.set('includeSections', 'entityRegistration,coreData,assertions,certifications');
+
+    if (naicsCode) {
+      url.searchParams.set('naicsCode', naicsCode);
+    }
+
+    if (state) {
+      url.searchParams.set('physicalAddressStateCode', state);
+    }
+
+    // Business type filter
+    if (businessType === 'small') {
+      url.searchParams.set('organizationStructure', '2J'); // Small business
+    }
+
+    // Certification filters - use first one if multiple (SAM API limitation)
+    if (certifications.length > 0) {
+      const certCodes: Record<string, string> = {
+        '8a': 'A4',
+        'WOSB': 'XX',
+        'SDVOSB': 'A5',
+        'HUBZone': 'A2',
+      };
+      const firstCert = certifications[0];
+      if (certCodes[firstCert]) {
+        url.searchParams.set('sbaBusinessTypeCode', certCodes[firstCert]);
+      }
+    }
+
+    console.log(`SAM Entity Search: NAICS=${naicsCode}, type=${businessType}, certs=${certifications.join(',')}`);
+
+    const response = await fetch(url.toString(), {
+      headers: { 'Accept': 'application/json' },
+    });
+
+    if (!response.ok) {
+      console.warn(`SAM Entity API error: ${response.status}`);
+      return { entities: [], totalRecords: 0 };
+    }
+
+    const data = await response.json() as any;
+    const entities = parseEntities(data.entityData || []).slice(0, limit);
+
+    return {
+      entities,
+      totalRecords: data.totalRecords || entities.length,
+    };
+  } catch (error) {
+    console.error('SAM Entity search error:', error);
+    return { entities: [], totalRecords: 0 };
   }
 }
 

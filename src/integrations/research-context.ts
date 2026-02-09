@@ -1,11 +1,12 @@
 // Unified Research Context - fetches relevant data from all APIs based on message content
 import { searchNews, searchContractAwards, searchCompetitorNews, searchAgencyContractNews, type NewsArticle } from './news-search.js';
 import { searchFPDS, searchByContractNumber, findIncumbent, formatFPDSForAgent, type FPDSContract } from './fpds.js';
-import { getAgencySpending, formatUSASpendingForAgent } from './usaspending.js';
+import { getAgencySpending, getAgencyTrend, formatUSASpendingForAgent } from './usaspending.js';
 import { verifyRegistration, formatSAMEntityForAgent } from './sam-entity.js';
 import { searchFAR, formatFARResults } from './far-search.js';
 import { saveCompetitorIntel, getCompetitorIntel, hasRecentIntel, type CompetitorIntel } from './supabase.js';
 import { searchOpportunities, mapOpportunityType, getSAMOpportunityURL, type SearchOptions as SAMSearchOptions } from './sam-gov.js';
+import { getUpcomingForecasts, type ForecastOpportunity } from './agency-forecasts.js';
 import type { SAMOpportunity } from '../types/index.js';
 
 // Agency name mappings for detection
@@ -42,6 +43,11 @@ export interface ResearchContext {
   };
   spending?: {
     summary: string;
+    trend?: string;
+    source: string;
+  };
+  forecasts?: {
+    opportunities: ForecastOpportunity[];
     source: string;
   };
   partner?: {
@@ -423,17 +429,53 @@ export async function gatherResearchContext(
       (async () => {
         try {
           console.log(`Research: Fetching USASpending for ${topics.agency!.name}`);
-          const result = await getAgencySpending({
-            agencyName: topics.agency!.name,
-          });
-          if (result.spending) {
+          // Get both current spending and trend
+          const [spendingResult, trendResult] = await Promise.all([
+            getAgencySpending({ agencyName: topics.agency!.name }),
+            getAgencyTrend({ agencyName: topics.agency!.name, years: 3 }),
+          ]);
+
+          if (spendingResult.spending) {
+            let trendSummary: string | undefined;
+            if (trendResult.percentChange !== null) {
+              const direction = trendResult.percentChange >= 0 ? 'increased' : 'decreased';
+              trendSummary = `Budget has ${direction} ${Math.abs(trendResult.percentChange)}% over 3 years`;
+            }
+
             context.spending = {
-              summary: formatUSASpendingForAgent(result.spending),
-              source: result.source,
+              summary: formatUSASpendingForAgent(spendingResult.spending, trendResult),
+              trend: trendSummary,
+              source: spendingResult.source + ' (Note: USASpending shows AWARDED contracts with 2-4 week lag. For new opportunities, incumbent data comes from prior similar contracts.)',
             };
           }
         } catch (err) {
           console.warn('USASpending fetch failed:', err);
+        }
+      })()
+    );
+
+    // Also fetch agency forecasts for budget context
+    promises.push(
+      (async () => {
+        try {
+          console.log(`Research: Fetching agency forecasts`);
+          const forecasts = await getUpcomingForecasts(50);
+          // Filter to relevant agency if we have one
+          const agencyForecasts = topics.agency
+            ? forecasts.filter(f =>
+                f.agency.toLowerCase().includes(topics.agency!.name.toLowerCase().split(' ')[0]) ||
+                topics.agency!.name.toLowerCase().includes(f.agency.toLowerCase())
+              )
+            : forecasts;
+
+          if (agencyForecasts.length > 0) {
+            context.forecasts = {
+              opportunities: agencyForecasts.slice(0, 5),
+              source: 'Agency Procurement Forecasts (planned future procurements)',
+            };
+          }
+        } catch (err) {
+          console.warn('Agency forecasts fetch failed:', err);
         }
       })()
     );
@@ -621,9 +663,26 @@ export function formatResearchContext(context: ResearchContext): string {
   }
 
   if (context.spending) {
-    parts.push('\nAGENCY SPENDING:');
+    parts.push('\nAGENCY SPENDING (Historical - from USASpending):');
     parts.push(context.spending.summary);
+    if (context.spending.trend) {
+      parts.push(`Trend: ${context.spending.trend}`);
+    }
     parts.push(`Source: ${context.spending.source}`);
+  }
+
+  if (context.forecasts && context.forecasts.opportunities.length > 0) {
+    parts.push('\nAGENCY PROCUREMENT FORECASTS (Planned Future Work):');
+    context.forecasts.opportunities.slice(0, 5).forEach(f => {
+      const value = f.estimated_value || 'TBD';
+      const release = f.estimated_release || 'TBD';
+      parts.push(`- ${f.title.slice(0, 80)}...`);
+      parts.push(`  Agency: ${f.agency} | Est. Value: ${value} | Expected: ${release}`);
+      if (f.set_aside) {
+        parts.push(`  Set-aside: ${f.set_aside}`);
+      }
+    });
+    parts.push(`Source: ${context.forecasts.source}`);
   }
 
   if (context.partner) {

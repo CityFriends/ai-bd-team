@@ -39,8 +39,37 @@ export interface UserProfile {
   display_name?: string;
   role?: string;
   background?: string;
+  // Personalization preferences
+  communication_style?: 'concise' | 'detailed' | 'balanced';
+  topics_of_interest?: string[]; // e.g., ['VA', 'HCD', 'WOSB']
+  agencies_focus?: string[]; // Agencies they care about most
+  // Decision patterns (learned over time)
+  decision_style?: 'cautious' | 'aggressive' | 'balanced';
+  typical_concerns?: string[]; // What they usually ask about
+  // Notification preferences
+  notify_hot_opps?: boolean; // Notify for 80+ score opps
+  notify_competitor_alerts?: boolean;
+  quiet_hours_start?: string; // e.g., "18:00"
+  quiet_hours_end?: string; // e.g., "08:00"
+  timezone?: string; // e.g., "America/Chicago"
+  // Interaction tracking
+  total_interactions?: number;
+  last_interaction_at?: string;
+  favorite_agent?: string; // Which agent they interact with most
+  // Agent notes
+  agent_notes?: string; // Free-form notes from agents
   created_at?: string;
   updated_at?: string;
+}
+
+export interface UserInteraction {
+  id?: string;
+  slack_user_id: string;
+  agent: string;
+  interaction_type: 'question' | 'decision' | 'feedback' | 'command';
+  topic?: string;
+  sentiment?: 'positive' | 'negative' | 'neutral';
+  created_at?: string;
 }
 
 /**
@@ -88,6 +117,199 @@ export async function upsertUserProfile(profile: Partial<UserProfile>): Promise<
   } catch (err) {
     console.error('Could not upsert user profile:', err);
     return null;
+  }
+}
+
+/**
+ * Track a user interaction for learning preferences
+ */
+export async function trackUserInteraction(interaction: Omit<UserInteraction, 'id' | 'created_at'>): Promise<void> {
+  try {
+    // Log the interaction
+    await getSupabase()
+      .from('user_interactions')
+      .insert({
+        ...interaction,
+        created_at: new Date().toISOString(),
+      });
+
+    // Update the user's interaction count and last interaction time
+    const { data: profile } = await getSupabase()
+      .from('user_profiles')
+      .select('total_interactions, favorite_agent')
+      .eq('slack_user_id', interaction.slack_user_id)
+      .single();
+
+    if (profile) {
+      // Increment interaction count
+      await getSupabase()
+        .from('user_profiles')
+        .update({
+          total_interactions: (profile.total_interactions || 0) + 1,
+          last_interaction_at: new Date().toISOString(),
+        })
+        .eq('slack_user_id', interaction.slack_user_id);
+    }
+  } catch (err) {
+    // Silently fail - don't block on tracking
+  }
+}
+
+/**
+ * Get user's recent interaction topics to understand their interests
+ */
+export async function getUserTopics(slackUserId: string, limit: number = 20): Promise<string[]> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('user_interactions')
+      .select('topic')
+      .eq('slack_user_id', slackUserId)
+      .not('topic', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error || !data) return [];
+
+    // Count topic frequency
+    const topicCounts: Record<string, number> = {};
+    for (const row of data) {
+      if (row.topic) {
+        topicCounts[row.topic] = (topicCounts[row.topic] || 0) + 1;
+      }
+    }
+
+    // Return topics sorted by frequency
+    return Object.entries(topicCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([topic]) => topic);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Format user profile for agent context
+ * Gives agents info to personalize their responses
+ */
+export function formatUserProfileForAgent(profile: UserProfile | null): string {
+  if (!profile) {
+    return ''; // No profile data available
+  }
+
+  const lines: string[] = ['=== USER CONTEXT ==='];
+
+  // Basic info
+  lines.push(`User: ${profile.display_name || profile.user_name}`);
+  if (profile.role) {
+    lines.push(`Role: ${profile.role}`);
+  }
+
+  // Communication preferences
+  if (profile.communication_style) {
+    const styleGuide: Record<string, string> = {
+      concise: 'Prefers brief, to-the-point responses',
+      detailed: 'Prefers thorough explanations with context',
+      balanced: 'Standard communication style',
+    };
+    lines.push(`Style: ${styleGuide[profile.communication_style]}`);
+  }
+
+  // Topics of interest
+  if (profile.topics_of_interest && profile.topics_of_interest.length > 0) {
+    lines.push(`Interests: ${profile.topics_of_interest.join(', ')}`);
+  }
+
+  // Agency focus
+  if (profile.agencies_focus && profile.agencies_focus.length > 0) {
+    lines.push(`Agency focus: ${profile.agencies_focus.join(', ')}`);
+  }
+
+  // Decision style
+  if (profile.decision_style) {
+    const decisionGuide: Record<string, string> = {
+      cautious: 'Tends to want more research before deciding',
+      aggressive: 'Prefers to move quickly on opportunities',
+      balanced: 'Balanced approach to decisions',
+    };
+    lines.push(`Decision style: ${decisionGuide[profile.decision_style]}`);
+  }
+
+  // Typical concerns
+  if (profile.typical_concerns && profile.typical_concerns.length > 0) {
+    lines.push(`Usually asks about: ${profile.typical_concerns.join(', ')}`);
+  }
+
+  // Agent notes
+  if (profile.agent_notes) {
+    lines.push(`Notes: ${profile.agent_notes}`);
+  }
+
+  // Background
+  if (profile.background) {
+    lines.push(`Background: ${profile.background}`);
+  }
+
+  if (lines.length === 1) {
+    return ''; // Only header, no actual data
+  }
+
+  lines.push('=== END USER CONTEXT ===\n');
+  return lines.join('\n');
+}
+
+/**
+ * Update user preferences based on observed behavior
+ * Call this periodically to learn from interactions
+ */
+export async function learnUserPreferences(slackUserId: string): Promise<void> {
+  try {
+    // Get recent interactions
+    const { data: interactions } = await getSupabase()
+      .from('user_interactions')
+      .select('topic, agent, interaction_type')
+      .eq('slack_user_id', slackUserId)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (!interactions || interactions.length < 5) {
+      return; // Not enough data to learn from
+    }
+
+    // Determine favorite agent
+    const agentCounts: Record<string, number> = {};
+    for (const i of interactions) {
+      if (i.agent) {
+        agentCounts[i.agent] = (agentCounts[i.agent] || 0) + 1;
+      }
+    }
+    const favoriteAgent = Object.entries(agentCounts)
+      .sort((a, b) => b[1] - a[1])[0]?.[0];
+
+    // Determine topics of interest from interactions
+    const topicCounts: Record<string, number> = {};
+    for (const i of interactions) {
+      if (i.topic) {
+        topicCounts[i.topic] = (topicCounts[i.topic] || 0) + 1;
+      }
+    }
+    const topTopics = Object.entries(topicCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([topic]) => topic);
+
+    // Update profile with learned preferences
+    await getSupabase()
+      .from('user_profiles')
+      .update({
+        favorite_agent: favoriteAgent,
+        topics_of_interest: topTopics.length > 0 ? topTopics : undefined,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('slack_user_id', slackUserId);
+
+  } catch (err) {
+    console.warn('Could not learn user preferences:', err);
   }
 }
 
@@ -1463,4 +1685,731 @@ export async function saveDecisionPatternWithEmbedding(
   } catch (err) {
     console.warn('Could not save decision pattern:', err);
   }
+}
+
+// ============================================
+// OPPORTUNITY WORKFLOW FUNCTIONS
+// ============================================
+
+export type WorkflowStage =
+  | 'found'
+  | 'researching'
+  | 'partner_search'
+  | 'strategy'
+  | 'decision'
+  | 'pursuing'
+  | 'passed';
+
+export interface OpportunityWorkflow {
+  id?: string;
+  notice_id: string;
+  title: string;
+  sam_url?: string;
+  agency?: string;
+  score?: number;
+  stage: WorkflowStage;
+  agent_responsible?: string;
+  auto_action_at?: string;
+  awaiting_input_from?: 'lapedra' | 'tamara' | 'auto' | null;
+  channel_id?: string;
+  thread_ts?: string;
+  incumbent?: string;
+  incumbent_contract_value?: string;
+  red_flags?: string[];
+  teaming_recommended?: boolean;
+  teaming_partners?: string[];
+  james_recommendation?: 'GO' | 'PASS' | 'NEEDS_DISCUSSION';
+  decision?: 'go' | 'pass' | 'hold';
+  decision_by?: string;
+  decision_at?: string;
+  decision_notes?: string;
+  created_at?: string;
+  updated_at?: string;
+  stage_entered_at?: string;
+}
+
+/**
+ * Create a new opportunity workflow entry
+ */
+export async function createOpportunityWorkflow(
+  workflow: Omit<OpportunityWorkflow, 'id' | 'created_at' | 'updated_at' | 'stage_entered_at'>
+): Promise<OpportunityWorkflow | null> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('opportunity_workflow')
+      .insert({
+        ...workflow,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        stage_entered_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Could not create workflow:', error);
+      return null;
+    }
+
+    return data;
+  } catch (err) {
+    console.error('Could not create workflow:', err);
+    return null;
+  }
+}
+
+/**
+ * Get workflow by notice ID
+ */
+export async function getWorkflowByNoticeId(noticeId: string): Promise<OpportunityWorkflow | null> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('opportunity_workflow')
+      .select('*')
+      .eq('notice_id', noticeId)
+      .single();
+
+    if (error) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Update workflow (stage transition or data update)
+ */
+export async function updateOpportunityWorkflow(
+  noticeId: string,
+  updates: Partial<OpportunityWorkflow>
+): Promise<OpportunityWorkflow | null> {
+  try {
+    const updateData: any = {
+      ...updates,
+      updated_at: new Date().toISOString(),
+    };
+
+    // If stage is changing, update stage_entered_at
+    if (updates.stage) {
+      updateData.stage_entered_at = new Date().toISOString();
+    }
+
+    const { data, error } = await getSupabase()
+      .from('opportunity_workflow')
+      .update(updateData)
+      .eq('notice_id', noticeId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Could not update workflow:', error);
+      return null;
+    }
+
+    return data;
+  } catch (err) {
+    console.error('Could not update workflow:', err);
+    return null;
+  }
+}
+
+/**
+ * Get workflows that need automatic action (auto_action_at has passed)
+ */
+export async function getWorkflowsNeedingAction(): Promise<OpportunityWorkflow[]> {
+  try {
+    const now = new Date().toISOString();
+
+    const { data, error } = await getSupabase()
+      .from('opportunity_workflow')
+      .select('*')
+      .lte('auto_action_at', now)
+      .not('stage', 'in', '("pursuing","passed","decision")')
+      .order('auto_action_at', { ascending: true });
+
+    if (error) {
+      console.warn('Could not get workflows needing action:', error);
+      return [];
+    }
+
+    return data || [];
+  } catch (err) {
+    console.warn('Could not get workflows needing action:', err);
+    return [];
+  }
+}
+
+/**
+ * Get workflows by stage
+ */
+export async function getWorkflowsByStage(stage: WorkflowStage): Promise<OpportunityWorkflow[]> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('opportunity_workflow')
+      .select('*')
+      .eq('stage', stage)
+      .order('created_at', { ascending: false });
+
+    if (error) return [];
+    return data || [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Get workflows awaiting human input
+ */
+export async function getWorkflowsAwaitingHuman(): Promise<OpportunityWorkflow[]> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('opportunity_workflow')
+      .select('*')
+      .not('awaiting_input_from', 'is', null)
+      .neq('awaiting_input_from', 'auto')
+      .order('created_at', { ascending: false });
+
+    if (error) return [];
+    return data || [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Record stage transition history
+ */
+export async function recordStageTransition(
+  workflowId: string,
+  fromStage: WorkflowStage | null,
+  toStage: WorkflowStage,
+  triggeredBy: string,
+  reason?: string
+): Promise<void> {
+  try {
+    await getSupabase()
+      .from('workflow_stage_history')
+      .insert({
+        workflow_id: workflowId,
+        from_stage: fromStage,
+        to_stage: toStage,
+        triggered_by: triggeredBy,
+        trigger_reason: reason,
+        created_at: new Date().toISOString(),
+      });
+  } catch (err) {
+    console.warn('Could not record stage transition:', err);
+  }
+}
+
+// ============================================
+// TEAM ACTIVITY LOG FUNCTIONS
+// ============================================
+
+export interface TeamActivity {
+  id?: string;
+  thread_ts: string;
+  channel_id?: string;
+  notice_id?: string;
+  agent: string;
+  activity_type: 'research' | 'recommendation' | 'question' | 'handoff' | 'decision';
+  summary: string;
+  key_facts?: string[];
+  full_response?: string;
+  confidence?: 'HIGH' | 'MEDIUM' | 'LOW';
+  sources?: string[];
+  created_at?: string;
+}
+
+/**
+ * Log team activity to prevent repetition
+ */
+export async function logTeamActivity(activity: Omit<TeamActivity, 'id' | 'created_at'>): Promise<void> {
+  try {
+    await getSupabase()
+      .from('team_activity_log')
+      .insert({
+        ...activity,
+        created_at: new Date().toISOString(),
+      });
+  } catch (err) {
+    console.warn('Could not log team activity:', err);
+  }
+}
+
+/**
+ * Get team activity for a thread (to avoid repetition)
+ */
+export async function getTeamActivityForThread(
+  threadTs: string,
+  options: { hoursBack?: number; agent?: string } = {}
+): Promise<TeamActivity[]> {
+  const { hoursBack = 24, agent } = options;
+
+  try {
+    const since = new Date(Date.now() - hoursBack * 60 * 60 * 1000).toISOString();
+
+    let query = getSupabase()
+      .from('team_activity_log')
+      .select('*')
+      .eq('thread_ts', threadTs)
+      .gte('created_at', since)
+      .order('created_at', { ascending: false });
+
+    if (agent) {
+      query = query.eq('agent', agent);
+    }
+
+    const { data, error } = await query;
+
+    if (error) return [];
+    return data || [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Get team activity summary for agent context
+ * Returns formatted string of what teammates have already contributed
+ */
+export async function getTeamActivitySummary(threadTs: string): Promise<string> {
+  const activities = await getTeamActivityForThread(threadTs, { hoursBack: 48 });
+
+  if (activities.length === 0) {
+    return '';
+  }
+
+  const parts: string[] = ['=== WHAT YOUR TEAMMATES HAVE ALREADY COVERED ==='];
+
+  for (const activity of activities.slice(0, 10)) {
+    const timeAgo = getTimeAgo(activity.created_at);
+    parts.push(`${activity.agent.toUpperCase()} (${timeAgo}): ${activity.summary}`);
+  }
+
+  parts.push('\nDO NOT repeat what they already said. Add NEW value or stay quiet.');
+
+  return parts.join('\n');
+}
+
+function getTimeAgo(dateString?: string): string {
+  if (!dateString) return 'recently';
+
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+
+  if (diffMins < 60) {
+    return `${diffMins} min ago`;
+  } else if (diffHours < 24) {
+    return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+  } else {
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+  }
+}
+
+/**
+ * Check if similar content was already posted
+ */
+export async function hasRecentSimilarActivity(
+  threadTs: string,
+  agent: string,
+  activityType: string,
+  keyFacts: string[]
+): Promise<boolean> {
+  try {
+    const activities = await getTeamActivityForThread(threadTs, { hoursBack: 24 });
+
+    // Check if any recent activity has overlapping key facts
+    for (const activity of activities) {
+      if (activity.agent === agent && activity.activity_type === activityType) {
+        // Same agent, same type - probably a duplicate
+        return true;
+      }
+
+      // Check fact overlap
+      const existingFacts = activity.key_facts || [];
+      const overlap = keyFacts.filter(f =>
+        existingFacts.some(ef => ef.toLowerCase().includes(f.toLowerCase()) ||
+                                 f.toLowerCase().includes(ef.toLowerCase()))
+      );
+
+      if (overlap.length >= 2) {
+        // More than 2 overlapping facts - too similar
+        return true;
+      }
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+// ============================================
+// DECISION OUTCOME TRACKING
+// ============================================
+
+export interface DecisionOutcome {
+  id?: string;
+  notice_id?: string;
+  opportunity_title?: string;
+  workflow_id?: string;
+  james_recommendation?: 'GO' | 'PASS' | 'NEEDS_DISCUSSION';
+  david_red_flags?: string[];
+  rosa_teaming_suggested?: boolean;
+  human_decision?: 'go' | 'pass';
+  decision_by?: string;
+  outcome?: 'won' | 'lost' | 'no_bid' | 'withdrawn';
+  outcome_notes?: string;
+  recommended_at?: string;
+  decided_at?: string;
+  outcome_recorded_at?: string;
+  created_at?: string;
+}
+
+/**
+ * Record a decision outcome for learning
+ */
+export async function recordDecisionOutcome(outcome: Omit<DecisionOutcome, 'id' | 'created_at'>): Promise<void> {
+  try {
+    await getSupabase()
+      .from('decision_outcomes')
+      .insert({
+        ...outcome,
+        created_at: new Date().toISOString(),
+      });
+  } catch (err) {
+    console.warn('Could not record decision outcome:', err);
+  }
+}
+
+/**
+ * Get accuracy stats for agent recommendations
+ */
+export async function getRecommendationAccuracy(): Promise<{
+  goRecommendations: { total: number; won: number; lost: number };
+  passRecommendations: { total: number; correct: number };
+}> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('decision_outcomes')
+      .select('james_recommendation, human_decision, outcome')
+      .not('outcome', 'is', null);
+
+    if (error || !data) {
+      return {
+        goRecommendations: { total: 0, won: 0, lost: 0 },
+        passRecommendations: { total: 0, correct: 0 },
+      };
+    }
+
+    const stats = {
+      goRecommendations: { total: 0, won: 0, lost: 0 },
+      passRecommendations: { total: 0, correct: 0 },
+    };
+
+    for (const record of data) {
+      if (record.james_recommendation === 'GO' && record.human_decision === 'go') {
+        stats.goRecommendations.total++;
+        if (record.outcome === 'won') stats.goRecommendations.won++;
+        if (record.outcome === 'lost') stats.goRecommendations.lost++;
+      }
+
+      if (record.james_recommendation === 'PASS') {
+        stats.passRecommendations.total++;
+        if (record.human_decision === 'pass') {
+          stats.passRecommendations.correct++;
+        }
+      }
+    }
+
+    return stats;
+  } catch {
+    return {
+      goRecommendations: { total: 0, won: 0, lost: 0 },
+      passRecommendations: { total: 0, correct: 0 },
+    };
+  }
+}
+
+// ============================================
+// RELATIONSHIP MEMORY (Rosa)
+// ============================================
+
+export interface PartnerCompany {
+  id?: string;
+  company_name: string;
+  duns_number?: string;
+  cage_code?: string;
+  // Certifications
+  certifications: string[]; // '8a', 'WOSB', 'SDVOSB', 'HUBZone', 'SB'
+  naics_codes?: string[];
+  // Capabilities
+  capabilities: string[];
+  past_performance_agencies?: string[]; // Agencies they've worked with
+  // Relationship status
+  relationship_status: 'prospect' | 'contacted' | 'active_partner' | 'past_partner' | 'do_not_use';
+  relationship_notes?: string;
+  // Metadata
+  last_teamed_date?: string;
+  teaming_history_count?: number;
+  contact_name?: string;
+  contact_email?: string;
+  contact_phone?: string;
+  // Source
+  added_by?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface TeamingInteraction {
+  id?: string;
+  partner_id?: string;
+  partner_name: string;
+  opportunity_id?: string;
+  opportunity_title?: string;
+  // Interaction details
+  interaction_type: 'teaming_discussion' | 'proposal_submitted' | 'won_together' | 'lost_together' | 'declined' | 'general';
+  outcome?: 'positive' | 'negative' | 'neutral' | 'pending';
+  notes?: string;
+  // Metadata
+  interaction_date: string;
+  logged_by?: string;
+  created_at?: string;
+}
+
+// Save or update a partner company
+export async function savePartnerCompany(partner: Omit<PartnerCompany, 'id' | 'created_at'>): Promise<PartnerCompany | null> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('partner_companies')
+      .upsert({
+        ...partner,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'company_name' })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Failed to save partner:', error);
+      return null;
+    }
+    return data;
+  } catch (err) {
+    console.error('Partner save error:', err);
+    return null;
+  }
+}
+
+// Get partner by name
+export async function getPartnerByName(companyName: string): Promise<PartnerCompany | null> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('partner_companies')
+      .select()
+      .ilike('company_name', `%${companyName}%`)
+      .limit(1)
+      .single();
+
+    if (error) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+// Search partners by certification
+export async function searchPartnersByCertification(certification: string): Promise<PartnerCompany[]> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('partner_companies')
+      .select()
+      .contains('certifications', [certification])
+      .neq('relationship_status', 'do_not_use')
+      .order('teaming_history_count', { ascending: false, nullsFirst: false });
+
+    if (error) return [];
+    return data || [];
+  } catch {
+    return [];
+  }
+}
+
+// Search partners by capability
+export async function searchPartnersByCapability(capability: string): Promise<PartnerCompany[]> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('partner_companies')
+      .select()
+      .or(`capabilities.cs.{${capability}},capabilities.cs.{${capability.toLowerCase()}}`)
+      .neq('relationship_status', 'do_not_use')
+      .order('teaming_history_count', { ascending: false, nullsFirst: false });
+
+    if (error) return [];
+    return data || [];
+  } catch {
+    return [];
+  }
+}
+
+// Search partners by agency experience
+export async function searchPartnersByAgency(agencyCode: string): Promise<PartnerCompany[]> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('partner_companies')
+      .select()
+      .contains('past_performance_agencies', [agencyCode])
+      .neq('relationship_status', 'do_not_use')
+      .order('teaming_history_count', { ascending: false, nullsFirst: false });
+
+    if (error) return [];
+    return data || [];
+  } catch {
+    return [];
+  }
+}
+
+// Get all active partners
+export async function getActivePartners(): Promise<PartnerCompany[]> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('partner_companies')
+      .select()
+      .in('relationship_status', ['active_partner', 'past_partner', 'contacted'])
+      .order('last_teamed_date', { ascending: false, nullsFirst: false });
+
+    if (error) return [];
+    return data || [];
+  } catch {
+    return [];
+  }
+}
+
+// Log a teaming interaction
+export async function logTeamingInteraction(interaction: Omit<TeamingInteraction, 'id' | 'created_at'>): Promise<TeamingInteraction | null> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('teaming_interactions')
+      .insert({
+        ...interaction,
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Failed to log teaming interaction:', error);
+      return null;
+    }
+
+    // Update partner's teaming history count
+    if (interaction.partner_id) {
+      await getSupabase()
+        .from('partner_companies')
+        .update({
+          teaming_history_count: getSupabase().rpc('increment_field', { field_name: 'teaming_history_count', row_id: interaction.partner_id }),
+          last_teamed_date: interaction.interaction_date,
+        })
+        .eq('id', interaction.partner_id);
+    }
+
+    return data;
+  } catch (err) {
+    console.error('Teaming interaction error:', err);
+    return null;
+  }
+}
+
+// Get teaming history for a partner
+export async function getTeamingHistory(partnerName: string, limit: number = 10): Promise<TeamingInteraction[]> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('teaming_interactions')
+      .select()
+      .ilike('partner_name', `%${partnerName}%`)
+      .order('interaction_date', { ascending: false })
+      .limit(limit);
+
+    if (error) return [];
+    return data || [];
+  } catch {
+    return [];
+  }
+}
+
+// Get partners we've worked with on similar opportunities
+export async function getPartnersForOpportunity(params: {
+  agencyCode?: string;
+  certificationNeeded?: string;
+  capabilitiesNeeded?: string[];
+}): Promise<PartnerCompany[]> {
+  try {
+    let query = getSupabase()
+      .from('partner_companies')
+      .select()
+      .neq('relationship_status', 'do_not_use');
+
+    // Filter by agency experience if provided
+    if (params.agencyCode) {
+      query = query.contains('past_performance_agencies', [params.agencyCode]);
+    }
+
+    // Filter by certification if needed
+    if (params.certificationNeeded) {
+      query = query.contains('certifications', [params.certificationNeeded]);
+    }
+
+    const { data, error } = await query
+      .order('teaming_history_count', { ascending: false, nullsFirst: false })
+      .limit(10);
+
+    if (error) return [];
+
+    // If capabilities needed, filter further
+    let results = data || [];
+    if (params.capabilitiesNeeded && params.capabilitiesNeeded.length > 0) {
+      results = results.filter(p =>
+        params.capabilitiesNeeded!.some(cap =>
+          p.capabilities?.some((c: string) => c.toLowerCase().includes(cap.toLowerCase()))
+        )
+      );
+    }
+
+    return results;
+  } catch {
+    return [];
+  }
+}
+
+// Format partner data for Rosa's context
+export function formatPartnerForContext(partner: PartnerCompany): string {
+  const lines: string[] = [
+    `*${partner.company_name}*`,
+    `Status: ${partner.relationship_status.replace('_', ' ')}`,
+  ];
+
+  if (partner.certifications?.length > 0) {
+    lines.push(`Certs: ${partner.certifications.join(', ')}`);
+  }
+  if (partner.capabilities?.length > 0) {
+    lines.push(`Capabilities: ${partner.capabilities.slice(0, 5).join(', ')}`);
+  }
+  if (partner.past_performance_agencies && partner.past_performance_agencies.length > 0) {
+    lines.push(`Agency experience: ${partner.past_performance_agencies.join(', ')}`);
+  }
+  if (partner.teaming_history_count && partner.teaming_history_count > 0) {
+    lines.push(`Teamed ${partner.teaming_history_count} times${partner.last_teamed_date ? `, last: ${partner.last_teamed_date.split('T')[0]}` : ''}`);
+  }
+  if (partner.relationship_notes) {
+    lines.push(`Notes: ${partner.relationship_notes}`);
+  }
+  if (partner.contact_name) {
+    lines.push(`Contact: ${partner.contact_name}${partner.contact_email ? ` (${partner.contact_email})` : ''}`);
+  }
+
+  return lines.join('\n');
 }

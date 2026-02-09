@@ -18,12 +18,17 @@ import { getAnthropic } from '../integrations/claude.js';
 import { getSupabase } from '../integrations/supabase.js';
 import { loadCompanyContext, formatCompanyContextForPrompt } from '../context/company-context.js';
 import { matchForecastToSAM, linkForecastToSAM } from '../integrations/agency-forecasts.js';
+import { getRelevantForecasts, formatFCOForAgent, type FCOForecast } from '../integrations/acquisition-gateway.js';
+import { bold, bullets, link as slackLink, buildPost, type SlackPost } from '../utils/slack-format.js';
+import { buildOpportunityBlocks, type OpportunityBlocks } from '../utils/slack-blocks.js';
 import { addOpportunityToNotion, logActivityToNotion, NotionHubIds } from '../integrations/notion-hub.js';
 import {
   OPPORTUNITY_FILTERS,
   scoreOpportunity,
   shouldPostOpportunity,
 } from '../config/opportunity-filters.js';
+import { createOpportunityWorkflow } from '../integrations/supabase.js';
+import { queueNotification, flushNotifications, getPendingCount } from '../coordination/notification-batcher.js';
 import type { SAMOpportunity } from '../types/index.js';
 
 // Load Notion hub IDs if available
@@ -126,7 +131,14 @@ async function scanOpportunities(): Promise<ScoredOpportunity[]> {
           continue;
         }
 
-        const { score, reasons, redFlags } = scoreOpportunity(opp);
+        const { score, reasons, redFlags, hardExcluded } = scoreOpportunity(opp);
+
+        // Skip hard-excluded opportunities entirely (COTS, SI, infrastructure)
+        if (hardExcluded) {
+          console.log(`    [HARD EXCLUDE] ${opp.title?.slice(0, 50)}... - ${redFlags[0]}`);
+          continue;
+        }
+
         const posting = shouldPostOpportunity(score);
 
         // Generate real SAM.gov URL
@@ -168,33 +180,27 @@ async function scanOpportunities(): Promise<ScoredOpportunity[]> {
   return unique;
 }
 
-// Randomized openers based on score for personality variation
+// Professional openers based on score
 const OPENERS_BY_SCORE = {
   hot: [ // 90+
-    "Okay wait, this one is actually good.",
-    "👀 Y'all. Look at this.",
-    "Aight so hear me out on this one.",
-    "This is giving exactly what we need.",
-    "Hold up, this might be the one.",
-    "Okay I need everyone to see this.",
-    "This just came through and I'm already hyped.",
+    "This one's strong - exactly our wheelhouse.",
+    "Found a solid match. HCD focus, good timeline.",
+    "Worth prioritizing - this checks all the boxes.",
+    "This looks promising. Here's what caught my attention.",
+    "Good find today. This aligns well with our capabilities.",
   ],
   interested: [ // 70-89
     "Found something worth looking at.",
-    "This one caught my eye.",
-    "Might be something here.",
-    "Hmm, this could work.",
-    "Interesting one from SAM today.",
-    "Spotted this and wanted to flag it.",
-    "This popped up and it's worth a look.",
+    "This could be a fit. Flagging for review.",
+    "Interesting opportunity - here are the details.",
+    "Spotted this and wanted to share.",
+    "Worth a look - matches some of our criteria.",
   ],
   lukewarm: [ // 60-69
-    "Flagging this, but I'm not super hyped.",
-    "Worth mentioning but not urgent.",
-    "This exists. Take a look if you want.",
-    "Eh, it's something.",
-    "Putting this here for visibility.",
-    "Not my fave but figured I'd share.",
+    "Flagging this, though it's not a perfect fit.",
+    "Marginal match, but wanted to surface it.",
+    "This is adjacent to our work - might be worth a look.",
+    "Not ideal, but including for awareness.",
   ],
 };
 
@@ -229,9 +235,24 @@ async function generateMayaPost(
 
   const randomOpener = getRandomOpener(opp.score);
 
-  const prompt = `You are Maya, the opportunity scout. 27, Spelman grad, Gen-Z energy.
+  const prompt = `You are Maya, the opportunity scout for Friends From The City.
 
 ${companyContext}
+
+FFTC'S CORE CAPABILITIES (use this to assess fit):
+• Human-centered design (HCD) and service design
+• User experience (UX) research and usability testing
+• Digital services and custom application development
+• Content strategy and plain language
+• Accessibility (Section 508) compliance
+
+NOT OUR WORK (don't claim fit for these):
+• COTS implementation (Oracle, SAP, Salesforce, etc.)
+• System integration and middleware
+• IT infrastructure and operations
+• Help desk / call center support
+• Hardware procurement
+• Generic management consulting without HCD/UX component
 
 You found this REAL opportunity from SAM.gov and are posting to #bd-team.
 
@@ -261,14 +282,30 @@ Suggested opener (vary from this): "${randomOpener}"
 
 Write a Slack post about this opportunity.
 
+SLACK FORMATTING (use these EXACTLY):
+- Bold: *text* (use for headers and key terms)
+- Italic: _text_ (use for emphasis)
+- Bullets: Start lines with • for lists
+- Link on its own line at the end
+
+STRUCTURE YOUR POST LIKE THIS:
+1. Opening line (your voice, match enthusiasm)
+2. *Opportunity title* (bold)
+3. Key details in a clean format:
+   • Agency: [name]
+   • NAICS: [code]
+   • Set-Aside: [type]
+   • Due: [date]
+4. Why it fits us (1-2 sentences)
+${opp.score >= 80 ? '5. Tag <@U0AC0SVD3MH> (David) to research since this is hot' : ''}
+6. Link on its own line
+
 REQUIREMENTS:
-- Start with your own variation of the opener energy (match the enthusiasm level)
-- Include the SAM.gov link: ${opp.samUrl}
-- Mention why it fits FFTC based on our capabilities
-${opp.score >= 80 ? '- Tag <@U0AC0SVD3MH> (David) to research since this is hot' : ''}
-- Keep it to 3-4 sentences max
-- Your voice: conversational, Gen-Z energy, vary your phrases - use "lowkey", "this is giving", "wait", "aight", "okay so" but mix it up
-- End with the link on its own line`;
+- Use the formatting above for clean, readable posts
+- Professional but personable - you're a BD professional, not a social media influencer
+- Be direct: "This is a good fit because..." not "Okay so this is giving..."
+- Brief analysis of why it fits FFTC (1-2 sentences max)
+- End with the SAM.gov link on its own line`;
 
   console.log(`[GENERATING] Maya post for ${opp.opportunity.noticeId} (score: ${opp.score})`);
 
@@ -295,13 +332,12 @@ ${opp.score >= 80 ? '- Tag <@U0AC0SVD3MH> (David) to research since this is hot'
   return post;
 }
 
-// Varied quiet morning messages
+// Quiet morning messages - professional
 const QUIET_MORNING_MESSAGES = [
-  "Quiet morning on SAM. Nothing matching our sweet spot today - either wrong NAICS, too short timeline, or not our kind of work. I'll keep watching.",
-  "Scanned SAM this morning - nothing jumped out. The opps I saw were either wired for someone else or outside our lane. More tomorrow.",
-  "Nothing hot this morning. I looked, trust me. Everything was either full and open (and huge) or had red flags. Tomorrow's another day.",
-  "Slow news day on SAM.gov. Found a few things but nothing that made sense for FFTC. I'll keep scanning.",
-  "Did my morning scan - nada. Well, there were opps, just not OUR opps. The right one will come through.",
+  "Morning scan complete - nothing matching our criteria today. I'll keep watching.",
+  "Scanned SAM this morning. A few opportunities but nothing with HCD/UX focus that fits our capabilities.",
+  "Nothing to flag today. The opportunities I saw were either outside our NAICS or missing the design/research component we look for.",
+  "Quiet day on SAM.gov. Will continue monitoring.",
 ];
 
 async function generateQuietMorning(): Promise<string> {
@@ -341,18 +377,68 @@ Last 7 days:
   return summary;
 }
 
-async function postToSlack(app: App | null, message: string, threadTs?: string) {
+async function postToSlack(app: App | null, message: string, threadTs?: string): Promise<string | undefined> {
   if (app) {
-    await app.client.chat.postMessage({
+    const result = await app.client.chat.postMessage({
       channel: CHANNEL_ID,
       text: message,
       thread_ts: threadTs,
     });
     console.log('Posted to Slack');
+    return result.ts; // Return the message timestamp for threading
   } else {
     console.log('\n--- Would post to Slack ---');
     console.log(message);
     console.log('----------------------------\n');
+    return undefined;
+  }
+}
+
+/**
+ * Post opportunity with interactive Block Kit buttons
+ * Allows one-click actions: Pursue, Pass, Research, Add to Pipeline
+ */
+async function postOpportunityWithBlocks(
+  app: App | null,
+  opp: ScoredOpportunity,
+  opener?: string
+): Promise<string | undefined> {
+  const blockData: OpportunityBlocks = {
+    noticeId: opp.opportunity.noticeId,
+    title: opp.opportunity.title,
+    agency: opp.opportunity.department || opp.opportunity.office,
+    naics: opp.opportunity.naicsCode,
+    setAside: opp.opportunity.setAsideDescription || opp.opportunity.setAside || 'Full and Open',
+    dueDate: opp.opportunity.responseDeadLine,
+    score: opp.score,
+    reasons: opp.reasons,
+    redFlags: opp.redFlags.length > 0 ? opp.redFlags : undefined,
+    samUrl: opp.samUrl,
+    opener: opener,
+  };
+
+  const blocks = buildOpportunityBlocks(blockData);
+  const fallbackText = `${opener || 'New opportunity found'}: ${opp.opportunity.title} (Score: ${opp.score}/100) - ${opp.samUrl}`;
+
+  if (app) {
+    const result = await app.client.chat.postMessage({
+      channel: CHANNEL_ID,
+      text: fallbackText, // Fallback for notifications
+      blocks: blocks,
+    });
+    console.log('Posted opportunity with interactive buttons');
+    return result.ts;
+  } else {
+    console.log('\n--- Would post to Slack (with blocks) ---');
+    console.log(`Opener: ${opener}`);
+    console.log(`Title: ${opp.opportunity.title}`);
+    console.log(`Score: ${opp.score}/100`);
+    console.log(`Reasons: ${opp.reasons.join(', ')}`);
+    console.log(`Red flags: ${opp.redFlags.join(', ') || 'None'}`);
+    console.log(`URL: ${opp.samUrl}`);
+    console.log('Buttons: [🚀 Pursue] [⏭️ Pass] [🔍 Research] [📋 Add to Pipeline]');
+    console.log('-------------------------------------------\n');
+    return undefined;
   }
 }
 
@@ -386,21 +472,11 @@ export async function runDailyScan() {
     const message = await generateQuietMorning();
     await postToSlack(app, message);
   } else {
-    // Post top opportunities (max 3)
+    // Post top opportunities (max 3) with interactive buttons
     for (const opp of validToPost.slice(0, 3)) {
-      let message = await generateMayaPost(opp, companyContext);
-
-      // CRITICAL: Don't post empty messages (validation failed)
-      if (!message || message.trim().length === 0) {
-        console.warn(`[SKIP POST] Empty message generated for ${opp.opportunity.noticeId}`);
-        continue;
-      }
-
-      // Final validation - must contain SAM.gov link
-      if (!message.includes('sam.gov/opp/') && !message.includes(opp.samUrl)) {
-        console.error(`[BLOCK POST] Message doesn't contain SAM.gov link - possible hallucination`);
-        continue;
-      }
+      // Generate opener for the block post
+      const opener = getRandomOpener(opp.score);
+      let forecastNote = '';
 
       // Check if this matches a forecast we previously flagged
       const agencyAbbrev = extractAgencyAbbreviation(opp.opportunity.department, opp.opportunity.office);
@@ -408,20 +484,34 @@ export async function runDailyScan() {
         try {
           const match = await matchForecastToSAM(opp.opportunity.title, agencyAbbrev);
           if (match.matched && match.forecastId) {
-            // Add a note about the forecast match!
-            message += `\n\n📅 *Heads up* - this matches a forecast I flagged earlier: "${match.forecastTitle}". It's live now!`;
-
-            // Link the forecast to this SAM.gov opportunity
+            forecastNote = `\n\n📅 *Heads up* - this matches a forecast I flagged earlier: "${match.forecastTitle}". It's live now!`;
             await linkForecastToSAM(match.forecastId, opp.samUrl);
             console.log(`[FORECAST] Matched to forecast: ${match.forecastTitle}`);
           }
         } catch (err) {
-          // Forecast check failed, continue without it
           console.warn('[FORECAST] Match check failed:', err);
         }
       }
 
-      await postToSlack(app, message);
+      // Post with interactive Block Kit buttons
+      const fullOpener = forecastNote ? `${opener}${forecastNote}` : opener;
+      const messageTs = await postOpportunityWithBlocks(app, opp, fullOpener);
+
+      // Queue notification for batching/tracking (parallel to Block Kit post)
+      // This enables quiet hours, digests, and notification preferences
+      const priority = opp.score >= 80 ? 'high' : opp.score >= 70 ? 'medium' : 'low';
+      await queueNotification({
+        type: 'opportunity',
+        priority: priority as 'high' | 'medium' | 'low',
+        title: opp.opportunity.title,
+        message: `${fullOpener}\n\nScore: ${opp.score}/100\n${opp.samUrl}`,
+        metadata: {
+          agency: extractAgencyAbbreviation(opp.opportunity.department, opp.opportunity.office) || undefined,
+          noticeId: opp.opportunity.noticeId,
+          score: opp.score,
+          dueDate: opp.opportunity.responseDeadLine,
+        },
+      });
 
       // Record that we posted this
       let notionPageId: string | undefined;
@@ -462,6 +552,8 @@ export async function runDailyScan() {
           }
         }
 
+        // Record in seen_opportunities
+        const agencyAbbrev = extractAgencyAbbreviation(opp.opportunity.department, opp.opportunity.office);
         await supabase.from('seen_opportunities').insert({
           notice_id: opp.opportunity.noticeId,
           title: opp.opportunity.title,
@@ -469,7 +561,35 @@ export async function runDailyScan() {
           score: opp.score,
           posted_at: new Date().toISOString(),
           notion_page_id: notionPageId,
+          thread_ts: messageTs, // For David to reply in thread
+          agency: agencyAbbrev,
         });
+
+        // CREATE WORKFLOW for high-score opportunities (70+)
+        // This triggers the autonomous agent pipeline
+        if (opp.score >= 70) {
+          console.log(`[WORKFLOW] Creating workflow for ${opp.opportunity.noticeId} (score: ${opp.score})`);
+
+          const workflow = await createOpportunityWorkflow({
+            notice_id: opp.opportunity.noticeId,
+            title: opp.opportunity.title,
+            sam_url: opp.samUrl,
+            agency: agencyAbbrev || opp.opportunity.department,
+            score: opp.score,
+            stage: 'found',
+            agent_responsible: 'maya',
+            channel_id: CHANNEL_ID,
+            thread_ts: messageTs,
+            // Set auto-action for 30 minutes from now (David will research)
+            auto_action_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+            awaiting_input_from: 'auto',
+            red_flags: opp.redFlags,
+          });
+
+          if (workflow) {
+            console.log(`[WORKFLOW] Created workflow ${workflow.id} - David will auto-research in 30 min`);
+          }
+        }
       } catch {
         // Ignore if table doesn't exist
       }
@@ -533,6 +653,18 @@ async function main() {
     // Weekly on Monday at 8:30am CST (14:30 UTC)
     cron.schedule('30 14 * * 1', async () => {
       await runWeeklySummary();
+    });
+
+    // Flush pending notifications every 5 minutes
+    cron.schedule('*/5 * * * *', async () => {
+      const pending = getPendingCount();
+      if (pending > 0) {
+        console.log(`[BATCHER] Flushing ${pending} pending notifications...`);
+        const mayaApp = await getMayaApp();
+        const sent = await flushNotifications(mayaApp || undefined);
+        console.log(`[BATCHER] Sent ${sent} notifications`);
+        if (mayaApp) await mayaApp.stop();
+      }
     });
 
     console.log('Scheduler running...');
