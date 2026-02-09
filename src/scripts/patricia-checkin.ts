@@ -1,7 +1,7 @@
 /**
  * Patricia's Team Management System
  *
- * Morning (10am CST): Daily standup with the team
+ * Morning (11am CST): Daily standup with the team
  * Throughout day: Nudges for pending items
  * As needed: Decision requests for Lapedra
  *
@@ -347,15 +347,15 @@ async function main() {
     console.log('  Patricia Team Management - Scheduled Mode');
     console.log('='.repeat(60));
     console.log('\nSchedule (CST):');
-    console.log('  - Weekdays at 10:00 AM CST: Daily standup');
+    console.log('  - Weekdays at 11:00 AM CST: Daily standup');
     console.log('  - Weekdays at 2:00 PM CST: Nudge check for pending items');
     console.log('  - Press Ctrl+C to stop\n');
 
     // Run standup immediately on start
     await runMorningCheckin();
 
-    // Daily standup at 10am CST (16:00 UTC)
-    cron.schedule('0 16 * * 1-5', async () => {
+    // Daily standup at 11am CST (weekdays)
+    cron.schedule('0 11 * * 1-5', async () => {
       await runMorningCheckin();
     });
 
