@@ -52,6 +52,8 @@
     "rosa:report": "tsx src/scripts/rosa-scanner.ts --report",
     "james:digest": "tsx src/scripts/james-digest.ts",
     "james:schedule": "tsx src/scripts/james-digest.ts --schedule",
+    "james:weekly": "tsx src/scripts/james-weekly.ts",
+    "james:weekly:schedule": "tsx src/scripts/james-weekly.ts --schedule",
     "workflow:process": "tsx src/coordination/workflow-processor.ts",
     "workflow:schedule": "tsx src/coordination/workflow-processor.ts --schedule",
     "workflow:summary": "tsx src/coordination/workflow-processor.ts --summary",

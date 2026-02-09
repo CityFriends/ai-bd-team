@@ -177,11 +177,9 @@ async function triggerDavidResearch(workflow: OpportunityWorkflow): Promise<void
       thread_ts: workflow.thread_ts || '',
       notice_id: workflow.notice_id,
       agent: 'david',
-      activity_type: 'research',
+      action_type: 'research',
       summary: `Researched incumbent and red flags for ${workflow.title?.slice(0, 50)}`,
       key_facts: workflow.red_flags || [],
-      confidence: 'MEDIUM',
-      sources: ['fpds', 'news'],
     });
 
     console.log('  → David research complete, moved to researching stage');
@@ -301,9 +299,8 @@ End with: "Let me know if you want me to identify specific companies to consider
       thread_ts: workflow.thread_ts || '',
       notice_id: workflow.notice_id,
       agent: 'rosa',
-      activity_type: 'recommendation',
+      action_type: 'partner_search',
       summary: `Analyzed teaming options for ${workflow.title?.slice(0, 50)}`,
-      confidence: 'MEDIUM',
     });
 
     if (app) await app.stop();
@@ -456,10 +453,10 @@ Keep it under 250 words. Be decisive.`;
       thread_ts: workflow.thread_ts || '',
       notice_id: workflow.notice_id,
       agent: 'james',
-      activity_type: 'recommendation',
+      action_type: 'strategy',
       summary: `Strategic assessment: ${recommendation} for ${workflow.title?.slice(0, 50)}`,
       key_facts: [`Recommendation: ${recommendation}`, `Override window: 2 hours`],
-      confidence: 'HIGH',
+      recommendations: [recommendation],
     });
 
     console.log(`  → James recommends ${recommendation}, override window ends at ${overrideWindowEnd.toLocaleTimeString()}`);

@@ -17,6 +17,10 @@ import {
   getUserProfile,
   formatUserProfileForAgent,
   trackUserInteraction,
+  getThreadActivity,
+  logTeamActivity,
+  formatTeamActivityForAgent,
+  type TeamActivity,
 } from '../integrations/supabase.js';
 import { gatherResearchContext, formatResearchContext } from '../integrations/research-context.js';
 import { loadCompanyContext, formatCompanyContextForPrompt } from '../context/company-context.js';
@@ -508,6 +512,12 @@ export abstract class LiveAgent {
         confidence_level: response.confidenceLevel,
       });
 
+      // Log team activity for coordination (async, non-blocking)
+      // This enables other agents to see what this agent contributed
+      this.logTeamContribution(message, response).catch(err => {
+        console.warn(`${this.displayName}: Team activity logging failed:`, err);
+      });
+
       // Extract and store facts from the conversation (async, non-blocking)
       this.extractAndStoreFacts(message.text, response.text, message.threadTs).catch(err => {
         console.warn(`${this.displayName}: Fact extraction failed:`, err);
@@ -597,6 +607,145 @@ Only extract clear, specific facts. Don't infer or guess.`;
     } catch (err) {
       // Extraction failed, that's okay - it's best-effort
     }
+  }
+
+  // Log team contribution for coordination with other agents
+  private async logTeamContribution(
+    message: IncomingMessage,
+    response: AgentResponse
+  ): Promise<void> {
+    if (!message.threadTs) return; // Only log for thread conversations
+
+    // Determine action type based on response content
+    const actionType = this.detectActionType(response.text);
+
+    // Generate a 1-2 sentence summary of the contribution
+    const summary = await this.generateContributionSummary(response.text);
+
+    // Extract key facts mentioned
+    const keyFacts = this.extractKeyFacts(response.text);
+
+    // Extract recommendations if any
+    const recommendations = this.extractRecommendations(response.text);
+
+    // Determine sentiment
+    const sentiment = this.detectSentiment(response.text);
+
+    // Log to database
+    await logTeamActivity({
+      thread_ts: message.threadTs,
+      channel_id: message.channelId,
+      agent: this.name,
+      action_type: actionType,
+      summary,
+      key_facts: keyFacts.length > 0 ? keyFacts : undefined,
+      recommendations: recommendations.length > 0 ? recommendations : undefined,
+      sentiment,
+    });
+
+    console.log(`${this.displayName}: Logged team activity (${actionType})`);
+  }
+
+  // Detect what type of action the agent took
+  private detectActionType(text: string): TeamActivity['action_type'] {
+    const lower = text.toLowerCase();
+
+    if (lower.includes('recommend') || lower.includes('suggest') || lower.includes('my take') || lower.includes('i think we should')) {
+      return 'recommendation';
+    }
+    if (lower.includes('partner') || lower.includes('teaming') || lower.includes('subcontract')) {
+      return 'partner_search';
+    }
+    if (lower.includes('strategy') || lower.includes('capture') || lower.includes('win probability') || lower.includes('go/no-go')) {
+      return 'strategy';
+    }
+    if (lower.includes('?') && !lower.includes('what if')) {
+      return 'question';
+    }
+    if (lower.includes('alert') || lower.includes('heads up') || lower.includes('warning') || lower.includes('red flag')) {
+      return 'alert';
+    }
+    if (lower.includes('incumbent') || lower.includes('contract') || lower.includes('analysis') || lower.includes('data shows')) {
+      return 'analysis';
+    }
+    return 'research';
+  }
+
+  // Generate a brief summary of the contribution
+  private async generateContributionSummary(text: string): Promise<string> {
+    // For now, just take the first 1-2 sentences
+    // Could be enhanced with AI summarization later
+    const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    const firstTwo = sentences.slice(0, 2).join('. ').trim();
+    return firstTwo.length > 200 ? firstTwo.slice(0, 200) + '...' : firstTwo;
+  }
+
+  // Extract key facts from the response
+  private extractKeyFacts(text: string): string[] {
+    const facts: string[] = [];
+
+    // Look for dollar amounts
+    const dollarMatches = text.match(/\$[\d,.]+[MBK]?/g);
+    if (dollarMatches) {
+      facts.push(...dollarMatches.slice(0, 3));
+    }
+
+    // Look for company names after "incumbent" or "contractor"
+    const incumbentMatch = text.match(/incumbent[:\s]+([A-Z][a-zA-Z\s]+)/i);
+    if (incumbentMatch) {
+      facts.push(`Incumbent: ${incumbentMatch[1].trim()}`);
+    }
+
+    // Look for percentages
+    const percentMatches = text.match(/\d+%/g);
+    if (percentMatches) {
+      facts.push(...percentMatches.slice(0, 2));
+    }
+
+    return facts.slice(0, 5); // Max 5 facts
+  }
+
+  // Extract recommendations from the response
+  private extractRecommendations(text: string): string[] {
+    const recs: string[] = [];
+    const lower = text.toLowerCase();
+
+    if (lower.includes('recommend')) {
+      const match = text.match(/recommend[s]?\s+(?:we\s+)?([^.!?]+)/i);
+      if (match) recs.push(match[1].trim());
+    }
+    if (lower.includes('suggest')) {
+      const match = text.match(/suggest[s]?\s+(?:we\s+)?([^.!?]+)/i);
+      if (match) recs.push(match[1].trim());
+    }
+    if (lower.includes('should consider')) {
+      const match = text.match(/should consider\s+([^.!?]+)/i);
+      if (match) recs.push(match[1].trim());
+    }
+
+    return recs.slice(0, 3); // Max 3 recommendations
+  }
+
+  // Detect sentiment of the response
+  private detectSentiment(text: string): TeamActivity['sentiment'] {
+    const lower = text.toLowerCase();
+
+    // Negative indicators
+    const negativeWords = ['red flag', 'concern', 'risk', 'warning', 'avoid', 'pass on', 'not a fit', 'wired', 'risky'];
+    const hasNegative = negativeWords.some(w => lower.includes(w));
+
+    // Positive indicators
+    const positiveWords = ['strong fit', 'good match', 'recommend', 'opportunity', 'promising', 'solid', 'great'];
+    const hasPositive = positiveWords.some(w => lower.includes(w));
+
+    // Cautious indicators
+    const cautiousWords = ['need more', 'should check', 'verify', 'unclear', 'maybe', 'depends'];
+    const hasCautious = cautiousWords.some(w => lower.includes(w));
+
+    if (hasNegative && !hasPositive) return 'negative';
+    if (hasPositive && !hasNegative) return 'positive';
+    if (hasCautious) return 'cautious';
+    return 'neutral';
   }
 
   // Extract topic from message for interaction tracking
@@ -737,6 +886,20 @@ Only extract clear, specific facts. Don't infer or guess.`;
       }
     }
 
+    // Load team activity context - what have other agents already contributed?
+    let teamActivityContext = '';
+    if (message.threadTs) {
+      try {
+        const activities = await getThreadActivity(message.threadTs);
+        teamActivityContext = formatTeamActivityForAgent(activities, this.name);
+        if (teamActivityContext) {
+          console.log(`${this.displayName}: Loaded team activity context (${activities.length} contributions)`);
+        }
+      } catch (err) {
+        // Don't block on team activity loading
+      }
+    }
+
     // Parse attached files if present
     let fileContext = '';
     if (message.files && message.files.length > 0 && this.app) {
@@ -787,6 +950,7 @@ ${threadContext}
 ${handoffContext}
 ${researchContext}
 ${fileContext}
+${teamActivityContext}
 
 SLACK FORMATTING (use these for clean, readable messages):
 - Bold: *text* (use for headers, key terms, emphasis)
@@ -897,6 +1061,19 @@ CONFIDENCE LEVELS - indicate how sure you are:
 FACT-CHECK EACH OTHER:
 - If another agent said something you're unsure about, ask: "Where'd you see that?" or "Can we verify that?"
 - If questioned, be honest: "Good catch, I was inferring" or "That's in SAM, I can pull the link"
+
+THINK IN WHAT-IFS (proactive risk surfacing):
+- BEFORE giving a recommendation, ask yourself: "What could go wrong that nobody has mentioned?"
+- Proactively surface scenarios others might not be thinking about:
+  • "What if the incumbent protests? They have a history with GAO."
+  • "What if the budget gets cut? This agency had a 15% reduction last year."
+  • "What if we can't find a teaming partner? Should we bid prime anyway?"
+  • "What if this is wired? The SOW sounds very specific to one vendor."
+  • "What if the timeline slips? This agency is notorious for delays."
+- DON'T just validate the consensus - challenge assumptions
+- Your job is to help the team avoid blind spots, not just agree with everyone
+- If you see a risk nobody mentioned, SAY IT even if you weren't asked
+- Use phrases like: "One thing we haven't considered..." or "Playing devil's advocate here..." or "What worries me is..."
 
 ADMIT UNKNOWNS - use these naturally:
 - "I don't have data on this"
