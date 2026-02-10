@@ -200,18 +200,32 @@ Patricia helps with:
 
 ## Version History
 
-### v1.0.0 (Current)
+### v1.0.0 (Initial)
 - Initial release
 - 5 agents with distinct personalities
 - Core API integrations
 - Basic memory system
 
-### Planned v1.1.0
+### v1.1.0 (Current - Feb 2026)
+- Refactored prompt architecture:
+  - Personality prompts now use Claude's `system` parameter
+  - Operational rules consolidated into compact `buildOperationalContext` method
+  - Reduced prompt bloat by ~300 lines while preserving functionality
+- Added personality texture system (`warmups.ts`):
+  - Random daily "vibes" injected per agent (e.g., "Maya's training for a half marathon")
+  - Warmup conversation pairs for natural tone
+- Slack formatting enforcement:
+  - Agents now use bold headers, bullets, numbered lists
+  - Consistent formatting across all responses
+- Maya prompt condensed from ~180 lines to ~25 lines
+- Same refactor applied to David, Rosa, James, Patricia, Jodie
+
+### Planned v1.2.0
 - Memory persistence improvements
 - Company profile integration
 - Proactive check-ins
 
-### Planned v1.2.0
+### Planned v1.3.0
 - Full opportunity workflow
 - Better cross-agent collaboration
 - Award monitoring improvements
