@@ -59,7 +59,11 @@
     "workflow:summary": "tsx src/coordination/workflow-processor.ts --summary",
     "workflow:learning": "tsx src/coordination/workflow-processor.ts --learning",
     "full-system-test": "tsx src/scripts/full-system-test.ts",
-    "start:prod": "tsx src/scripts/run-all.ts"
+    "start:prod": "tsx src/scripts/run-all.ts",
+    "cron:maya-daily": "tsx src/cron/maya-daily.ts",
+    "cron:maya-weekly": "tsx src/cron/maya-weekly.ts",
+    "cron:patricia-standup": "tsx src/cron/patricia-standup.ts",
+    "cron:patricia-nudge": "tsx src/cron/patricia-nudge.ts"
   },
   "keywords": [
     "ai",

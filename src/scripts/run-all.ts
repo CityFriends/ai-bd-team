@@ -3,9 +3,30 @@
  *
  * Single entry point for production deployment.
  * Runs: Live agents + Maya scanner + Patricia check-ins
+ *
+ * Note: Cron jobs also have dedicated entry points in src/cron/
+ * for Railway cron triggers which are more reliable than in-process cron.
  */
 import 'dotenv/config';
 import cron from 'node-cron';
+import { logJobStart, logJobComplete, logJobFailed } from '../integrations/supabase.js';
+
+// Wrapper to run a job with logging
+async function runWithLogging(jobName: string, fn: () => Promise<void>): Promise<void> {
+  const runId = await logJobStart(jobName);
+
+  try {
+    await fn();
+    if (runId) {
+      await logJobComplete(runId);
+    }
+  } catch (err) {
+    if (runId) {
+      await logJobFailed(runId, err instanceof Error ? err.message : String(err));
+    }
+    throw err;
+  }
+}
 
 // Import scanner functions
 async function runMayaDailyScan() {
@@ -59,7 +80,7 @@ async function main() {
   cron.schedule('0 14 * * 1-5', async () => {
     console.log(`[${new Date().toLocaleString()}] Maya: Running daily scan...`);
     try {
-      await runMayaDailyScan();
+      await runWithLogging('maya-daily-scan', runMayaDailyScan);
       console.log(`[${new Date().toLocaleString()}] Maya: Daily scan complete`);
     } catch (err) {
       console.error(`[${new Date().toLocaleString()}] Maya: Daily scan failed:`, err);
@@ -70,7 +91,7 @@ async function main() {
   cron.schedule('30 14 * * 1', async () => {
     console.log(`[${new Date().toLocaleString()}] Maya: Running weekly summary...`);
     try {
-      await runMayaWeeklySummary();
+      await runWithLogging('maya-weekly-summary', runMayaWeeklySummary);
       console.log(`[${new Date().toLocaleString()}] Maya: Weekly summary complete`);
     } catch (err) {
       console.error(`[${new Date().toLocaleString()}] Maya: Weekly summary failed:`, err);
@@ -81,7 +102,7 @@ async function main() {
   cron.schedule('0 17 * * 1-5', async () => {
     console.log(`[${new Date().toLocaleString()}] Patricia: Running morning standup...`);
     try {
-      await runPatriciaMorningCheckin();
+      await runWithLogging('patricia-standup', runPatriciaMorningCheckin);
       console.log(`[${new Date().toLocaleString()}] Patricia: Morning standup complete`);
     } catch (err) {
       console.error(`[${new Date().toLocaleString()}] Patricia: Morning standup failed:`, err);
@@ -92,7 +113,7 @@ async function main() {
   cron.schedule('0 20 * * 1-5', async () => {
     console.log(`[${new Date().toLocaleString()}] Patricia: Checking pending items...`);
     try {
-      await runPatriciaNudgeCheck();
+      await runWithLogging('patricia-nudge', runPatriciaNudgeCheck);
       console.log(`[${new Date().toLocaleString()}] Patricia: Nudge check complete`);
     } catch (err) {
       console.error(`[${new Date().toLocaleString()}] Patricia: Nudge check failed:`, err);
