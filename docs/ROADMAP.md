@@ -1,15 +1,15 @@
 # AI BD Team - Product Roadmap
 
-## Current Status: MVP Complete
+## Current Status: 7 Agents Live
 
-The AI BD Team is functional with five agents providing real-time BD support in Slack.
+The AI BD Team is functional with seven agents providing real-time BD support in Slack.
 
 ---
 
 ## What's Built and Working
 
 ### Core Functionality
-- [x] 5 distinct AI agents with unique personalities
+- [x] 7 distinct AI agents with unique personalities (Maya, David, Rosa, James, Patricia, Jodie, Marcus)
 - [x] Real-time Slack integration (Socket Mode)
 - [x] Message deduplication and claim system
 - [x] Thread context awareness
@@ -23,6 +23,7 @@ The AI BD Team is functional with five agents providing real-time BD support in 
 - [x] FAR semantic search and citation
 - [x] Competitor intelligence gathering
 - [x] SAM.gov entity verification
+- [x] GitHub repository analysis (Marcus)
 
 ### Agent Intelligence
 - [x] Proactive behavior (connect the dots)
@@ -41,6 +42,14 @@ The AI BD Team is functional with five agents providing real-time BD support in 
 
 ## In Progress
 
+### New Agents
+- [ ] **Jodie (Writer)** - Proposal writing, exec summaries, compliance matrices
+  - Character defined, needs Slack app setup and deployment
+  - Will integrate with proposal_content and case_studies tables
+- [ ] **Design Lead** - UX/UI review, accessibility assessment, design system expertise
+  - Character and expertise TBD
+  - Will complement Marcus's technical architecture reviews
+
 ### Memory & Context
 - [ ] Auto-save user context when shared
 - [ ] Surface relevant memories in responses
@@ -48,9 +57,9 @@ The AI BD Team is functional with five agents providing real-time BD support in 
 - [ ] Inside joke tracking
 
 ### Company Profile
-- [ ] Load company capabilities into context
-- [ ] Reference past performance in assessments
-- [ ] Know contract vehicles and certifications
+- [x] Load company capabilities into context
+- [x] Reference past performance in assessments
+- [x] Know contract vehicles and certifications
 
 ---
 
@@ -220,12 +229,22 @@ Patricia helps with:
 - Maya prompt condensed from ~180 lines to ~25 lines
 - Same refactor applied to David, Rosa, James, Patricia, Jodie
 
-### Planned v1.2.0
-- Memory persistence improvements
-- Company profile integration
-- Proactive check-ins
+### v1.2.0 (Current - Feb 2026)
+- Added Marcus (Engineering Lead) agent:
+  - GitHub repository analysis via @octokit/rest
+  - Tech stack detection, compliance concerns, architecture notes
+  - FedRAMP/ATO/Section 508 expertise
+- GitHub integration for repo analysis
+- Company profile integration complete
+- Updated all documentation for 7-agent team
 
 ### Planned v1.3.0
+- Jodie (Writer) agent fully deployed
+- Design Lead agent added
+- Proactive check-ins
+- Memory persistence improvements
+
+### Planned v1.4.0
 - Full opportunity workflow
 - Better cross-agent collaboration
 - Award monitoring improvements
