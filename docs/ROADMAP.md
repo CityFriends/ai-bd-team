@@ -43,6 +43,10 @@ The AI BD Team is functional with seven agents providing real-time BD support in
 ## In Progress
 
 ### New Agents
+- [ ] **Marcus (Engineering Lead)** - Debug thread response issue
+  - Agent deployed and responds to initial @mentions
+  - Not responding to follow-up messages in threads - needs investigation
+  - Check: event subscriptions, thread_ts handling, Railway logs
 - [ ] **Jodie (Writer)** - Proposal writing, exec summaries, compliance matrices
   - Character defined, needs Slack app setup and deployment
   - Will integrate with proposal_content and case_studies tables
