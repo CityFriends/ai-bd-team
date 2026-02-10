@@ -18,6 +18,16 @@ async function runMayaWeeklySummary() {
   await runWeeklySummary();
 }
 
+async function runPatriciaMorningCheckin() {
+  const { runMorningCheckin } = await import('./patricia-checkin.js');
+  await runMorningCheckin();
+}
+
+async function runPatriciaNudgeCheck() {
+  const { runNudgeCheck } = await import('./patricia-checkin.js');
+  await runNudgeCheck();
+}
+
 async function main() {
   console.log('='.repeat(60));
   console.log('  AI BD Team - Starting All Services');
@@ -67,16 +77,26 @@ async function main() {
     }
   });
 
-  // Patricia: Morning check-in 9am CST (15:00 UTC)
-  cron.schedule('0 15 * * 1-5', async () => {
-    console.log(`[${new Date().toLocaleString()}] Patricia: Morning check-in...`);
-    // TODO: Add Patricia check-in logic
+  // Patricia: Morning standup 11am CST (17:00 UTC)
+  cron.schedule('0 17 * * 1-5', async () => {
+    console.log(`[${new Date().toLocaleString()}] Patricia: Running morning standup...`);
+    try {
+      await runPatriciaMorningCheckin();
+      console.log(`[${new Date().toLocaleString()}] Patricia: Morning standup complete`);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Patricia: Morning standup failed:`, err);
+    }
   });
 
   // Patricia: Nudge check 2pm CST (20:00 UTC)
   cron.schedule('0 20 * * 1-5', async () => {
     console.log(`[${new Date().toLocaleString()}] Patricia: Checking pending items...`);
-    // TODO: Add Patricia nudge logic
+    try {
+      await runPatriciaNudgeCheck();
+      console.log(`[${new Date().toLocaleString()}] Patricia: Nudge check complete`);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Patricia: Nudge check failed:`, err);
+    }
   });
 
   console.log('  ✓ Scheduled jobs configured\n');
@@ -87,7 +107,7 @@ async function main() {
   console.log('    - Live agents: Always listening');
   console.log('    - Maya scan: 8:00 AM CST Mon-Fri');
   console.log('    - Maya weekly: 8:30 AM CST Monday');
-  console.log('    - Patricia check-in: 9:00 AM CST Mon-Fri');
+  console.log('    - Patricia standup: 11:00 AM CST Mon-Fri');
   console.log('    - Patricia nudge: 2:00 PM CST Mon-Fri');
   console.log('='.repeat(60));
 

@@ -279,7 +279,7 @@ async function postToSlack(app: App | null, message: string, threadTs?: string) 
   }
 }
 
-async function runMorningCheckin() {
+export async function runMorningCheckin() {
   console.log('\n' + '='.repeat(60));
   console.log(`  Patricia's Daily Standup - ${new Date().toLocaleString()}`);
   console.log('='.repeat(60) + '\n');
@@ -303,7 +303,7 @@ async function runMorningCheckin() {
   console.log('\nDaily standup complete');
 }
 
-async function runNudgeCheck() {
+export async function runNudgeCheck() {
   console.log('\n' + '='.repeat(60));
   console.log(`  Patricia's Nudge Check - ${new Date().toLocaleString()}`);
   console.log('='.repeat(60) + '\n');
