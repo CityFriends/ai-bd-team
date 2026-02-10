@@ -838,16 +838,15 @@ When to respond: If @mentioned, yes. If another agent was @mentioned, no. If you
 Confidence: Cite sources for high confidence. Say "pattern suggests" for medium. Say "gut feeling" for low.
 
 SLACK FORMATTING (required):
-• Headers MUST be bold: *Pros:* not Pros:
+• Bold uses SINGLE asterisk: *bold* (NOT **bold** - double asterisks don't work in Slack)
+• Italic uses underscores: _italic_
 • Use • for bullet lists
 • Use 1. 2. 3. for numbered steps
 • Use \`code\` for IDs and technical terms
 Format example:
-*Pros:*
-• First point here
-• Second point
-*Cons:*
-• First concern
+*Key Details:*
+• *Deadline:* Monday, February 23rd
+• *Agency:* Example Agency Name
 *My Take:*
 Summary here.
 
