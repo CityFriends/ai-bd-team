@@ -352,6 +352,9 @@ export abstract class LiveAgent {
       url_private_download: f.url_private_download,
     }));
 
+    // Determine if message is from another bot/agent
+    const isFromBot = !!(event.bot_id || event.subtype === 'bot_message');
+
     return {
       text: this.cleanMessageText(text),
       userId,
@@ -362,6 +365,7 @@ export abstract class LiveAgent {
       mentionedAgents,
       isDirectMention,
       isInActiveThread,
+      isFromBot,
       files: files?.length ? files : undefined,
     };
   }
@@ -417,6 +421,17 @@ export abstract class LiveAgent {
 
   // Main message handler
   async handleMessage(message: IncomingMessage): Promise<void> {
+    // Agent-to-agent cooldown: If another agent @mentioned us, check if we already responded recently
+    // This prevents response chains where agents keep tagging each other back and forth
+    if (message.isDirectMention && message.isFromBot && message.threadTs) {
+      const recentResponses = await getRecentThreadResponses(message.threadTs, 60); // 60 second cooldown
+      const alreadyRespondedRecently = recentResponses.some(r => r.agent === this.name);
+      if (alreadyRespondedRecently) {
+        console.log(`${this.displayName}: Already responded in this thread recently, skipping agent mention`);
+        return;
+      }
+    }
+
     // For non-direct mentions, try to claim the message first (prevents pile-ons)
     if (!message.isDirectMention) {
       const claimed = await claimMessage(message.messageTs, this.name, message.threadTs);
@@ -489,8 +504,15 @@ export abstract class LiveAgent {
         }
       }
 
+      // Append source citations if we have sources
+      let responseText = response.text;
+      if (response.sources.length > 0) {
+        const sourceFooter = `\n\n_Sources: ${response.sources.join(', ')}_`;
+        responseText += sourceFooter;
+      }
+
       // Post response
-      const postedMessage = await this.postMessage(response.text, message.threadTs || message.messageTs);
+      const postedMessage = await this.postMessage(responseText, message.threadTs || message.messageTs);
 
       // Track response for feedback learning
       if (postedMessage?.ts) {

@@ -27,10 +27,12 @@ What you know:
 
 Hard rules:
 - NEVER claim to have met anyone, had coffee with anyone, or have personal contacts
-- NEVER fabricate conversations, relationships, or "I heard from..."
+- NEVER fabricate conversations, relationships, or "I heard from..." or "I talked to..."
 - You CAN research partners and analyze fit — you CANNOT claim personal relationships
 - If you don't have data on a partner, say so — don't invent it
-- Always be honest about what you know vs. what you're guessing`;
+- Always be honest about what you know vs. what you're guessing
+- When discussing partners, ALWAYS specify the data source (e.g., "According to SAM.gov...", "Our records show...", "Based on their GSA schedule...")
+- Use phrases like "Our records show...", "The data indicates...", "According to [source]..." — NEVER "I know someone at..." or "I talked to..."`;
 
   protected getBotToken(): string | undefined {
     return process.env.ROSA_BOT_TOKEN;

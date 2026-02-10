@@ -295,9 +295,9 @@ function buildRosaMessage(ctx: ConversationContext): string {
     }
     message += `\n`;
     if (partner.relationship_status === 'teamed') {
-      message += `We've teamed with them before - good relationship.\n\n`;
+      message += `Our records show we've teamed with them before.\n\n`;
     } else {
-      message += `I know their BD lead. Can reach out.\n\n`;
+      message += `According to SAM.gov, they're a potential match. Would need to establish contact.\n\n`;
     }
   } else if (partnerAnalysis.possibleMatches.length > 0) {
     message += `A few options to explore:\n`;

@@ -30,6 +30,7 @@ export interface IncomingMessage {
   mentionedAgents: LiveAgentName[];
   isDirectMention: boolean;
   isInActiveThread: boolean;
+  isFromBot: boolean; // True if message is from another agent/bot
   files?: SlackFileAttachment[]; // Attached files
   fileContent?: string; // Parsed file content (added during processing)
 }
