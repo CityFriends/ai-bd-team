@@ -2,7 +2,7 @@
  * Opportunity Filter Configuration
  * Defines what opportunities Maya should surface vs skip
  *
- * FFTC Sweet Spot: Human-centered design, UX research, digital services
+ * FFTC Sweet Spot: Human-centered design, UX research, digital services, AI/ML development
  * NOT: COTS implementation, system integration, infrastructure, hardware
  */
 
@@ -33,6 +33,15 @@ export const OPPORTUNITY_FILTERS = {
     'digital services', 'digital transformation', 'custom development',
     'agile development', 'iterative development', 'prototype', 'mvp',
     'web application development', 'mobile app development',
+    'software development', 'application development', 'web development',
+
+    // AI/ML Development - Core capability now
+    'artificial intelligence', 'machine learning', 'ai', 'ml',
+    'ai development', 'ml development', 'ai/ml',
+    'generative ai', 'gen ai', 'large language model', 'llm',
+    'chatbot', 'conversational ai', 'virtual assistant',
+    'natural language processing', 'nlp', 'computer vision',
+    'predictive analytics', 'ai integration', 'ai implementation',
 
     // Content & Plain Language
     'content strategy', 'content design', 'plain language',
@@ -54,10 +63,6 @@ export const OPPORTUNITY_FILTERS = {
     'scrum', 'kanban', 'safe', 'agile coaching',
     'roadmap', 'backlog', 'sprint',
     'discovery', 'alpha', 'beta',
-
-    // AI/ML (but only if we're building, not buying)
-    'ai development', 'machine learning development', 'ml model',
-    'chatbot development', 'conversational ai', 'virtual assistant',
 
     // Modernization (our angle, not just infra)
     'legacy modernization', 'application modernization',
