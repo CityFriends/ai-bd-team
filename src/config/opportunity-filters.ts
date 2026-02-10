@@ -46,10 +46,7 @@ export const OPPORTUNITY_FILTERS = {
     // Content & Plain Language
     'content strategy', 'content design', 'plain language',
     'information architecture', 'digital communications',
-  ],
 
-  // Keywords that INCREASE relevance (bonus points on top of core)
-  includeKeywords: [
     // Agile & Modern Development
     'agile', 'iterative', 'devops', 'ci/cd', 'continuous integration',
     'cloud native', 'api development', 'microservices',
@@ -64,9 +61,18 @@ export const OPPORTUNITY_FILTERS = {
     'roadmap', 'backlog', 'sprint',
     'discovery', 'alpha', 'beta',
 
-    // Modernization (our angle, not just infra)
+    // Modernization
     'legacy modernization', 'application modernization',
     'digital modernization', 'user-facing modernization',
+  ],
+
+  // Keywords that INCREASE relevance (bonus points on top of core match)
+  // Now mainly for additional signals beyond the core match
+  includeKeywords: [
+    // Specific frameworks/tools that signal modern dev
+    'typescript', 'golang', 'rust', 'aws', 'azure', 'gcp',
+    'kubernetes', 'docker', 'terraform',
+    'figma', 'sketch', 'adobe xd',
   ],
 
   // HARD EXCLUDE - If ANY of these appear, score = 0, skip entirely
