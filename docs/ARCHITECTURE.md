@@ -2,19 +2,19 @@
 
 ## System Overview
 
-The AI BD Team is a multi-agent system that simulates a government contracting business development team. Five AI agents with distinct personalities collaborate in a Slack workspace to find, research, and evaluate federal opportunities.
+The AI BD Team is a multi-agent system that simulates a government contracting business development team. Seven AI agents with distinct personalities collaborate in a Slack workspace to find, research, and evaluate federal opportunities.
 
 ## High-Level Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              SLACK WORKSPACE                                 │
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐               │
-│  │  Maya   │ │  David  │ │  Rosa   │ │  James  │ │Patricia │               │
-│  │ (Scout) │ │(Analyst)│ │(Connect)│ │(Strat)  │ │  (PM)   │               │
-│  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘               │
-│       │           │           │           │           │                     │
-│       └───────────┴───────────┴───────────┴───────────┘                     │
+│  ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐   │
+│  │ Maya  │ │ David │ │ Rosa  │ │ James │ │Patric.│ │ Jodie │ │Marcus │   │
+│  │(Scout)│ │(Anlst)│ │(Cnnct)│ │(Strat)│ │ (PM)  │ │(Write)│ │(Engin)│   │
+│  └───┬───┘ └───┬───┘ └───┬───┘ └───┬───┘ └───┬───┘ └───┬───┘ └───┬───┘   │
+│      │         │         │         │         │         │         │         │
+│      └─────────┴─────────┴─────────┴─────────┴─────────┴─────────┘         │
 │                               │                                              │
 │                    Socket Mode Connection                                    │
 └───────────────────────────────┼─────────────────────────────────────────────┘
@@ -138,7 +138,9 @@ LiveAgent (abstract base)
     ├── DavidAgent (Analyst)
     ├── RosaAgent (Connector)
     ├── JamesAgent (Strategist)
-    └── PatriciaAgent (PM)
+    ├── PatriciaAgent (PM)
+    ├── JodieAgent (Writer)
+    └── MarcusAgent (Engineering Lead)
 ```
 
 ### Integration Modules
@@ -150,6 +152,7 @@ research-context.ts
     ├── usaspending.ts (budgets)
     ├── sam-entity.ts (entity verification)
     ├── far-search.ts (FAR citations)
+    ├── github.ts (repo analysis via @octokit/rest)
     └── supabase.ts (competitor intel)
 
 company-context.ts
@@ -173,7 +176,11 @@ ai-bd-team/
 │   │   ├── rosa.ts              # Connector agent
 │   │   ├── james.ts             # Strategist agent
 │   │   ├── patricia.ts          # PM agent
+│   │   ├── jodie.ts             # Writer agent
+│   │   ├── marcus.ts            # Engineering Lead agent
 │   │   ├── run-team.ts          # Starts all agents
+│   │   ├── run-marcus.ts        # Standalone Marcus runner
+│   │   ├── warmups.ts           # Agent personality textures
 │   │   └── types.ts             # Type definitions
 │   │
 │   ├── integrations/            # External API integrations
@@ -186,6 +193,7 @@ ai-bd-team/
 │   │   ├── usaspending.ts       # USASpending API
 │   │   ├── news-search.ts       # SerpAPI news search
 │   │   ├── far-search.ts        # FAR semantic search
+│   │   ├── github.ts            # GitHub repo analysis (@octokit/rest)
 │   │   ├── research-context.ts  # Unified research orchestration
 │   │   └── award-monitor.ts     # FPDS award polling
 │   │
@@ -269,6 +277,8 @@ Each agent has deep domain knowledge embedded in their system prompt:
 | Rosa | Teaming strategy: prime vs sub, teaming agreements, JV structures, partner red flags |
 | James | Capture strategy: win probability, bid/no-bid, price-to-win, discriminators |
 | Patricia | Proposal process: compliance matrices, schedules, review cycles, common failures |
+| Jodie | Proposal writing: exec summaries, technical approach, past performance narratives, compliance |
+| Marcus | Gov tech architecture: FedRAMP, ATO, Section 508, GitHub repo analysis, tech stack review |
 
 ### Proactive Behavior (Connect the Dots)
 Agents don't just answer literal questions—they surface relevant context:
@@ -361,6 +371,7 @@ Agent interprets strategically:
 | USASpending | None | David | Agency budgets |
 | SerpAPI | API Key | Maya, David | News search (GovCon sources) |
 | FAR (Supabase) | API Key | David, James | Regulation citations |
+| GitHub | Personal Access Token | Marcus | Repo analysis, tech stack detection |
 | Anthropic | API Key | All | Response generation |
 
 ---
@@ -408,6 +419,8 @@ The system runs 24/7 on Railway with automatic deployments.
 │  │  │ Rosa         │  │ 2pm:  Patricia nudge     │    │   │
 │  │  │ James        │  │ 6hr:  Notion sync        │    │   │
 │  │  │ Patricia     │  │                           │    │   │
+│  │  │ Jodie        │  │                           │    │   │
+│  │  │ Marcus       │  │                           │    │   │
 │  │  └──────────────┘  └──────────────────────────┘    │   │
 │  └─────────────────────────────────────────────────────┘   │
 │                                                              │
@@ -506,6 +519,8 @@ company-context.ts loads from Supabase
     - Rosa: teaming partners, relationships
     - James: no-bid criteria, differentiators
     - Patricia: key personnel, availability
+    - Jodie: proposal content, case studies
+    - Marcus: technical capabilities, certifications
         │
         ▼
 Included in agent's Claude prompt

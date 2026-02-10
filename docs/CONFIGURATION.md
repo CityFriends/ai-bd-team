@@ -7,11 +7,13 @@ This guide explains how to customize the AI BD Team for different companies and 
 Each agent's personality is defined in their respective file in `src/live/`:
 
 ```
-src/live/maya.ts      # Scout
-src/live/david.ts     # Analyst
-src/live/rosa.ts      # Connector
-src/live/james.ts     # Strategist
-src/live/patricia.ts  # PM
+src/live/maya.ts      # Scout - finds opportunities
+src/live/david.ts     # Analyst - competitive research
+src/live/rosa.ts      # Connector - teaming/partners
+src/live/james.ts     # Strategist - go/no-go decisions
+src/live/patricia.ts  # PM - deadlines and tracking
+src/live/jodie.ts     # Writer - proposal drafting
+src/live/marcus.ts    # Engineering Lead - tech/architecture review
 ```
 
 ### Personality Components
@@ -105,7 +107,7 @@ export const newagent = new NewAgent();
 
 2. Update `src/live/types.ts`:
 ```typescript
-export type LiveAgentName = 'maya' | 'david' | 'rosa' | 'james' | 'patricia' | 'newagent';
+export type LiveAgentName = 'maya' | 'david' | 'rosa' | 'james' | 'patricia' | 'jodie' | 'marcus' | 'newagent';
 ```
 
 3. Update `src/live/run-team.ts`:

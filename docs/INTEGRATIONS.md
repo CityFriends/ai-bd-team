@@ -275,6 +275,54 @@ SUPABASE_SERVICE_KEY=eyJ...
 
 ---
 
+## GitHub API (@octokit/rest)
+
+### What It Provides
+- Repository structure analysis
+- README, package.json, requirements.txt parsing
+- Tech stack detection
+- Gov compliance checks (Section 508, USWDS, security tooling)
+- Architecture pattern identification
+
+### How to Get Access
+1. Go to https://github.com/settings/tokens
+2. Generate new token (classic)
+3. Select `public_repo` scope (for public repos only)
+4. Copy token
+
+### Configuration
+```bash
+GITHUB_TOKEN=ghp_...
+```
+
+### Usage in System (`src/integrations/github.ts`)
+
+**Analyze Repository:**
+```typescript
+analyzeRepository('https://github.com/owner/repo')
+// Returns: tech stack, structure, compliance concerns, architecture notes
+```
+
+**Get File Content:**
+```typescript
+getFileContent('owner', 'repo', 'README.md')
+```
+
+### What Marcus Detects
+- **Tech Stack**: React, Next.js, Express, Django, PostgreSQL, Docker, etc.
+- **Compliance Concerns**: Missing accessibility tooling, no USWDS, no security scanning
+- **Architecture Patterns**: Monorepo, microservices, API-first, static site
+- **Code Quality**: Tests present, CI/CD configured, documentation exists
+
+### Rate Limits
+- Unauthenticated: 60 requests/hour
+- Authenticated: 5,000 requests/hour
+
+### Costs
+- Free (GitHub API)
+
+---
+
 ## Slack (Bolt SDK)
 
 ### What It Provides
@@ -321,6 +369,7 @@ MAYA_APP_TOKEN=xapp-...
 | FPDS | None | Respectful | Free | Contract history |
 | USASpending | None | 1k/min | Free | Agency budgets |
 | SerpAPI | API Key | 100/month free | $75/5k | News search |
+| GitHub | PAT | 5k/hour | Free | Repo analysis (Marcus) |
 | Supabase | API Key | Generous | $25/month | Database |
 | Slack | OAuth | 100/min | Free | Messaging |
 
@@ -356,3 +405,4 @@ Agents gracefully degrade when APIs fail:
 | USASpending | 24 hours | Budgets are annual |
 | FAR | Permanent | Rarely changes |
 | Entity | 24 hours | Registration updates infrequent |
+| GitHub Repo | 1 hour | Code changes, but not constantly |
