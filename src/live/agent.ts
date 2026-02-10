@@ -52,8 +52,7 @@ const AGENT_SLACK_IDS: Record<string, LiveAgentName> = {
   'U0AC582GXBQ': 'james',
   'U0AC79NTDAN': 'patricia',
   'U0ACP8LKFB3': 'jodie',
-  // Marcus's Slack ID - to be added after creating his Slack app
-  // 'U0XXXXXXXXX': 'marcus',
+  'U0ADSL3DL95': 'marcus',
 };
 
 export abstract class LiveAgent {
@@ -862,7 +861,7 @@ Rosa=<@U0ACASZ36BW> teaming, partnerships, introductions
 James=<@U0AC582GXBQ> strategy, go/no-go, capture
 Patricia=<@U0AC79NTDAN> deadlines, action items, tracking
 Jodie=<@U0ACP8LKFB3> proposal writing, compliance, drafts
-Marcus=engineering lead, GitHub repos, architecture, FedRAMP, ATO, tech stack
+Marcus=<@U0ADSL3DL95> engineering lead, GitHub repos, architecture, FedRAMP, ATO, tech stack
 
 ${agentMoodLine}
 Mood detected: ${mood}. ${guidance}
