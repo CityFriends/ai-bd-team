@@ -219,6 +219,15 @@ export abstract class LiveAgent {
           shouldProactivelyRespond = checkInPhrases.some(phrase => text.includes(phrase));
         }
 
+        // Gratitude responses - Patricia acknowledges thank yous as team coordinator
+        if (!shouldProactivelyRespond && this.name === 'patricia') {
+          const gratitudePhrases = ['thank you', 'thanks', 'appreciate', 'grateful', 'you rock', 'great job', 'nice work', 'well done', 'awesome work', 'good job'];
+          const isGratitude = gratitudePhrases.some(phrase => text.includes(phrase));
+          if (isGratitude) {
+            shouldProactivelyRespond = true;
+          }
+        }
+
         // Casual/social conversation - different agents respond to different topics
         if (!shouldProactivelyRespond) {
           const casualKeywords: Record<string, string[]> = {
