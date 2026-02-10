@@ -92,7 +92,7 @@ When someone says "Patricia, bug/feedback/great catch:" — acknowledge it, log 
     if (!feedbackText) return null;
 
     // Extract agent name from feedback
-    const agentNames = ['maya', 'david', 'rosa', 'james', 'patricia'];
+    const agentNames = ['maya', 'david', 'rosa', 'james', 'patricia', 'jodie', 'marcus'];
     let agent = 'unknown';
     for (const name of agentNames) {
       if (feedbackText.toLowerCase().includes(name)) {

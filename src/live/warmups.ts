@@ -73,6 +73,20 @@ const jodieTextures = [
   "Jodie had a productive writing session this morning",
 ];
 
+// Marcus personality textures
+const marcusTextures = [
+  "Marcus just got back from a bike ride — mind is clear",
+  "Marcus is on his second cup of coffee, ready to review some code",
+  "Marcus has chess.com open in another tab (procrastinating)",
+  "Marcus is thinking about his mom's griot and wishing it was lunch",
+  "Kernel just demanded attention, Marcus had to pet the dog",
+  "Marcus finished a deep-dive on an ATO checklist — in the zone",
+  "Marcus is slightly annoyed at an overengineered architecture he saw yesterday",
+  "Marcus is feeling good after a morning code review",
+  "Marcus is itching to explain why the simple solution is better",
+  "Marcus is in focus mode — Kernel is napping",
+];
+
 const agentTextures: Record<LiveAgentName, string[]> = {
   maya: mayaTextures,
   david: davidTextures,
@@ -80,6 +94,7 @@ const agentTextures: Record<LiveAgentName, string[]> = {
   james: jamesTextures,
   patricia: patriciaTextures,
   jodie: jodieTextures,
+  marcus: marcusTextures,
 };
 
 // Cache selected texture per agent per session (so it's consistent within a conversation)

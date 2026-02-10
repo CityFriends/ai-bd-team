@@ -7,6 +7,7 @@ import { searchFAR, formatFARResults } from './far-search.js';
 import { saveCompetitorIntel, getCompetitorIntel, hasRecentIntel, type CompetitorIntel } from './supabase.js';
 import { searchOpportunities, mapOpportunityType, getSAMOpportunityURL, type SearchOptions as SAMSearchOptions } from './sam-gov.js';
 import { getUpcomingForecasts, type ForecastOpportunity } from './agency-forecasts.js';
+import { analyzeRepository, formatRepoAnalysisForAgent, parseGitHubUrl, type RepoAnalysis } from './github.js';
 import type { SAMOpportunity } from '../types/index.js';
 
 // Agency name mappings for detection
@@ -48,6 +49,10 @@ export interface ResearchContext {
   };
   forecasts?: {
     opportunities: ForecastOpportunity[];
+    source: string;
+  };
+  githubRepo?: {
+    analysis: RepoAnalysis;
     source: string;
   };
   partner?: {
@@ -199,10 +204,12 @@ function detectTopics(text: string): {
   needsPartnerCheck: boolean;
   needsFAR: boolean;
   needsSAMOpportunities: boolean;
+  needsGitHubRepo: boolean;
   agency: { code: string; name: string } | null;
   companyName: string | null;
   competitorName: string | null;
   contractNumbers: string[];
+  githubUrl: string | null;
   keywords: string[];
 } {
   const cleanedText = cleanTextForSearch(text);
@@ -259,6 +266,12 @@ function detectTopics(text: string): {
   const needsCompetitorIntel = competitorName !== null ||
     competitorKeywords.some(kw => lowerText.includes(kw));
 
+  // Detect GitHub URLs in the message
+  const githubUrlMatch = text.match(/github\.com\/([^\/\s]+)\/([^\/\s>]+)/i);
+  const githubUrl = githubUrlMatch ? `https://github.com/${githubUrlMatch[1]}/${githubUrlMatch[2].replace(/[>.,)]+$/, '')}` : null;
+  const githubKeywords = ['repo', 'repository', 'codebase', 'github', 'code review', 'tech stack', 'architecture'];
+  const needsGitHubRepo = githubUrl !== null || githubKeywords.some(kw => lowerText.includes(kw));
+
   return {
     needsNews: newsKeywords.some(kw => lowerText.includes(kw)) || needsAwardNews || needsRiskNews,
     needsAwardNews, // Specifically for GovCon award sources like OrangeSlices
@@ -269,10 +282,12 @@ function detectTopics(text: string): {
     needsPartnerCheck: partnerKeywords.some(kw => lowerText.includes(kw)),
     needsFAR: farKeywords.some(kw => lowerText.includes(kw)),
     needsSAMOpportunities: samOpportunityKeywords.some(kw => lowerText.includes(kw)),
+    needsGitHubRepo,
     agency: detectAgency(cleanedText),
     companyName: detectCompanyName(cleanedText),
     competitorName,
     contractNumbers,
+    githubUrl,
     keywords: meaningfulKeywords,
   };
 }
@@ -627,6 +642,32 @@ export async function gatherResearchContext(
     );
   }
 
+  // GitHub Repo Analysis: For Marcus (engineering lead) when a GitHub URL is mentioned
+  const shouldFetchGitHubRepo = agentName === 'marcus' &&
+    (topics.needsGitHubRepo || topics.githubUrl);
+
+  if (shouldFetchGitHubRepo && topics.githubUrl) {
+    promises.push(
+      (async () => {
+        try {
+          console.log(`Research: Analyzing GitHub repo ${topics.githubUrl}`);
+          const analysis = await analyzeRepository(topics.githubUrl!);
+          if (analysis) {
+            context.githubRepo = {
+              analysis,
+              source: analysis.source,
+            };
+            console.log(`Research: Analyzed ${analysis.owner}/${analysis.repo} - ${analysis.techStack.length} tech stack items detected`);
+          } else {
+            console.log(`Research: Could not analyze GitHub repo ${topics.githubUrl}`);
+          }
+        } catch (err) {
+          console.warn('GitHub repo analysis failed:', err);
+        }
+      })()
+    );
+  }
+
   // Wait for all fetches
   await Promise.all(promises);
 
@@ -756,6 +797,11 @@ export function formatResearchContext(context: ResearchContext): string {
       parts.push(`   Link: ${opp.uiLink || getSAMOpportunityURL(opp.noticeId)}`);
     });
     parts.push(`\nSource: ${opps.source}`);
+  }
+
+  // GitHub Repository Analysis
+  if (context.githubRepo) {
+    parts.push(formatRepoAnalysisForAgent(context.githubRepo.analysis));
   }
 
   if (parts.length === 0) {

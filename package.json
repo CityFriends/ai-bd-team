@@ -19,6 +19,7 @@
     "live": "tsx src/live/run-team.ts",
     "live:maya": "tsx src/live/run-maya.ts",
     "live:david": "tsx src/live/run-david.ts",
+    "live:marcus": "tsx src/live/run-marcus.ts",
     "test:connections": "tsx src/test-connections.ts",
     "parse-far": "tsx src/scripts/parse-far.ts",
     "update-far": "tsx src/scripts/update-far.ts",
@@ -75,6 +76,7 @@
   "license": "ISC",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
+    "@octokit/rest": "^21.1.1",
     "@slack/bolt": "^4.1.0",
     "@slack/logger": "^4.0.0",
     "@slack/web-api": "^7.13.0",

@@ -52,6 +52,8 @@ const AGENT_SLACK_IDS: Record<string, LiveAgentName> = {
   'U0AC582GXBQ': 'james',
   'U0AC79NTDAN': 'patricia',
   'U0ACP8LKFB3': 'jodie',
+  // Marcus's Slack ID - to be added after creating his Slack app
+  // 'U0XXXXXXXXX': 'marcus',
 };
 
 export abstract class LiveAgent {
@@ -236,6 +238,7 @@ export abstract class LiveAgent {
             rosa: ['miami', 'cuban', 'cooking', 'dinner party', 'salsa', 'dancing', 'cat', 'puerto rico', 'colombia', 'spain', 'plantain', 'wynwood'],
             james: ['san diego', 'golf', 'golfing', 'kids', 'little league', 'baseball', 'commanders', 'nationals', 'bbq', 'grill', 'steak', 'navy', 'hawaii', 'scotland', 'dad joke'],
             patricia: ['austin', 'yoga', 'spin', 'dog', 'deadline', 'meal prep', 'thailand', 'thai', 'costa rica', 'italy', 'bali', 'matcha'],
+            marcus: ['f1', 'formula 1', 'mclaren', 'lando', 'norris', 'chess', 'sci-fi', 'octavia butler', 'jemisin', 'bike', 'biking', 'columbia heights', 'haitian', 'griot', 'kernel'],
           };
           const myCasualKeywords = casualKeywords[this.name] || [];
           shouldProactivelyRespond = myCasualKeywords.some(kw => text.includes(kw));
@@ -270,6 +273,7 @@ export abstract class LiveAgent {
               maya: 0.35,
               rosa: 0.30,
               david: 0.25,
+              marcus: 0.20,    // Engineering lead - mostly focused on technical
               james: 0.15,     // Strategist - waits for strategic topics
             };
             const myChance = responseChances[this.name] || 0.25;
@@ -285,6 +289,7 @@ export abstract class LiveAgent {
             rosa: ['partner', 'team', 'teaming', 'subcontractor', 'relationship', 'intro'],
             james: ['go/no-go', 'should we bid', 'win probability', 'capture strategy', 'final call', 'worth pursuing'],
             patricia: [], // Patricia handled above
+            marcus: ['github', 'repo', 'repository', 'codebase', 'architecture', 'tech stack', 'fedramp', 'ato', 'section 508', 'accessibility', 'cloud.gov', 'login.gov', 'uswds', 'technical review', 'code review', 'engineering'],
           };
           const myKeywords = expertiseKeywords[this.name] || [];
           shouldProactivelyRespond = myKeywords.some(kw => text.includes(kw));
@@ -406,7 +411,7 @@ export abstract class LiveAgent {
 
     // Check for @mentions by Slack user ID (would need to map these)
     // For now, check for name mentions
-    const agents: LiveAgentName[] = ['maya', 'david', 'rosa', 'james', 'patricia', 'jodie'];
+    const agents: LiveAgentName[] = ['maya', 'david', 'rosa', 'james', 'patricia', 'jodie', 'marcus'];
 
     for (const agent of agents) {
       if (lowerText.includes(`@${agent}`) || lowerText.includes(`<@`) && this.name === agent) {
@@ -857,6 +862,7 @@ Rosa=<@U0ACASZ36BW> teaming, partnerships, introductions
 James=<@U0AC582GXBQ> strategy, go/no-go, capture
 Patricia=<@U0AC79NTDAN> deadlines, action items, tracking
 Jodie=<@U0ACP8LKFB3> proposal writing, compliance, drafts
+Marcus=engineering lead, GitHub repos, architecture, FedRAMP, ATO, tech stack
 
 ${agentMoodLine}
 Mood detected: ${mood}. ${guidance}

@@ -1,6 +1,6 @@
 // Types for the live conversational agent system
 
-export type LiveAgentName = 'maya' | 'david' | 'rosa' | 'james' | 'patricia' | 'jodie';
+export type LiveAgentName = 'maya' | 'david' | 'rosa' | 'james' | 'patricia' | 'jodie' | 'marcus';
 
 export interface LiveAgentConfig {
   name: LiveAgentName;
@@ -80,12 +80,14 @@ export const NAME_TO_AGENT: Record<string, LiveAgentName> = {
   'james': 'james',
   'patricia': 'patricia',
   'jodie': 'jodie',
+  'marcus': 'marcus',
   'scout': 'maya',
   'analyst': 'david',
   'connector': 'rosa',
   'strategist': 'james',
   'pm': 'patricia',
   'writer': 'jodie',
+  'engineer': 'marcus',
 };
 
 // Agent expertise areas (for deciding who should chime in)
@@ -96,4 +98,5 @@ export const AGENT_EXPERTISE: Record<LiveAgentName, string[]> = {
   james: ['strategy', 'decision', 'go/no-go', 'win probability', 'approach', 'capture', 'bid'],
   patricia: ['timeline', 'deadlines', 'status', 'standup', 'tracking', 'follow-up', 'action items'],
   jodie: ['proposal', 'writing', 'draft', 'compliance matrix', 'executive summary', 'technical approach', 'past performance', 'editing', 'section l', 'section m'],
+  marcus: ['github', 'repo', 'repository', 'code', 'technical', 'architecture', 'fedramp', 'ato', 'compliance', 'engineering', 'stack', 'dependencies', 'codebase', 'tech stack', 'section 508', 'accessibility', 'cloud.gov', 'login.gov'],
 };

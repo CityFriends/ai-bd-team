@@ -78,7 +78,7 @@ async function getRecentChannelActivity(app: App | null): Promise<RecentActivity
     });
 
     // Agent bot IDs (we'll match by username in the message)
-    const agentNames = ['maya', 'david', 'rosa', 'james', 'patricia', 'jodie'];
+    const agentNames = ['maya', 'david', 'rosa', 'james', 'patricia', 'jodie', 'marcus'];
 
     for (const msg of result.messages || []) {
       // Check if it's from one of our agents (bot messages)
