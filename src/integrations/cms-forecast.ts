@@ -37,7 +37,8 @@ async function findExcelDownloadLink(): Promise<string | null> {
     const $ = cheerio.load(html);
 
     // Look for Excel file links (.xlsx, .xls)
-    let excelLink: string | null = null;
+    // Use object to avoid TypeScript closure narrowing issues
+    const result: { link: string | null } = { link: null };
 
     $('a[href]').each((_, el) => {
       const href = $(el).attr('href');
@@ -45,29 +46,30 @@ async function findExcelDownloadLink(): Promise<string | null> {
         // Check if it's a forecast-related file
         const text = $(el).text().toLowerCase();
         if (text.includes('forecast') || text.includes('opportunity') || text.includes('procurement')) {
-          excelLink = href;
+          result.link = href;
           return false; // break
         }
         // If no text match, still capture it as a candidate
-        if (!excelLink) {
-          excelLink = href;
+        if (!result.link) {
+          result.link = href;
         }
       }
     });
 
     // Also check for common CMS patterns
-    if (!excelLink) {
+    if (!result.link) {
       $('a[href*="forecast"], a[href*="Forecast"], a[href*="FORECAST"]').each((_, el) => {
         const href = $(el).attr('href');
         if (href && (href.endsWith('.xlsx') || href.endsWith('.xls'))) {
-          excelLink = href;
+          result.link = href;
           return false;
         }
       });
     }
 
+    // Make absolute URL if needed
+    let excelLink = result.link;
     if (excelLink && !excelLink.startsWith('http')) {
-      // Make absolute URL
       const base = new URL(CMS_FORECAST_PAGE);
       excelLink = new URL(excelLink, base).toString();
     }

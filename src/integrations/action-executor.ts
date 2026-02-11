@@ -49,7 +49,18 @@ ${action.context || 'No additional context'}
 Now it's time for that meeting. Write a brief message to kick off the discussion:
 1. Remind the team what we're discussing
 2. List 2-3 quick agenda points based on the context
-3. Invite specific team members to share their thoughts
+3. Invite team members to share their thoughts
+
+IMPORTANT - The ONLY team members are:
+- Lapedra (CEO)
+- Maya (Opportunity Scout)
+- David (Research Analyst)
+- Marcus (Relationship Builder)
+- Patricia (that's you)
+- Rosa (Compliance)
+- James (Strategy)
+
+DO NOT mention anyone else. DO NOT use @ mentions for people not on this list.
 
 Keep it concise and actionable. Use Slack formatting (*bold*, _italic_).
 
@@ -61,7 +72,7 @@ Example:
 • Any contacts worth reaching out to?
 • Timeline implications for our pipeline
 
-@Maya, @Marcus - would love your thoughts on this one."`;
+Maya, Marcus - would love your thoughts on this one."`;
 
   try {
     const response = await client.messages.create({
