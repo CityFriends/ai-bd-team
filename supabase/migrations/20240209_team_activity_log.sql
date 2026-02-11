@@ -25,3 +25,8 @@ CREATE INDEX IF NOT EXISTS idx_team_activity_created ON team_activity_log(create
 -- Composite index for common query patterns
 CREATE INDEX IF NOT EXISTS idx_team_activity_thread_agent ON team_activity_log(thread_ts, agent);
 CREATE INDEX IF NOT EXISTS idx_team_activity_notice_type ON team_activity_log(notice_id, action_type);
+
+-- Row Level Security
+ALTER TABLE team_activity_log ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Service role has full access to team_activity_log" ON team_activity_log
+  FOR ALL USING (auth.role() = 'service_role');

@@ -26,3 +26,8 @@ CREATE INDEX idx_competitor_intel_discovered ON competitor_intel (discovered_at 
 
 -- Index for relevant intel only
 CREATE INDEX idx_competitor_intel_relevant ON competitor_intel (still_relevant) WHERE still_relevant = TRUE;
+
+-- Row Level Security
+ALTER TABLE competitor_intel ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Service role has full access to competitor_intel" ON competitor_intel
+  FOR ALL USING (auth.role() = 'service_role');

@@ -335,3 +335,45 @@ Priority tables to backup:
 3. `conversation_memory` - institutional memory
 4. `decision_patterns` - decision history
 5. `far_sections` - takes time to regenerate embeddings
+
+---
+
+## Security
+
+### Row Level Security (RLS)
+
+All tables have RLS enabled with service_role-only access. This prevents unauthorized access via PostgREST/anon key.
+
+**Policy pattern** (applied to all tables):
+```sql
+ALTER TABLE table_name ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Service role has full access to table_name" ON table_name
+  FOR ALL USING (auth.role() = 'service_role');
+```
+
+**Views** use `security_invoker = true` to use caller's permissions.
+
+**Functions** have `search_path = public` set to prevent path injection attacks.
+
+### Verify RLS Status
+
+```sql
+-- Check all tables have RLS enabled
+SELECT schemaname, tablename, rowsecurity
+FROM pg_tables
+WHERE schemaname = 'public'
+ORDER BY tablename;
+
+-- Check policies exist
+SELECT tablename, policyname
+FROM pg_policies
+WHERE schemaname = 'public'
+ORDER BY tablename;
+```
+
+### Security Migration
+
+If RLS is disabled on any table, run:
+```sql
+-- supabase/migrations/20260211_enable_rls_all_tables.sql
+```

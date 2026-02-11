@@ -255,3 +255,39 @@ CREATE INDEX idx_proposal_content_tags ON proposal_content USING GIN(tags);
 CREATE INDEX idx_lessons_learned_tags ON lessons_learned USING GIN(tags);
 CREATE INDEX idx_documents_embedding ON documents USING ivfflat (embedding vector_cosine_ops);
 CREATE INDEX idx_documents_type ON documents(document_type);
+
+-- ============================================
+-- ROW LEVEL SECURITY
+-- Restrict access to service_role only
+-- ============================================
+ALTER TABLE company_profile ENABLE ROW LEVEL SECURITY;
+ALTER TABLE past_performance ENABLE ROW LEVEL SECURITY;
+ALTER TABLE contacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE teaming_partners ENABLE ROW LEVEL SECURITY;
+ALTER TABLE labor_rates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE case_studies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE key_personnel ENABLE ROW LEVEL SECURITY;
+ALTER TABLE proposal_content ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lessons_learned ENABLE ROW LEVEL SECURITY;
+ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service role has full access to company_profile" ON company_profile
+  FOR ALL USING (auth.role() = 'service_role');
+CREATE POLICY "Service role has full access to past_performance" ON past_performance
+  FOR ALL USING (auth.role() = 'service_role');
+CREATE POLICY "Service role has full access to contacts" ON contacts
+  FOR ALL USING (auth.role() = 'service_role');
+CREATE POLICY "Service role has full access to teaming_partners" ON teaming_partners
+  FOR ALL USING (auth.role() = 'service_role');
+CREATE POLICY "Service role has full access to labor_rates" ON labor_rates
+  FOR ALL USING (auth.role() = 'service_role');
+CREATE POLICY "Service role has full access to case_studies" ON case_studies
+  FOR ALL USING (auth.role() = 'service_role');
+CREATE POLICY "Service role has full access to key_personnel" ON key_personnel
+  FOR ALL USING (auth.role() = 'service_role');
+CREATE POLICY "Service role has full access to proposal_content" ON proposal_content
+  FOR ALL USING (auth.role() = 'service_role');
+CREATE POLICY "Service role has full access to lessons_learned" ON lessons_learned
+  FOR ALL USING (auth.role() = 'service_role');
+CREATE POLICY "Service role has full access to documents" ON documents
+  FOR ALL USING (auth.role() = 'service_role');

@@ -38,15 +38,14 @@ CREATE TRIGGER trigger_far_sections_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION update_far_sections_updated_at();
 
--- Enable Row Level Security (optional, but good practice)
+-- Enable Row Level Security
 ALTER TABLE far_sections ENABLE ROW LEVEL SECURITY;
 
--- Create a policy that allows all operations (adjust as needed)
+-- Restrict access to service role only
 DROP POLICY IF EXISTS "Allow all operations on far_sections" ON far_sections;
-CREATE POLICY "Allow all operations on far_sections" ON far_sections
-  FOR ALL
-  USING (true)
-  WITH CHECK (true);
+DROP POLICY IF EXISTS "Service role has full access to far_sections" ON far_sections;
+CREATE POLICY "Service role has full access to far_sections" ON far_sections
+  FOR ALL USING (auth.role() = 'service_role');
 
 -- Verify the table was created
 SELECT

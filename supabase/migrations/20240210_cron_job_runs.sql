@@ -34,14 +34,12 @@ WHERE started_at > NOW() - INTERVAL '7 days'
 GROUP BY job_name
 ORDER BY job_name;
 
--- RLS Policies (if needed)
+-- RLS Policies - restrict to service role only
 ALTER TABLE cron_job_runs ENABLE ROW LEVEL SECURITY;
 
--- Allow service role full access
-CREATE POLICY "Service role can manage cron_job_runs"
+-- Restrict access to service role only (not USING (true) which allows anyone)
+CREATE POLICY "Service role has full access to cron_job_runs"
   ON cron_job_runs
-  FOR ALL
-  USING (true)
-  WITH CHECK (true);
+  FOR ALL USING (auth.role() = 'service_role');
 
 COMMENT ON TABLE cron_job_runs IS 'Tracks execution of scheduled cron jobs for monitoring and debugging';

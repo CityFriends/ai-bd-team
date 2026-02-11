@@ -17,5 +17,10 @@ CREATE INDEX IF NOT EXISTS idx_seen_awards_contract_id ON seen_awards(contract_i
 CREATE INDEX IF NOT EXISTS idx_seen_awards_agency_code ON seen_awards(agency_code);
 CREATE INDEX IF NOT EXISTS idx_seen_awards_seen_at ON seen_awards(seen_at);
 
+-- Row Level Security
+ALTER TABLE seen_awards ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Service role has full access to seen_awards" ON seen_awards
+  FOR ALL USING (auth.role() = 'service_role');
+
 -- Clean up old records (keep last 90 days)
 -- Run periodically: DELETE FROM seen_awards WHERE seen_at < NOW() - INTERVAL '90 days';

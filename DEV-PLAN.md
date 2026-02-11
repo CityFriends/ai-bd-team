@@ -146,6 +146,22 @@ Agent-specific strategic reasoning:
 - [x] `system_feedback` - tracks bugs, issues, suggestions for agent improvement
 - [x] `agency_forecasts` - upcoming opportunities from agency forecast pages
 
+### Database Security (Row Level Security) ✓
+All tables now have RLS enabled with service_role-only access:
+- [x] All 24+ public tables have RLS enabled
+- [x] Policies restrict access to `service_role` (backend only)
+- [x] Fixed overly permissive policies (`USING (true)`) on `far_sections`, `cron_job_runs`
+- [x] Views use `security_invoker = true` (caller's permissions, not creator's)
+- [x] Functions have `search_path = public` to prevent path injection
+
+**Migration**: `supabase/migrations/20260211_enable_rls_all_tables.sql`
+
+**To verify RLS status**:
+```sql
+SELECT schemaname, tablename, rowsecurity
+FROM pg_tables WHERE schemaname = 'public';
+```
+
 ### Notion Hub Integration ✓
 Central command center for human oversight:
 - [x] AI BD Team Hub page with 8 databases

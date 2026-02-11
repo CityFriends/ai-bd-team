@@ -20,6 +20,11 @@ CREATE INDEX IF NOT EXISTS idx_feedback_type ON system_feedback(feedback_type);
 CREATE INDEX IF NOT EXISTS idx_feedback_resolved ON system_feedback(resolved);
 CREATE INDEX IF NOT EXISTS idx_feedback_date ON system_feedback(date);
 
+-- Row Level Security
+ALTER TABLE system_feedback ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Service role has full access to system_feedback" ON system_feedback
+  FOR ALL USING (auth.role() = 'service_role');
+
 -- Sample queries:
 -- Get unresolved feedback: SELECT * FROM system_feedback WHERE resolved = false ORDER BY created_at DESC;
 -- Feedback by agent: SELECT agent, COUNT(*) FROM system_feedback GROUP BY agent;

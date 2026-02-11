@@ -23,6 +23,11 @@ INSERT INTO user_profiles (slack_user_id, user_name, display_name, role, backgro
 ('U01RXBVUA0P', 'tamara', 'Tamara Tolson', 'COO', 'COO. Handles operations and keeps things running smoothly. Focuses on operational feasibility and team capacity.')
 ON CONFLICT (slack_user_id) DO NOTHING;
 
+-- Row Level Security
+ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Service role has full access to user_profiles" ON user_profiles
+  FOR ALL USING (auth.role() = 'service_role');
+
 -- Seed user_context table with additional profile info
 INSERT INTO user_context (user_name, context_type, content, still_relevant) VALUES
 ('lapedra', 'personal', 'CEO and founder of Friends From The City', true),

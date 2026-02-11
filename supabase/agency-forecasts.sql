@@ -29,6 +29,11 @@ CREATE INDEX IF NOT EXISTS idx_forecasts_release ON agency_forecasts(estimated_r
 CREATE INDEX IF NOT EXISTS idx_forecasts_relevance ON agency_forecasts(relevance_score);
 CREATE INDEX IF NOT EXISTS idx_forecasts_status ON agency_forecasts(status);
 
+-- Row Level Security
+ALTER TABLE agency_forecasts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Service role has full access to agency_forecasts" ON agency_forecasts
+  FOR ALL USING (auth.role() = 'service_role');
+
 -- Sample queries:
 -- High relevance upcoming: SELECT * FROM agency_forecasts WHERE relevance_score >= 70 AND status = 'upcoming' ORDER BY estimated_release;
 -- By agency: SELECT * FROM agency_forecasts WHERE agency = 'VA' AND status = 'upcoming';

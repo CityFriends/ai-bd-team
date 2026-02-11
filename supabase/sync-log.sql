@@ -13,5 +13,10 @@ CREATE TABLE IF NOT EXISTS sync_log (
 CREATE INDEX IF NOT EXISTS idx_sync_log_source ON sync_log(source);
 CREATE INDEX IF NOT EXISTS idx_sync_log_synced_at ON sync_log(synced_at DESC);
 
+-- Row Level Security
+ALTER TABLE sync_log ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Service role has full access to sync_log" ON sync_log
+  FOR ALL USING (auth.role() = 'service_role');
+
 -- View recent syncs
 -- SELECT * FROM sync_log ORDER BY synced_at DESC LIMIT 20;
