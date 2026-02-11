@@ -139,6 +139,11 @@ async function scanOpportunities(): Promise<ScoredOpportunity[]> {
           continue;
         }
 
+        // Log why low-scoring opportunities are being skipped
+        if (score < 60) {
+          console.log(`    [LOW SCORE: ${score}] ${opp.title?.slice(0, 50)}... - ${redFlags.join(', ') || 'No core keywords matched'}`);
+        }
+
         const posting = shouldPostOpportunity(score);
 
         // Generate real SAM.gov URL
@@ -335,10 +340,13 @@ REQUIREMENTS:
 // Quiet morning messages - professional
 const QUIET_MORNING_MESSAGES = [
   "Morning scan complete - nothing matching our criteria today. I'll keep watching.",
-  "Scanned SAM this morning. A few opportunities but nothing with HCD/UX focus that fits our capabilities.",
-  "Nothing to flag today. The opportunities I saw were either outside our NAICS or missing the design/research component we look for.",
-  "Quiet day on SAM.gov. Will continue monitoring.",
+  "Scanned SAM this morning. A few opportunities but nothing in our software dev or design space.",
+  "Nothing to flag today. The opportunities I saw were either outside our NAICS, hit exclusion keywords (COTS, system integration, infrastructure), or lacked software/design focus.",
+  "Quiet day on SAM.gov for our space. Will continue monitoring.",
 ];
+
+// Track last quiet message to prevent duplicates
+let lastQuietMessageDate: string | null = null;
 
 async function generateQuietMorning(): Promise<string> {
   return QUIET_MORNING_MESSAGES[Math.floor(Math.random() * QUIET_MORNING_MESSAGES.length)];
@@ -468,9 +476,15 @@ export async function runDailyScan() {
   console.log(`\nValidation: ${validToPost.length} of ${toPost.length} opportunities have valid SAM.gov data`);
 
   if (validToPost.length === 0) {
-    // Quiet morning
-    const message = await generateQuietMorning();
-    await postToSlack(app, message);
+    // Quiet morning - but only post once per day to avoid duplicates
+    const today = new Date().toISOString().split('T')[0];
+    if (lastQuietMessageDate !== today) {
+      const message = await generateQuietMorning();
+      await postToSlack(app, message);
+      lastQuietMessageDate = today;
+    } else {
+      console.log('[SKIP] Already posted quiet message today, skipping duplicate');
+    }
   } else {
     // Post top opportunities (max 3) with interactive buttons
     for (const opp of validToPost.slice(0, 3)) {

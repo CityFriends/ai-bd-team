@@ -20,8 +20,9 @@ export const OPPORTUNITY_FILTERS = {
 
   // CORE KEYWORDS - At least ONE must be present for opportunity to be relevant
   // These represent FFTC's actual capabilities
+  // NOTE: Software development alone is enough - doesn't need to be paired with HCD/design
   coreKeywords: [
-    // HCD/UX - Our bread and butter
+    // HCD/UX - Our bread and butter (high value but NOT required)
     'human-centered design', 'hcd', 'user experience', 'ux', 'user interface', 'ui',
     'service design', 'customer experience', 'cx', 'design thinking',
     'design research', 'user research', 'usability', 'usability testing',
@@ -29,11 +30,27 @@ export const OPPORTUNITY_FILTERS = {
     'accessibility', '508 compliance', 'wcag', 'section 508',
     'design system', 'design ops', 'design sprint',
 
-    // Digital Services (custom development, not COTS)
-    'digital services', 'digital transformation', 'custom development',
-    'agile development', 'iterative development', 'prototype', 'mvp',
-    'web application development', 'mobile app development',
+    // SOFTWARE DEVELOPMENT - Core capability, doesn't require HCD pairing
+    // Expanded to catch more SAM.gov phrasing variations
     'software development', 'application development', 'web development',
+    'software engineering', 'application engineering',
+    'develop software', 'develop applications', 'develop systems',
+    'development services', 'development support', 'development effort',
+    'systems development', 'system development',
+    'custom development', 'custom software', 'custom application',
+    'agile development', 'iterative development',
+    'web application', 'mobile application', 'mobile app',
+    'software solution', 'software system', 'software platform',
+    'application modernization', 'software modernization',
+    'full-stack', 'full stack', 'fullstack',
+    'front-end', 'front end', 'frontend',
+    'back-end', 'back end', 'backend',
+    'prototype', 'prototyping', 'mvp', 'minimum viable',
+
+    // Digital Services & Transformation
+    'digital services', 'digital transformation', 'digital modernization',
+    'it modernization', 'technology modernization',
+    'digital platform', 'digital solution',
 
     // AI/ML Development - Core capability now
     'artificial intelligence', 'machine learning', 'ai', 'ml',
@@ -47,23 +64,32 @@ export const OPPORTUNITY_FILTERS = {
     'content strategy', 'content design', 'plain language',
     'information architecture', 'digital communications',
 
-    // Agile & Modern Development
-    'agile', 'iterative', 'devops', 'ci/cd', 'continuous integration',
-    'cloud native', 'api development', 'microservices',
-    'full stack', 'front end', 'back end', 'frontend', 'backend',
-    'react', 'angular', 'vue', 'node', 'python', 'javascript',
-    'data visualization', 'dashboard', 'analytics',
+    // Agile & Modern Tech Stack
+    'agile', 'devops', 'ci/cd', 'continuous integration', 'continuous delivery',
+    'cloud native', 'cloud-native', 'api development', 'api services', 'microservices',
+    'react', 'angular', 'vue', 'node.js', 'nodejs', 'python', 'javascript', 'typescript',
+    'aws', 'azure', 'gcp', 'cloud services',
+    'data visualization', 'dashboard', 'analytics platform',
     'open source', 'open data',
 
-    // Product & Strategy
-    'product management', 'product strategy', 'product owner',
-    'scrum', 'kanban', 'safe', 'agile coaching',
-    'roadmap', 'backlog', 'sprint',
-    'discovery', 'alpha', 'beta',
+    // Product & Agile
+    'product management', 'product strategy', 'product owner', 'product development',
+    'scrum', 'kanban', 'safe', 'agile coaching', 'agile methodology',
+    'roadmap', 'backlog', 'sprint planning',
 
-    // Modernization
-    'legacy modernization', 'application modernization',
-    'digital modernization', 'user-facing modernization',
+    // Modernization (broad)
+    'legacy modernization', 'modernization effort', 'modernization program',
+    'system modernization', 'platform modernization',
+
+    // Common SAM.gov IT phrasing (these often appear without "development")
+    'it services', 'information technology services',
+    'technology services', 'technical services',
+    'it solutions', 'technology solutions', 'technical solutions',
+    'computer programming', 'programming services',
+    'software services', 'application services',
+    'web services', 'web-based', 'web based',
+    'portal', 'website', 'web portal',
+    'database', 'data management', 'data services',
   ],
 
   // Keywords that INCREASE relevance (bonus points on top of core match)
@@ -261,9 +287,9 @@ export function scoreOpportunity(opportunity: {
     }
   } else {
     // No core keyword = NOT RELEVANT TO FFTC
-    // Generic consulting, IT services, etc. without HCD/UX focus is NOT our work
+    // Generic consulting, IT services, etc. without software dev or HCD focus is NOT our work
     // Cap score at 50 max - will never meet posting threshold (60+)
-    redFlags.push('No HCD/UX/design keywords - not our core capability');
+    redFlags.push('No software development or design keywords found');
     return {
       score: Math.min(50, score),
       reasons: [],
