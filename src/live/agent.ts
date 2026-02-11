@@ -32,6 +32,7 @@ import { embed } from '../integrations/embeddings.js';
 import { trackAgentResponse, detectRephrasedQuestion, setupFeedbackListeners } from './feedback-listener.js';
 import { checkForHandoff, formatHandoffForPrompt, handoffToAgent, detectAgentTag } from './handoff.js';
 import { buildWarmupMessages, formatAgentMoodLine } from './warmups.js';
+import { parseActionFromResponse, createAction } from '../integrations/agent-actions.js';
 import type {
   LiveAgentName,
   LiveAgentConfig,
@@ -568,6 +569,11 @@ export abstract class LiveAgent {
         });
       }
 
+      // Check if agent committed to a future action (async, non-blocking)
+      this.parseAndSaveAction(response.text, message.text, message.channelId, message.threadTs || message.messageTs).catch(err => {
+        console.warn(`${this.displayName}: Action parsing failed:`, err);
+      });
+
       // Log sources to console for visibility
       if (response.sources.length > 0) {
         console.log(`${this.displayName}: Sources: ${response.sources.join(', ')} (${response.confidenceLevel} confidence)`);
@@ -642,6 +648,43 @@ Only extract clear, specific facts. Don't infer or guess.`;
       }
     } catch (err) {
       // Extraction failed, that's okay - it's best-effort
+    }
+  }
+
+  // Parse agent response for action commitments and save them
+  private async parseAndSaveAction(
+    responseText: string,
+    userMessage: string,
+    channelId: string,
+    threadTs: string
+  ): Promise<void> {
+    // Skip for certain agents that shouldn't commit to actions
+    // Marcus can only commit to technical actions (handled in parseActionFromResponse)
+    // Rosa shouldn't commit to actions (she's analysis only)
+    if (this.name === 'rosa') {
+      return;
+    }
+
+    const action = await parseActionFromResponse(
+      this.name,
+      responseText,
+      userMessage.substring(0, 500),
+      channelId,
+      threadTs
+    );
+
+    if (action) {
+      // Marcus can only commit to research/technical actions
+      if (this.name === 'marcus' &&
+          action.action_type !== 'research' &&
+          action.action_type !== 'follow_up' &&
+          action.action_type !== 'technical_review') {
+        console.log(`${this.displayName}: Skipping non-technical action: ${action.action_type}`);
+        return;
+      }
+
+      await createAction(action);
+      console.log(`${this.displayName}: Committed to action: ${action.action_type} - ${action.description}`);
     }
   }
 
