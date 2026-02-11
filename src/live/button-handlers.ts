@@ -139,10 +139,19 @@ async function handlePass(
       .from('opportunity_workflow')
       .update({
         stage: 'passed',
-        human_decision: 'pass',
-        decided_by: userId,
-        decided_at: new Date().toISOString(),
+        decision: 'pass',
+        decision_by: userId,
+        decision_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+      })
+      .eq('notice_id', noticeId);
+
+    // Also update seen_opportunities so Maya won't repost it
+    await supabase
+      .from('seen_opportunities')
+      .update({
+        decision: 'pass',
+        decision_date: new Date().toISOString().split('T')[0],
       })
       .eq('notice_id', noticeId);
 
@@ -354,11 +363,20 @@ async function handleDecisionPass(
       .from('opportunity_workflow')
       .update({
         stage: 'passed',
-        human_decision: 'pass',
-        decided_by: userId,
-        decided_at: new Date().toISOString(),
+        decision: 'pass',
+        decision_by: userId,
+        decision_at: new Date().toISOString(),
         awaiting_input_from: null,
         updated_at: new Date().toISOString(),
+      })
+      .eq('notice_id', noticeId);
+
+    // Also update seen_opportunities so Maya won't repost it
+    await supabase
+      .from('seen_opportunities')
+      .update({
+        decision: 'pass',
+        decision_date: new Date().toISOString().split('T')[0],
       })
       .eq('notice_id', noticeId);
 

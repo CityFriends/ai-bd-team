@@ -450,6 +450,45 @@ async function postOpportunityWithBlocks(
   }
 }
 
+/**
+ * Get notice IDs we've already seen or decided to pass on
+ */
+async function getSeenAndPassedNoticeIds(): Promise<Set<string>> {
+  const seen = new Set<string>();
+  try {
+    const supabase = getSupabase();
+
+    // Get all seen opportunities (already posted)
+    const { data: seenData } = await supabase
+      .from('seen_opportunities')
+      .select('notice_id, decision');
+
+    if (seenData) {
+      for (const row of seenData) {
+        // Skip if already posted OR if decision is pass/no_go
+        seen.add(row.notice_id);
+      }
+    }
+
+    // Also check opportunity_workflow for passed opportunities
+    const { data: workflowData } = await supabase
+      .from('opportunity_workflow')
+      .select('notice_id, decision')
+      .in('decision', ['pass', 'no_go', 'passed']);
+
+    if (workflowData) {
+      for (const row of workflowData) {
+        seen.add(row.notice_id);
+      }
+    }
+
+    console.log(`[DEDUP] Found ${seen.size} already-seen or passed opportunities`);
+  } catch (err) {
+    console.warn('[DEDUP] Could not check seen opportunities:', err);
+  }
+  return seen;
+}
+
 export async function runDailyScan() {
   console.log('\n' + '='.repeat(60));
   console.log(`  Maya's Daily Scan - ${new Date().toLocaleString()}`);
@@ -458,6 +497,9 @@ export async function runDailyScan() {
   const app = await getMayaApp();
   const companyData = await loadCompanyContext();
   const companyContext = formatCompanyContextForPrompt(companyData, 'Maya');
+
+  // Get opportunities we've already posted or passed on
+  const seenNoticeIds = await getSeenAndPassedNoticeIds();
 
   const opportunities = await scanOpportunities();
 
@@ -471,7 +513,21 @@ export async function runDailyScan() {
   console.log(`  ${immediate.length} hot (immediate post)`);
 
   // Filter to only opportunities with valid SAM URLs and score >= 60
-  const validToPost = toPost.filter(o => o.samUrl && o.opportunity.noticeId && o.score >= 60);
+  let validToPost = toPost.filter(o => o.samUrl && o.opportunity.noticeId && o.score >= 60);
+
+  // CRITICAL: Filter out already-seen or passed opportunities
+  const beforeDedup = validToPost.length;
+  validToPost = validToPost.filter(o => {
+    if (seenNoticeIds.has(o.opportunity.noticeId)) {
+      console.log(`[SKIP DUPLICATE] Already posted or passed: ${o.opportunity.title?.slice(0, 50)}...`);
+      return false;
+    }
+    return true;
+  });
+
+  if (beforeDedup !== validToPost.length) {
+    console.log(`[DEDUP] Filtered out ${beforeDedup - validToPost.length} already-seen opportunities`);
+  }
 
   console.log(`\nValidation: ${validToPost.length} of ${toPost.length} opportunities have valid SAM.gov data`);
 
