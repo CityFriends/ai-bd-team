@@ -67,7 +67,9 @@
     "cron:patricia-standup": "tsx src/cron/patricia-standup.ts",
     "cron:patricia-nudge": "tsx src/cron/patricia-nudge.ts",
     "david:news": "tsx src/scripts/david-news-digest.ts",
-    "david:news:schedule": "tsx src/scripts/david-news-digest.ts --schedule"
+    "david:news:schedule": "tsx src/scripts/david-news-digest.ts --schedule",
+    "actions:check": "tsx src/scripts/action-scheduler.ts",
+    "actions:schedule": "tsx src/scripts/action-scheduler.ts --schedule"
   },
   "keywords": [
     "ai",

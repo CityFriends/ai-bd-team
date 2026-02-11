@@ -54,6 +54,11 @@ async function runDavidNewsDigest() {
   await runNewsDigest();
 }
 
+async function runActionScheduler() {
+  const { checkAndExecuteActions } = await import('./action-scheduler.js');
+  await checkAndExecuteActions();
+}
+
 async function main() {
   console.log('='.repeat(60));
   console.log('  AI BD Team - Starting All Services');
@@ -136,12 +141,23 @@ async function main() {
     }
   });
 
+  // Action Scheduler: Every 15 minutes check for agent commitments
+  cron.schedule('*/15 * * * *', async () => {
+    console.log(`[${new Date().toLocaleString()}] Actions: Checking for due actions...`);
+    try {
+      await runWithLogging('action-scheduler', runActionScheduler);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Actions: Scheduler failed:`, err);
+    }
+  });
+
   console.log('  ✓ Scheduled jobs configured\n');
 
   console.log('='.repeat(60));
   console.log('  All services running');
   console.log('  Schedule (CST):');
   console.log('    - Live agents: Always listening');
+  console.log('    - Action scheduler: Every 15 minutes');
   console.log('    - Maya scan: 8:00 AM CST Mon-Fri');
   console.log('    - Maya weekly: 8:30 AM CST Monday');
   console.log('    - David news: 10:00 AM CST Mon/Wed/Fri');

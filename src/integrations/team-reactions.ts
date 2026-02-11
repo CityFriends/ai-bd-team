@@ -7,6 +7,7 @@
 
 import { App } from '@slack/bolt';
 import { getAnthropic } from './claude.js';
+import { parseActionFromResponse, createAction } from './agent-actions.js';
 
 interface TeamReaction {
   agentName: string;
@@ -247,6 +248,20 @@ export async function postTeamReactions(
       });
       console.log(`[TeamReactions] ${reaction.agentName} replied in thread`);
       postedReactions.push(reaction);
+
+      // Check if the agent committed to a future action
+      const action = await parseActionFromResponse(
+        reaction.agentName.toLowerCase(),
+        reaction.reaction!,
+        newsContent.substring(0, 500),
+        channel,
+        threadTs
+      );
+
+      if (action) {
+        await createAction(action);
+        console.log(`[TeamReactions] ${reaction.agentName} committed to action: ${action.action_type}`);
+      }
 
       // Delay between reactions (feels more natural)
       await new Promise(r => setTimeout(r, 2000 + Math.random() * 3000));
