@@ -7,7 +7,8 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install all dependencies (including dev for build)
-RUN npm ci
+# --legacy-peer-deps needed for ESLint peer dependency conflicts
+RUN npm ci --legacy-peer-deps
 
 # Copy source
 COPY . .
