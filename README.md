@@ -22,11 +22,14 @@ Each agent has a distinct personality, expertise, and voice. They research using
 # Clone and install
 git clone <repository>
 cd ai-bd-team
-npm install
+npm install --legacy-peer-deps
 
 # Configure environment
 cp .env.example .env
 # Edit .env with your API keys
+
+# Run tests to verify setup
+npm test
 
 # Start the team
 npm run live
@@ -66,6 +69,7 @@ Then in Slack:
 |----------|-------------|
 | [Architecture](docs/ARCHITECTURE.md) | System design and data flow |
 | [Setup Guide](docs/SETUP.md) | Installation and configuration |
+| [Development Guide](docs/DEVELOPMENT.md) | Testing, linting, CI/CD workflow |
 | [Configuration](docs/CONFIGURATION.md) | Customization options |
 | [Agents](docs/AGENTS.md) | Agent reference and examples |
 | [Database](docs/DATABASE.md) | Schema and table documentation |
@@ -76,7 +80,7 @@ Then in Slack:
 
 ## Requirements
 
-- Node.js 18+
+- Node.js 20+
 - Slack workspace with admin access
 - Supabase account
 - API keys: Anthropic, SAM.gov, SerpAPI
@@ -84,10 +88,17 @@ Then in Slack:
 ## Commands
 
 ```bash
-npm run live              # Start all 5 agents
-npm run check-awards      # Manual award check
-npm run award-scheduler   # Start scheduled award monitoring
-npm run update-far        # Refresh FAR data
+# Live agents
+npm run live              # Start all agents in Slack
+
+# Development
+npm test                  # Run tests
+npm run lint              # Check code quality
+npm run typecheck         # TypeScript type checking
+
+# Operations
+npm run cli -- agent maya scan    # Run Maya scanner
+npm run cli -- workflow process   # Process workflow queue
 ```
 
 ## Architecture
