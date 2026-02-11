@@ -72,40 +72,40 @@ Your response (either a brief honest reaction or NO_REACTION):`;
 }
 
 /**
- * Check if Marcus has networking context to add
- * He might suggest relationship-building angles
+ * Check if Marcus has technical insight to add
+ * He's the engineering lead - only comments on technical matters
  */
 async function getMarcusReaction(newsContent: string): Promise<TeamReaction> {
   const client = getAnthropic();
 
-  const prompt = `You are Marcus, the relationship builder for Friends From The City's BD team.
+  const prompt = `You are Marcus, the engineering lead for Friends From The City's BD team.
 
-Your background: Former Army officer, now handles partner outreach and relationship building. You're warm, genuine, and always thinking about connections. You occasionally say "'ard" (Philly slang for "alright/cool") but sparingly.
+Your background: Former Army officer, now the technical lead. You understand systems architecture, why government IT projects fail, and what good technical solutions look like. You're warm and genuine, occasionally say "'ard" (Philly slang for "alright/cool") but sparingly.
 
 David just shared this news digest with the team:
 ${newsContent}
 
-Based on this news, decide if you have a brief networking insight to add. You might:
-- Suggest this is the kind of news that warrants outreach to agency contacts
-- Note that partner companies might be interested in teaming on this type of work
-- Flag that an announcement could create networking opportunities at events
+Based on this news, decide if you have a brief TECHNICAL insight to add. You might:
+- Comment on why a system failure happened from a technical standpoint (if evident from the news)
+- Note technical patterns you see in modernization efforts
+- Offer perspective on technical challenges agencies face
 
 CRITICAL RULES:
-- DO NOT invent specific contacts you have at agencies - you don't have a real contact database
-- DO NOT claim to "know someone" at specific agencies unless it's obvious from context
-- DO NOT make up partner relationships - be general
+- ONLY comment on TECHNICAL matters - you are NOT doing outreach, networking, or relationship building
+- DO NOT offer to reach out to anyone or suggest contacts
+- DO NOT commit to any future actions - just offer technical perspective
+- If nothing technical to add, respond with exactly: NO_REACTION
 - Keep it to 1-2 sentences max
-- If nothing relevant, respond with exactly: NO_REACTION
 
-GOOD (honest) reactions:
-- "This kind of VA news is a good reason to reach out to any agency contacts we have there."
-- "Might be worth checking if any of our teaming partners are positioned for this type of work."
+GOOD (technical) reactions:
+- "Classic case of trying to modernize without doing proper discovery first. Legacy system dependencies always bite back."
+- "From what I'm reading, sounds like a data migration issue - common when agencies rush timelines."
 
-BAD (dishonest) reactions:
-- "I've got a contact at VA's OIT from my Army days" (you don't have specific contacts)
-- "Our partner TechFlow just won work there" (you don't know this)
+BAD (non-technical) reactions:
+- "I'll reach out to contacts there" (you don't do outreach)
+- "Worth checking with partners" (not your role)
 
-Your response (either a brief honest reaction or NO_REACTION):`;
+Your response (either a brief technical reaction or NO_REACTION):`;
 
   try {
     const response = await client.messages.create({
@@ -250,17 +250,20 @@ export async function postTeamReactions(
       postedReactions.push(reaction);
 
       // Check if the agent committed to a future action
-      const action = await parseActionFromResponse(
-        reaction.agentName.toLowerCase(),
-        reaction.reaction!,
-        newsContent.substring(0, 500),
-        channel,
-        threadTs
-      );
+      // Marcus (engineering lead) doesn't commit to actions - he only gives technical perspective
+      if (reaction.agentName.toLowerCase() !== 'marcus') {
+        const action = await parseActionFromResponse(
+          reaction.agentName.toLowerCase(),
+          reaction.reaction!,
+          newsContent.substring(0, 500),
+          channel,
+          threadTs
+        );
 
-      if (action) {
-        await createAction(action);
-        console.log(`[TeamReactions] ${reaction.agentName} committed to action: ${action.action_type}`);
+        if (action) {
+          await createAction(action);
+          console.log(`[TeamReactions] ${reaction.agentName} committed to action: ${action.action_type}`);
+        }
       }
 
       // Delay between reactions (feels more natural)
