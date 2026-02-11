@@ -23,139 +23,314 @@ export const OPPORTUNITY_FILTERS = {
   // NOTE: Software development alone is enough - doesn't need to be paired with HCD/design
   coreKeywords: [
     // HCD/UX - Our bread and butter (high value but NOT required)
-    'human-centered design', 'hcd', 'user experience', 'ux', 'user interface', 'ui',
-    'service design', 'customer experience', 'cx', 'design thinking',
-    'design research', 'user research', 'usability', 'usability testing',
-    'journey mapping', 'service blueprint', 'experience mapping',
-    'accessibility', '508 compliance', 'wcag', 'section 508',
-    'design system', 'design ops', 'design sprint',
+    'human-centered design',
+    'hcd',
+    'user experience',
+    'ux',
+    'user interface',
+    'ui',
+    'service design',
+    'customer experience',
+    'cx',
+    'design thinking',
+    'design research',
+    'user research',
+    'usability',
+    'usability testing',
+    'journey mapping',
+    'service blueprint',
+    'experience mapping',
+    'accessibility',
+    '508 compliance',
+    'wcag',
+    'section 508',
+    'design system',
+    'design ops',
+    'design sprint',
 
     // SOFTWARE DEVELOPMENT - Core capability, doesn't require HCD pairing
     // Expanded to catch more SAM.gov phrasing variations
-    'software development', 'application development', 'web development',
-    'software engineering', 'application engineering',
-    'develop software', 'develop applications', 'develop systems',
-    'development services', 'development support', 'development effort',
-    'systems development', 'system development',
-    'custom development', 'custom software', 'custom application',
-    'agile development', 'iterative development',
-    'web application', 'mobile application', 'mobile app',
-    'software solution', 'software system', 'software platform',
-    'application modernization', 'software modernization',
-    'full-stack', 'full stack', 'fullstack',
-    'front-end', 'front end', 'frontend',
-    'back-end', 'back end', 'backend',
-    'prototype', 'prototyping', 'mvp', 'minimum viable',
+    'software development',
+    'application development',
+    'web development',
+    'software engineering',
+    'application engineering',
+    'develop software',
+    'develop applications',
+    'develop systems',
+    'development services',
+    'development support',
+    'development effort',
+    'systems development',
+    'system development',
+    'custom development',
+    'custom software',
+    'custom application',
+    'agile development',
+    'iterative development',
+    'web application',
+    'mobile application',
+    'mobile app',
+    'software solution',
+    'software system',
+    'software platform',
+    'application modernization',
+    'software modernization',
+    'full-stack',
+    'full stack',
+    'fullstack',
+    'front-end',
+    'front end',
+    'frontend',
+    'back-end',
+    'back end',
+    'backend',
+    'prototype',
+    'prototyping',
+    'mvp',
+    'minimum viable',
 
     // Digital Services & Transformation
-    'digital services', 'digital transformation', 'digital modernization',
-    'it modernization', 'technology modernization',
-    'digital platform', 'digital solution',
+    'digital services',
+    'digital transformation',
+    'digital modernization',
+    'it modernization',
+    'technology modernization',
+    'digital platform',
+    'digital solution',
 
     // AI/ML Development - Core capability now
-    'artificial intelligence', 'machine learning', 'ai', 'ml',
-    'ai development', 'ml development', 'ai/ml',
-    'generative ai', 'gen ai', 'large language model', 'llm',
-    'chatbot', 'conversational ai', 'virtual assistant',
-    'natural language processing', 'nlp', 'computer vision',
-    'predictive analytics', 'ai integration', 'ai implementation',
+    'artificial intelligence',
+    'machine learning',
+    'ai',
+    'ml',
+    'ai development',
+    'ml development',
+    'ai/ml',
+    'generative ai',
+    'gen ai',
+    'large language model',
+    'llm',
+    'chatbot',
+    'conversational ai',
+    'virtual assistant',
+    'natural language processing',
+    'nlp',
+    'computer vision',
+    'predictive analytics',
+    'ai integration',
+    'ai implementation',
 
     // Content & Plain Language
-    'content strategy', 'content design', 'plain language',
-    'information architecture', 'digital communications',
+    'content strategy',
+    'content design',
+    'plain language',
+    'information architecture',
+    'digital communications',
 
     // Agile & Modern Tech Stack
-    'agile', 'devops', 'ci/cd', 'continuous integration', 'continuous delivery',
-    'cloud native', 'cloud-native', 'api development', 'api services', 'microservices',
-    'react', 'angular', 'vue', 'node.js', 'nodejs', 'python', 'javascript', 'typescript',
-    'aws', 'azure', 'gcp', 'cloud services',
-    'data visualization', 'dashboard', 'analytics platform',
-    'open source', 'open data',
+    'agile',
+    'devops',
+    'ci/cd',
+    'continuous integration',
+    'continuous delivery',
+    'cloud native',
+    'cloud-native',
+    'api development',
+    'api services',
+    'microservices',
+    'react',
+    'angular',
+    'vue',
+    'node.js',
+    'nodejs',
+    'python',
+    'javascript',
+    'typescript',
+    'aws',
+    'azure',
+    'gcp',
+    'cloud services',
+    'data visualization',
+    'dashboard',
+    'analytics platform',
+    'open source',
+    'open data',
 
     // Product & Agile
-    'product management', 'product strategy', 'product owner', 'product development',
-    'scrum', 'kanban', 'safe', 'agile coaching', 'agile methodology',
-    'roadmap', 'backlog', 'sprint planning',
+    'product management',
+    'product strategy',
+    'product owner',
+    'product development',
+    'scrum',
+    'kanban',
+    'safe',
+    'agile coaching',
+    'agile methodology',
+    'roadmap',
+    'backlog',
+    'sprint planning',
 
     // Modernization (broad)
-    'legacy modernization', 'modernization effort', 'modernization program',
-    'system modernization', 'platform modernization',
+    'legacy modernization',
+    'modernization effort',
+    'modernization program',
+    'system modernization',
+    'platform modernization',
 
     // Common SAM.gov IT phrasing (these often appear without "development")
-    'it services', 'information technology services',
-    'technology services', 'technical services',
-    'it solutions', 'technology solutions', 'technical solutions',
-    'computer programming', 'programming services',
-    'software services', 'application services',
-    'web services', 'web-based', 'web based',
-    'portal', 'website', 'web portal',
-    'database', 'data management', 'data services',
+    'it services',
+    'information technology services',
+    'technology services',
+    'technical services',
+    'it solutions',
+    'technology solutions',
+    'technical solutions',
+    'computer programming',
+    'programming services',
+    'software services',
+    'application services',
+    'web services',
+    'web-based',
+    'web based',
+    'portal',
+    'website',
+    'web portal',
+    'database',
+    'data management',
+    'data services',
   ],
 
   // Keywords that INCREASE relevance (bonus points on top of core match)
   // Now mainly for additional signals beyond the core match
   includeKeywords: [
     // Specific frameworks/tools that signal modern dev
-    'typescript', 'golang', 'rust', 'aws', 'azure', 'gcp',
-    'kubernetes', 'docker', 'terraform',
-    'figma', 'sketch', 'adobe xd',
+    'typescript',
+    'golang',
+    'rust',
+    'aws',
+    'azure',
+    'gcp',
+    'kubernetes',
+    'docker',
+    'terraform',
+    'figma',
+    'sketch',
+    'adobe xd',
   ],
 
   // HARD EXCLUDE - If ANY of these appear, score = 0, skip entirely
   // These are fundamentally not our work
   hardExcludeKeywords: [
     // COTS Implementation (buying/configuring products, not custom work)
-    'cots implementation', 'cots solution', 'commercial off-the-shelf',
-    'oracle implementation', 'sap implementation', 'peoplesoft',
-    'workday implementation', 'servicenow implementation',
-    'salesforce implementation', 'dynamics 365', 'microsoft dynamics',
-    'erp implementation', 'crm implementation', 'hris implementation',
-    'package implementation', 'cots configuration', 'software licensing',
+    'cots implementation',
+    'cots solution',
+    'commercial off-the-shelf',
+    'oracle implementation',
+    'sap implementation',
+    'peoplesoft',
+    'workday implementation',
+    'servicenow implementation',
+    'salesforce implementation',
+    'dynamics 365',
+    'microsoft dynamics',
+    'erp implementation',
+    'crm implementation',
+    'hris implementation',
+    'package implementation',
+    'cots configuration',
+    'software licensing',
 
     // System Integration (connecting existing systems, not building new)
-    'system integrator', 'systems integration', 'enterprise integration',
-    'integration services', 'middleware implementation', 'esb implementation',
-    'data integration', 'etl development', 'data warehouse',
+    'system integrator',
+    'systems integration',
+    'enterprise integration',
+    'integration services',
+    'middleware implementation',
+    'esb implementation',
+    'data integration',
+    'etl development',
+    'data warehouse',
 
     // Infrastructure & Operations (not our lane)
-    'infrastructure support', 'infrastructure management', 'data center',
-    'network operations', 'network operations center', 'security operations center',
-    'managed services', 'it operations', 'o&m', 'operations and maintenance',
-    'help desk', 'service desk', 'tier 1 support', 'tier 2 support',
-    'end user support', 'desktop support', 'call center',
+    'infrastructure support',
+    'infrastructure management',
+    'data center',
+    'network operations',
+    'network operations center',
+    'security operations center',
+    'managed services',
+    'it operations',
+    'o&m',
+    'operations and maintenance',
+    'help desk',
+    'service desk',
+    'tier 1 support',
+    'tier 2 support',
+    'end user support',
+    'desktop support',
+    'call center',
 
     // Hardware & Telecom
-    'hardware procurement', 'equipment purchase', 'hardware refresh',
-    'telecommunications', 'voip', 'pbx', 'unified communications',
-    'network equipment', 'server procurement',
+    'hardware procurement',
+    'equipment purchase',
+    'hardware refresh',
+    'telecommunications',
+    'voip',
+    'pbx',
+    'unified communications',
+    'network equipment',
+    'server procurement',
 
     // Cleared Work (not our focus)
-    'ts/sci required', 'top secret required', 'sci clearance',
-    'security clearance required', 'cleared personnel',
+    'ts/sci required',
+    'top secret required',
+    'sci clearance',
+    'security clearance required',
+    'cleared personnel',
 
     // Definitely not us
-    'manufacturing', 'construction', 'facilities management',
-    'janitorial', 'landscaping', 'grounds maintenance',
-    'weapons', 'munitions', 'artillery',
-    'staffing augmentation', 'staff aug', 'body shop',
-    'mainframe', 'cobol', 'legacy mainframe',
+    'manufacturing',
+    'construction',
+    'facilities management',
+    'janitorial',
+    'landscaping',
+    'grounds maintenance',
+    'weapons',
+    'munitions',
+    'artillery',
+    'staffing augmentation',
+    'staff aug',
+    'body shop',
+    'mainframe',
+    'cobol',
+    'legacy mainframe',
   ],
 
   // SOFT EXCLUDE - Reduce score but don't auto-skip
   excludeKeywords: [
     // Award notices (not actionable)
-    'award notice', 'contract award', 'intent to award', 'sole source award',
+    'award notice',
+    'contract award',
+    'intent to award',
+    'sole source award',
     // Red flags that reduce fit
-    'sysadmin', 'system administrator', 'dba', 'database administrator',
-    'cybersecurity monitoring', 'penetration testing', 'vulnerability scanning',
-    'cloud infrastructure', 'aws administration', 'azure administration',
-    'low code platform', 'no code platform', // platforms, not custom dev
+    'sysadmin',
+    'system administrator',
+    'dba',
+    'database administrator',
+    'cybersecurity monitoring',
+    'penetration testing',
+    'vulnerability scanning',
+    'cloud infrastructure',
+    'aws administration',
+    'azure administration',
+    'low code platform',
+    'no code platform', // platforms, not custom dev
   ],
 
   // Keywords that only matter if paired with modernization
-  conditionalKeywords: [
-    'legacy migration', 'legacy system', 'legacy modernization',
-  ],
+  conditionalKeywords: ['legacy migration', 'legacy system', 'legacy modernization'],
 
   // Agencies we prioritize (sorted by preference)
   priorityAgencies: [
@@ -186,17 +361,17 @@ export const OPPORTUNITY_FILTERS = {
 
   // Contract value sweet spot
   valueRange: {
-    min: 100000,      // $100K minimum
-    max: 10000000,    // $10M maximum (can go higher with team)
+    min: 100000, // $100K minimum
+    max: 10000000, // $10M maximum (can go higher with team)
     sweet: {
-      min: 500000,    // $500K
-      max: 5000000,   // $5M - ideal range
+      min: 500000, // $500K
+      max: 5000000, // $5M - ideal range
     },
   },
 
   // Response time requirements
   timeline: {
-    minDaysToRespond: 14,   // Skip if less than 14 days to respond
+    minDaysToRespond: 14, // Skip if less than 14 days to respond
     idealDaysToRespond: 30, // Prefer 30+ days
   },
 };
@@ -258,7 +433,7 @@ export function scoreOpportunity(opportunity: {
     // Use word boundary matching for short keywords to avoid false positives
     // e.g., "ui" shouldn't match "circuit" or "requirements"
     const kw = keyword.toLowerCase();
-    let matched = false;
+    let matched: boolean;
 
     if (kw.length <= 3) {
       // Short keywords need word boundaries
@@ -314,7 +489,7 @@ export function scoreOpportunity(opportunity: {
 
   for (const keyword of OPPORTUNITY_FILTERS.includeKeywords) {
     const kw = keyword.toLowerCase();
-    let matched = false;
+    let matched: boolean;
 
     if (kw.length <= 3) {
       const regex = new RegExp(`\\b${kw}\\b`, 'i');
@@ -351,7 +526,7 @@ export function scoreOpportunity(opportunity: {
   // PHASE 6: AGENCY FIT
   // ============================================
   if (agency) {
-    const isPriority = OPPORTUNITY_FILTERS.priorityAgencies.some(a =>
+    const isPriority = OPPORTUNITY_FILTERS.priorityAgencies.some((a) =>
       agency.toLowerCase().includes(a.toLowerCase().split(' ')[0])
     );
     if (isPriority) {
@@ -364,7 +539,7 @@ export function scoreOpportunity(opportunity: {
   // PHASE 7: SET-ASIDE ELIGIBILITY
   // ============================================
   if (setAside) {
-    const isEligible = OPPORTUNITY_FILTERS.eligibleSetAsides.some(s =>
+    const isEligible = OPPORTUNITY_FILTERS.eligibleSetAsides.some((s) =>
       setAside.toLowerCase().includes(s.toLowerCase())
     );
     if (isEligible) {
@@ -380,9 +555,7 @@ export function scoreOpportunity(opportunity: {
   // PHASE 8: TIMELINE CHECK
   // ============================================
   if (deadline) {
-    const daysLeft = Math.ceil(
-      (new Date(deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-    );
+    const daysLeft = Math.ceil((new Date(deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
     if (daysLeft < OPPORTUNITY_FILTERS.timeline.minDaysToRespond) {
       score -= 15;
       redFlags.push(`Short timeline: ${daysLeft} days`);

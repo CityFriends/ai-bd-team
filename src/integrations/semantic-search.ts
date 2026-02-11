@@ -11,9 +11,9 @@ export interface SemanticSearchResult<T = any> {
 }
 
 export interface SearchOptions {
-  threshold?: number;  // Minimum similarity (0-1), default 0.7
-  limit?: number;      // Max results, default 5
-  filter?: Record<string, any>;  // Additional WHERE conditions
+  threshold?: number; // Minimum similarity (0-1), default 0.7
+  limit?: number; // Max results, default 5
+  filter?: Record<string, any>; // Additional WHERE conditions
 }
 
 /**
@@ -29,12 +29,11 @@ export async function searchUserContext(
     const queryEmbedding = await embed(query);
     const embeddingStr = formatForPgVector(queryEmbedding);
 
-    const { data, error } = await getSupabase()
-      .rpc('match_user_context', {
-        query_embedding: embeddingStr,
-        match_threshold: threshold,
-        match_count: limit,
-      });
+    const { data, error } = await getSupabase().rpc('match_user_context', {
+      query_embedding: embeddingStr,
+      match_threshold: threshold,
+      match_count: limit,
+    });
 
     if (error) {
       // Fallback to manual query if RPC doesn't exist
@@ -64,7 +63,11 @@ export async function searchConversationMemory(
 
   try {
     const queryEmbedding = await embed(query);
-    return await manualSemanticSearch('conversation_memory', queryEmbedding, { ...options, threshold, limit });
+    return await manualSemanticSearch('conversation_memory', queryEmbedding, {
+      ...options,
+      threshold,
+      limit,
+    });
   } catch (err) {
     console.error('searchConversationMemory failed:', err);
     return [];
@@ -82,7 +85,11 @@ export async function searchDecisionPatterns(
 
   try {
     const queryEmbedding = await embed(query);
-    return await manualSemanticSearch('decision_patterns', queryEmbedding, { ...options, threshold, limit });
+    return await manualSemanticSearch('decision_patterns', queryEmbedding, {
+      ...options,
+      threshold,
+      limit,
+    });
   } catch (err) {
     console.error('searchDecisionPatterns failed:', err);
     return [];
@@ -128,7 +135,11 @@ export async function searchThreadSummaries(
 
   try {
     const queryEmbedding = await embed(query);
-    return await manualSemanticSearch('thread_summaries', queryEmbedding, { ...options, threshold, limit });
+    return await manualSemanticSearch('thread_summaries', queryEmbedding, {
+      ...options,
+      threshold,
+      limit,
+    });
   } catch (err) {
     console.error('searchThreadSummaries failed:', err);
     return [];
@@ -148,10 +159,7 @@ async function manualSemanticSearch(
 
   try {
     // First get all rows with embeddings from the table
-    let query = getSupabase()
-      .from(tableName)
-      .select('*')
-      .not('embedding', 'is', null);
+    let query = getSupabase().from(tableName).select('*').not('embedding', 'is', null);
 
     // Apply additional filters
     for (const [key, value] of Object.entries(filter)) {
@@ -179,10 +187,7 @@ async function manualSemanticSearch(
       let rowEmbedding: number[];
       if (typeof row.embedding === 'string') {
         // Parse string format [0.1,0.2,...]
-        rowEmbedding = row.embedding
-          .replace(/[\[\]]/g, '')
-          .split(',')
-          .map(Number);
+        rowEmbedding = row.embedding.replace(/[[\]]/g, '').split(',').map(Number);
       } else if (Array.isArray(row.embedding)) {
         rowEmbedding = row.embedding;
       } else {
@@ -269,10 +274,7 @@ export async function findSimilarCachedQuery(
 
       let cachedEmbedding: number[];
       if (typeof row.query_embedding === 'string') {
-        cachedEmbedding = row.query_embedding
-          .replace(/[\[\]]/g, '')
-          .split(',')
-          .map(Number);
+        cachedEmbedding = row.query_embedding.replace(/[[\]]/g, '').split(',').map(Number);
       } else if (Array.isArray(row.query_embedding)) {
         cachedEmbedding = row.query_embedding;
       } else {
@@ -333,16 +335,14 @@ export async function storeCachedQuery(
 
     const expiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000).toISOString();
 
-    await getSupabase()
-      .from('semantic_cache')
-      .insert({
-        query_text: query,
-        query_embedding: embeddingStr,
-        result,
-        cache_type: cacheType,
-        expires_at: expiresAt,
-        hit_count: 0,
-      });
+    await getSupabase().from('semantic_cache').insert({
+      query_text: query,
+      query_embedding: embeddingStr,
+      result,
+      cache_type: cacheType,
+      expires_at: expiresAt,
+      hit_count: 0,
+    });
   } catch (err) {
     console.error('storeCachedQuery failed:', err);
   }

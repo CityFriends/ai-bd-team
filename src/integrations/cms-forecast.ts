@@ -25,7 +25,8 @@ export interface CMSForecastOpportunity {
   status?: string;
 }
 
-const CMS_FORECAST_PAGE = 'https://www.cms.gov/about-cms/work-us/business-resources/contract-opportunities';
+const CMS_FORECAST_PAGE =
+  'https://www.cms.gov/about-cms/work-us/business-resources/contract-opportunities';
 
 /**
  * Find the Excel download link on the CMS page
@@ -45,7 +46,11 @@ async function findExcelDownloadLink(): Promise<string | null> {
       if (href && (href.includes('.xlsx') || href.includes('.xls'))) {
         // Check if it's a forecast-related file
         const text = $(el).text().toLowerCase();
-        if (text.includes('forecast') || text.includes('opportunity') || text.includes('procurement')) {
+        if (
+          text.includes('forecast') ||
+          text.includes('opportunity') ||
+          text.includes('procurement')
+        ) {
           result.link = href;
           return false; // break
         }
@@ -137,32 +142,58 @@ function parseExcelData(data: string[][]): CMSForecastOpportunity[] {
     const row = data[i];
     if (!row) continue;
 
-    const rowText = row.map(c => String(c || '').toLowerCase()).join(' ');
+    const rowText = row.map((c) => String(c || '').toLowerCase()).join(' ');
 
     // Look for common header keywords
-    if (rowText.includes('title') || rowText.includes('description') || rowText.includes('naics') || rowText.includes('contract')) {
+    if (
+      rowText.includes('title') ||
+      rowText.includes('description') ||
+      rowText.includes('naics') ||
+      rowText.includes('contract')
+    ) {
       headerRow = i;
 
       // Map columns
       row.forEach((cell, idx) => {
-        const header = String(cell || '').toLowerCase().trim();
+        const header = String(cell || '')
+          .toLowerCase()
+          .trim();
 
-        if (header.includes('title') || header.includes('name')) {
+        if (header.includes('contact') && header.includes('name')) {
+          // Check for "contact name" before generic "name" to catch contact-specific headers
+          columnMap.contactName = idx;
+        } else if (header.includes('title') || header.includes('name')) {
           columnMap.title = idx;
         } else if (header.includes('description') || header.includes('scope')) {
           columnMap.description = idx;
-        } else if (header.includes('component') || header.includes('office') || header.includes('organization')) {
+        } else if (
+          header.includes('component') ||
+          header.includes('office') ||
+          header.includes('organization')
+        ) {
           columnMap.component = idx;
         } else if (header.includes('naics')) {
           columnMap.naicsCode = idx;
-        } else if (header.includes('value') || header.includes('amount') || header.includes('estimate')) {
+        } else if (
+          header.includes('value') ||
+          header.includes('amount') ||
+          header.includes('estimate')
+        ) {
           columnMap.estimatedValue = idx;
-        } else if (header.includes('release') || header.includes('award') || header.includes('date') || header.includes('quarter') || header.includes('fy')) {
+        } else if (
+          header.includes('release') ||
+          header.includes('award') ||
+          header.includes('date') ||
+          header.includes('quarter') ||
+          header.includes('fy')
+        ) {
           if (!columnMap.estimatedRelease) columnMap.estimatedRelease = idx;
-        } else if (header.includes('set-aside') || header.includes('setaside') || header.includes('small business')) {
+        } else if (
+          header.includes('set-aside') ||
+          header.includes('setaside') ||
+          header.includes('small business')
+        ) {
           columnMap.setAside = idx;
-        } else if (header.includes('contact') && header.includes('name')) {
-          columnMap.contactName = idx;
         } else if (header.includes('email')) {
           columnMap.contactEmail = idx;
         } else if (header.includes('type') && header.includes('contract')) {
@@ -187,7 +218,7 @@ function parseExcelData(data: string[][]): CMSForecastOpportunity[] {
   // Parse data rows
   for (let i = headerRow + 1; i < data.length; i++) {
     const row = data[i];
-    if (!row || row.every(c => !c)) continue; // Skip empty rows
+    if (!row || row.every((c) => !c)) continue; // Skip empty rows
 
     const title = columnMap.title !== undefined ? String(row[columnMap.title] || '').trim() : '';
 
@@ -195,16 +226,42 @@ function parseExcelData(data: string[][]): CMSForecastOpportunity[] {
 
     opportunities.push({
       title,
-      description: columnMap.description !== undefined ? String(row[columnMap.description] || '').trim() : undefined,
-      component: columnMap.component !== undefined ? String(row[columnMap.component] || '').trim() : undefined,
-      naicsCode: columnMap.naicsCode !== undefined ? String(row[columnMap.naicsCode] || '').trim() : undefined,
-      estimatedValue: columnMap.estimatedValue !== undefined ? String(row[columnMap.estimatedValue] || '').trim() : undefined,
-      estimatedRelease: columnMap.estimatedRelease !== undefined ? String(row[columnMap.estimatedRelease] || '').trim() : undefined,
-      setAside: columnMap.setAside !== undefined ? String(row[columnMap.setAside] || '').trim() : undefined,
-      contactName: columnMap.contactName !== undefined ? String(row[columnMap.contactName] || '').trim() : undefined,
-      contactEmail: columnMap.contactEmail !== undefined ? String(row[columnMap.contactEmail] || '').trim() : undefined,
-      contractType: columnMap.contractType !== undefined ? String(row[columnMap.contractType] || '').trim() : undefined,
-      status: columnMap.status !== undefined ? String(row[columnMap.status] || '').trim() : undefined,
+      description:
+        columnMap.description !== undefined
+          ? String(row[columnMap.description] || '').trim()
+          : undefined,
+      component:
+        columnMap.component !== undefined
+          ? String(row[columnMap.component] || '').trim()
+          : undefined,
+      naicsCode:
+        columnMap.naicsCode !== undefined
+          ? String(row[columnMap.naicsCode] || '').trim()
+          : undefined,
+      estimatedValue:
+        columnMap.estimatedValue !== undefined
+          ? String(row[columnMap.estimatedValue] || '').trim()
+          : undefined,
+      estimatedRelease:
+        columnMap.estimatedRelease !== undefined
+          ? String(row[columnMap.estimatedRelease] || '').trim()
+          : undefined,
+      setAside:
+        columnMap.setAside !== undefined ? String(row[columnMap.setAside] || '').trim() : undefined,
+      contactName:
+        columnMap.contactName !== undefined
+          ? String(row[columnMap.contactName] || '').trim()
+          : undefined,
+      contactEmail:
+        columnMap.contactEmail !== undefined
+          ? String(row[columnMap.contactEmail] || '').trim()
+          : undefined,
+      contractType:
+        columnMap.contractType !== undefined
+          ? String(row[columnMap.contractType] || '').trim()
+          : undefined,
+      status:
+        columnMap.status !== undefined ? String(row[columnMap.status] || '').trim() : undefined,
     });
   }
 
@@ -214,7 +271,10 @@ function parseExcelData(data: string[][]): CMSForecastOpportunity[] {
 /**
  * Score a CMS forecast opportunity for relevance
  */
-export function scoreCMSOpportunity(opp: CMSForecastOpportunity): { score: number; reasons: string[] } {
+export function scoreCMSOpportunity(opp: CMSForecastOpportunity): {
+  score: number;
+  reasons: string[];
+} {
   let score = 50;
   const reasons: string[] = [];
 
@@ -222,14 +282,30 @@ export function scoreCMSOpportunity(opp: CMSForecastOpportunity): { score: numbe
 
   // Relevant keywords
   const relevantKeywords = [
-    'software', 'development', 'web', 'application', 'digital',
-    'design', 'ux', 'user experience', 'human-centered', 'hcd',
-    'modernization', 'agile', 'cloud', 'portal', 'website',
-    'ai', 'artificial intelligence', 'data', 'analytics',
-    'it services', 'technology',
+    'software',
+    'development',
+    'web',
+    'application',
+    'digital',
+    'design',
+    'ux',
+    'user experience',
+    'human-centered',
+    'hcd',
+    'modernization',
+    'agile',
+    'cloud',
+    'portal',
+    'website',
+    'ai',
+    'artificial intelligence',
+    'data',
+    'analytics',
+    'it services',
+    'technology',
   ];
 
-  const matched = relevantKeywords.filter(kw => text.includes(kw));
+  const matched = relevantKeywords.filter((kw) => text.includes(kw));
   if (matched.length > 0) {
     score += matched.length * 8;
     reasons.push(`Keywords: ${matched.slice(0, 3).join(', ')}`);
@@ -237,7 +313,7 @@ export function scoreCMSOpportunity(opp: CMSForecastOpportunity): { score: numbe
 
   // NAICS match
   const ourNaics = ['541511', '541512', '541519', '541611', '541430'];
-  if (opp.naicsCode && ourNaics.some(n => opp.naicsCode?.includes(n))) {
+  if (opp.naicsCode && ourNaics.some((n) => opp.naicsCode?.includes(n))) {
     score += 15;
     reasons.push(`NAICS match: ${opp.naicsCode}`);
   }
@@ -252,8 +328,14 @@ export function scoreCMSOpportunity(opp: CMSForecastOpportunity): { score: numbe
   }
 
   // Exclude keywords
-  const excludeKeywords = ['infrastructure', 'hardware', 'construction', 'facilities', 'janitorial'];
-  if (excludeKeywords.some(kw => text.includes(kw))) {
+  const excludeKeywords = [
+    'infrastructure',
+    'hardware',
+    'construction',
+    'facilities',
+    'janitorial',
+  ];
+  if (excludeKeywords.some((kw) => text.includes(kw))) {
     score -= 30;
     reasons.push('Not our space');
   }
@@ -270,23 +352,26 @@ export async function saveCMSForecasts(opportunities: CMSForecastOpportunity[]):
 
   for (const opp of opportunities) {
     try {
-      const { error } = await supabase.from('agency_forecasts').upsert({
-        agency: 'CMS',
-        sub_agency: opp.component,
-        title: opp.title,
-        description: opp.description,
-        naics_code: opp.naicsCode,
-        estimated_value: opp.estimatedValue,
-        estimated_release: opp.estimatedRelease,
-        set_aside: opp.setAside,
-        contact_name: opp.contactName,
-        contact_email: opp.contactEmail,
-        source_url: CMS_FORECAST_PAGE,
-        status: 'upcoming',
-        last_checked: new Date().toISOString(),
-      }, {
-        onConflict: 'agency,title',
-      });
+      const { error } = await supabase.from('agency_forecasts').upsert(
+        {
+          agency: 'CMS',
+          sub_agency: opp.component,
+          title: opp.title,
+          description: opp.description,
+          naics_code: opp.naicsCode,
+          estimated_value: opp.estimatedValue,
+          estimated_release: opp.estimatedRelease,
+          set_aside: opp.setAside,
+          contact_name: opp.contactName,
+          contact_email: opp.contactEmail,
+          source_url: CMS_FORECAST_PAGE,
+          status: 'upcoming',
+          last_checked: new Date().toISOString(),
+        },
+        {
+          onConflict: 'agency,title',
+        }
+      );
 
       if (!error) saved++;
     } catch {
@@ -313,7 +398,7 @@ export async function scanCMSForecast(): Promise<CMSForecastOpportunity[]> {
 
   // Score and filter
   const relevant = opportunities
-    .map(opp => ({ opp, ...scoreCMSOpportunity(opp) }))
+    .map((opp) => ({ opp, ...scoreCMSOpportunity(opp) }))
     .filter(({ score }) => score >= 60)
     .sort((a, b) => b.score - a.score);
 
@@ -322,5 +407,5 @@ export async function scanCMSForecast(): Promise<CMSForecastOpportunity[]> {
   // Save to database
   await saveCMSForecasts(opportunities);
 
-  return relevant.map(r => r.opp);
+  return relevant.map((r) => r.opp);
 }

@@ -70,10 +70,7 @@ const PRIORITY_AGENCIES = ['VA', 'HHS', 'DOL', 'GSA', 'SBA', 'ED'];
 const CAN_PRIME_SETASIDES = ['Small Business', 'Total Small Business', null, ''];
 
 // Analyze opportunity from David's perspective
-export function analyzeOpportunity(
-  opp: Opportunity,
-  agency: Agency | null
-): OpportunityAnalysis {
+export function analyzeOpportunity(opp: Opportunity, agency: Agency | null): OpportunityAnalysis {
   const concerns: string[] = [];
   const positives: string[] = [];
 
@@ -103,7 +100,7 @@ export function analyzeOpportunity(
   // Fit analysis
   const fitScore = opp.fit_score || 0;
   const keywordsMatched = opp.keywords_matched || [];
-  let fitLevel: OpportunityAnalysis['fitLevel'] = 'weak';
+  let fitLevel: OpportunityAnalysis['fitLevel'];
 
   if (fitScore >= 75) {
     fitLevel = 'strong';
@@ -132,7 +129,7 @@ export function analyzeOpportunity(
 
   // Agency analysis
   const agencyPriority = PRIORITY_AGENCIES.includes(opp.agency || '');
-  let agencyHistory: OpportunityAnalysis['agencyHistory'] = 'none';
+  const agencyHistory: OpportunityAnalysis['agencyHistory'] = 'none';
 
   if (agencyPriority) {
     positives.push(`${opp.agency} is a priority agency for us`);
@@ -154,7 +151,7 @@ export function analyzeOpportunity(
 
   if (concerns.length === 0 && positives.length >= 2) {
     davidSentiment = 'positive';
-  } else if (concerns.length >= 2 || (concerns.length > positives.length)) {
+  } else if (concerns.length >= 2 || concerns.length > positives.length) {
     davidSentiment = 'skeptical';
   }
 
@@ -195,8 +192,8 @@ export function analyzePartners(
     // Check if partner has worked with this agency
     const hasAgencyHistory = partner.past_agencies?.includes(opp.agency || '');
     // Check relationship status
-    const hasRelationship = partner.relationship_status === 'teamed' ||
-                           partner.relationship_status === 'met';
+    const hasRelationship =
+      partner.relationship_status === 'teamed' || partner.relationship_status === 'met';
 
     if (hasAgencyHistory && hasRelationship) {
       strongMatches.push(partner);
@@ -291,7 +288,7 @@ export function analyzeStrategy(
   }
 
   // Determine recommendation
-  let recommendation: StrategicAnalysis['recommendation'] = 'torn';
+  let recommendation: StrategicAnalysis['recommendation'];
 
   if (winProbability === 'high' && oppAnalysis.davidSentiment !== 'skeptical') {
     recommendation = 'go';

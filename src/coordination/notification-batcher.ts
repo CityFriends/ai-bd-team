@@ -55,10 +55,10 @@ const pendingNotifications: Notification[] = [];
 
 // Batch windows by priority (in minutes)
 const BATCH_WINDOWS: Record<NotificationPriority, number> = {
-  critical: 0,   // Send immediately
-  high: 5,       // Batch for 5 minutes
-  medium: 30,    // Batch for 30 minutes
-  low: 120,      // Batch for 2 hours (or until next digest)
+  critical: 0, // Send immediately
+  high: 5, // Batch for 5 minutes
+  medium: 30, // Batch for 30 minutes
+  low: 120, // Batch for 2 hours (or until next digest)
 };
 
 // Quiet hours check
@@ -189,7 +189,7 @@ function formatBatchedMessage(notifications: Notification[]): string {
   const type = notifications[0].type;
   const agency = notifications[0].metadata?.agency;
 
-  let header = '';
+  let header: string;
   switch (type) {
     case 'opportunity':
       header = agency
@@ -206,7 +206,7 @@ function formatBatchedMessage(notifications: Notification[]): string {
       header = `*📬 ${notifications.length} Updates*`;
   }
 
-  const items = notifications.map(n => `• ${n.title}`).join('\n');
+  const items = notifications.map((n) => `• ${n.title}`).join('\n');
 
   return `${header}\n\n${items}\n\n_Use /pipeline for details_`;
 }
@@ -259,7 +259,7 @@ export async function flushNotifications(app?: App): Promise<number> {
   for (const notif of pendingNotifications) {
     const createdAt = new Date(notif.createdAt || now).getTime();
     const windowMs = BATCH_WINDOWS[notif.priority] * 60 * 1000;
-    const readyToSend = (now - createdAt) >= windowMs;
+    const readyToSend = now - createdAt >= windowMs;
 
     // Critical always goes immediately
     if (notif.priority === 'critical' || readyToSend) {
@@ -307,8 +307,8 @@ export async function flushNotifications(app?: App): Promise<number> {
 
       // Skip if in quiet hours (unless critical)
       if (isInQuietHours(profile)) {
-        const critical = notifications.filter(n => n.priority === 'critical');
-        const nonCritical = notifications.filter(n => n.priority !== 'critical');
+        const critical = notifications.filter((n) => n.priority === 'critical');
+        const nonCritical = notifications.filter((n) => n.priority !== 'critical');
 
         // Only send critical during quiet hours
         if (critical.length > 0) {
@@ -320,12 +320,14 @@ export async function flushNotifications(app?: App): Promise<number> {
 
         // Re-queue non-critical for later
         pendingNotifications.push(...nonCritical);
-        console.log(`[Batcher] Re-queued ${nonCritical.length} notifications (quiet hours for ${target})`);
+        console.log(
+          `[Batcher] Re-queued ${nonCritical.length} notifications (quiet hours for ${target})`
+        );
         continue;
       }
 
       // Filter by user preferences
-      const wanted = notifications.filter(n => userWantsNotification(profile, n));
+      const wanted = notifications.filter((n) => userWantsNotification(profile, n));
       if (wanted.length === 0) continue;
 
       // Group and batch
@@ -347,7 +349,7 @@ export async function flushNotifications(app?: App): Promise<number> {
   }
 
   // Mark as sent in database
-  const sentIds = toSend.map(n => n.id).filter(Boolean);
+  const sentIds = toSend.map((n) => n.id).filter(Boolean);
   if (sentIds.length > 0) {
     try {
       await getSupabase()
@@ -425,7 +427,10 @@ export async function createDailyDigest(): Promise<Notification | null> {
     await getSupabase()
       .from('notification_queue')
       .update({ sent_at: new Date().toISOString() })
-      .in('id', data.map(n => n.id));
+      .in(
+        'id',
+        data.map((n) => n.id)
+      );
 
     return {
       type: 'digest',

@@ -18,7 +18,7 @@ async function notionRequest(
   const response = await fetch(`${NOTION_API}${endpoint}`, {
     method,
     headers: {
-      'Authorization': `Bearer ${NOTION_API_KEY}`,
+      Authorization: `Bearer ${NOTION_API_KEY}`,
       'Notion-Version': NOTION_VERSION,
       'Content-Type': 'application/json',
     },
@@ -36,7 +36,7 @@ async function notionRequest(
 export interface OpportunityToAdd {
   name: string;
   agency?: string;
-  type?: string;  // RFQ, RFP, RFI, SSN, Pre-Solicitation
+  type?: string; // RFQ, RFP, RFI, SSN, Pre-Solicitation
   description?: string;
   source?: string;
   fitScore?: number;
@@ -72,27 +72,27 @@ export async function addToBacklog(
     // Build properties for the Pipeline database
     const properties: Record<string, any> = {
       // Name is required (title field)
-      'Name': {
-        title: [{ text: { content: opportunity.name } }]
+      Name: {
+        title: [{ text: { content: opportunity.name } }],
       },
       // Stage: Set to "Under Review"
-      'Stage': {
-        status: { name: 'Under Review' }
+      Stage: {
+        status: { name: 'Under Review' },
       },
       // Sourced: Mark as coming from Sam.gov
-      'Sourced': {
-        select: { name: 'Sam.gov' }
+      Sourced: {
+        select: { name: 'Sam.gov' },
       },
       // Date Added: Today
       'Date Added': {
-        date: { start: new Date().toISOString().split('T')[0] }
+        date: { start: new Date().toISOString().split('T')[0] },
       },
     };
 
     // Add Solicitation URL if we have a SAM link
     if (opportunity.samLink) {
       properties['Solicitation URL'] = {
-        url: opportunity.samLink
+        url: opportunity.samLink,
       };
     }
 
@@ -100,21 +100,21 @@ export async function addToBacklog(
     if (opportunity.type) {
       // Map our internal types to their select options
       const typeMap: Record<string, string> = {
-        'RFI': 'RFI',
-        'RFP': 'RFP',
-        'RFQ': 'RFQ',
+        RFI: 'RFI',
+        RFP: 'RFP',
+        RFQ: 'RFQ',
         'Sources Sought': 'SSN',
-        'SSN': 'SSN',
+        SSN: 'SSN',
         'Pre-Solicitation': 'Pre-Solicitation',
         'Task Order': 'RFQ',
         'BPA Call': 'RFQ',
-        'BPA': 'RFQ',
-        'IDIQ': 'RFQ',
+        BPA: 'RFQ',
+        IDIQ: 'RFQ',
       };
       const mappedType = typeMap[opportunity.type] || opportunity.type;
       if (['RFQ', 'RFP', 'RFI', 'SSN', 'Pre-Solicitation'].includes(mappedType)) {
         properties['Solicitation Type'] = {
-          select: { name: mappedType }
+          select: { name: mappedType },
         };
       }
     }
@@ -134,7 +134,9 @@ export async function addToBacklog(
         else if (/^\d{1,2}\/\d{1,2}\/\d{2,4}/.test(dateStr)) {
           const parts = dateStr.split('/');
           const year = parts[2].length === 2 ? '20' + parts[2] : parts[2];
-          parsedDate = new Date(`${year}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`);
+          parsedDate = new Date(
+            `${year}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`
+          );
         }
         // Try "Month DD, YYYY" format
         else {
@@ -143,7 +145,7 @@ export async function addToBacklog(
 
         if (parsedDate && !isNaN(parsedDate.getTime())) {
           properties['Due Date'] = {
-            date: { start: parsedDate.toISOString().split('T')[0] }
+            date: { start: parsedDate.toISOString().split('T')[0] },
           };
         }
       } catch (e) {
@@ -165,7 +167,7 @@ export async function addToBacklog(
     console.error('[Notion] Failed to add to Pipeline:', error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: error instanceof Error ? error.message : 'Unknown error',
     };
   }
 }
@@ -208,7 +210,7 @@ export function detectBacklogIntent(
     'adding to pipeline',
   ];
 
-  const hasIntent = trackingPhrases.some(phrase => lowerResponse.includes(phrase));
+  const hasIntent = trackingPhrases.some((phrase) => lowerResponse.includes(phrase));
   if (!hasIntent) return null;
 
   const combinedText = `${agentResponse} ${originalMessage} ${fileContent || ''}`;
@@ -223,11 +225,11 @@ export function detectBacklogIntent(
   // First, try to parse Maya's structured format (if she used it)
   // Format: **Title:** value or **Agency:** value
   const structuredPatterns = {
-    title: /\*\*(?:Title|Name|Opportunity)[:\*]*\*?\s*(.+?)(?:\n|\*\*|$)/i,
-    agency: /\*\*Agency[:\*]*\*?\s*(.+?)(?:\n|\*\*|$)/i,
-    type: /\*\*(?:Type|Solicitation Type)[:\*]*\*?\s*(.+?)(?:\n|\*\*|$)/i,
-    dueDate: /\*\*(?:Due|Due Date|Deadline|Response Date)[:\*]*\*?\s*(.+?)(?:\n|\*\*|$)/i,
-    samLink: /\*\*(?:SAM Link|Link|URL)[:\*]*\*?\s*(https?:\/\/[^\s\n]+)/i,
+    title: /\*\*(?:Title|Name|Opportunity)[:*]*\*?\s*(.+?)(?:\n|\*\*|$)/i,
+    agency: /\*\*Agency[:*]*\*?\s*(.+?)(?:\n|\*\*|$)/i,
+    type: /\*\*(?:Type|Solicitation Type)[:*]*\*?\s*(.+?)(?:\n|\*\*|$)/i,
+    dueDate: /\*\*(?:Due|Due Date|Deadline|Response Date)[:*]*\*?\s*(.+?)(?:\n|\*\*|$)/i,
+    samLink: /\*\*(?:SAM Link|Link|URL)[:*]*\*?\s*(https?:\/\/[^\s\n]+)/i,
   };
 
   // Try structured extraction first
@@ -248,16 +250,14 @@ export function detectBacklogIntent(
 
   // Fall back to general extraction if structured didn't work
   if (!samLink) {
-    const samLinkPattern = /https?:\/\/sam\.gov\/opp\/[a-f0-9\-]+\/view/i;
+    const samLinkPattern = /https?:\/\/sam\.gov\/opp\/[a-f0-9-]+\/view/i;
     const match = combinedText.match(samLinkPattern);
     if (match) samLink = match[0];
   }
 
   // Extract opportunity type if not found
   if (!type) {
-    const typePatterns = [
-      /\b(RFP|RFQ|RFI|BPA|IDIQ|Task Order|Sources Sought|Pre-Solicitation)\b/i,
-    ];
+    const typePatterns = [/\b(RFP|RFQ|RFI|BPA|IDIQ|Task Order|Sources Sought|Pre-Solicitation)\b/i];
     for (const pattern of typePatterns) {
       const match = combinedText.match(pattern);
       if (match) {
@@ -273,12 +273,12 @@ export function detectBacklogIntent(
   if (!name) {
     const namePatterns = [
       // GSA TTS specific patterns
-      /GSA\s+TTS\s+[\w\s\-]+(?:BPA|RFP|RFI|contract|solicitation)/i,
-      /TTS\s+[\w\s\-]+(?:BPA|IDIQ)/i,
+      /GSA\s+TTS\s+[\w\s-]+(?:BPA|RFP|RFI|contract|solicitation)/i,
+      /TTS\s+[\w\s-]+(?:BPA|IDIQ)/i,
       // General patterns
-      /this is (?:the |a )?([A-Z][A-Za-z0-9\s\-]+(?:BPA|RFP|RFI|contract|solicitation|opportunity))/i,
-      /([A-Z][A-Z\s\-]+(?:BPA|IDIQ|contract))/,
-      /([A-Z]{2,}\s+[A-Za-z\s\-]+(?:modernization|services|support))/i,
+      /this is (?:the |a )?([A-Z][A-Za-z0-9\s-]+(?:BPA|RFP|RFI|contract|solicitation|opportunity))/i,
+      /([A-Z][A-Z\s-]+(?:BPA|IDIQ|contract))/,
+      /([A-Z]{2,}\s+[A-Za-z\s-]+(?:modernization|services|support))/i,
       // Title-like patterns from documents
       /title[:\s]+["']?([^"'\n]+)["']?/i,
       /subject[:\s]+["']?([^"'\n]+)["']?/i,

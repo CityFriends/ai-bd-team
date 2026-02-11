@@ -70,11 +70,7 @@ Hard rules:
       await this.postMessage(response.text, message.threadTs || message.messageTs);
 
       // Check if Maya indicated she wants to add to backlog
-      const backlogItem = detectBacklogIntent(
-        response.text,
-        message.text,
-        message.fileContent
-      );
+      const backlogItem = detectBacklogIntent(response.text, message.text, message.fileContent);
 
       if (backlogItem) {
         console.log(`Maya: Detected backlog intent for "${backlogItem.name}"`);
@@ -108,7 +104,7 @@ Hard rules:
       /confirm\s+(?:that\s+)?(?:opportunity|opp)/i,
     ];
 
-    const isVerifyRequest = verifyPatterns.some(p => p.test(text));
+    const isVerifyRequest = verifyPatterns.some((p) => p.test(text));
     if (!isVerifyRequest) return null;
 
     // Try to extract a notice ID from the message or thread
@@ -119,7 +115,7 @@ Hard rules:
     let noticeId: string | null = null;
 
     // Check the message text first
-    let match = text.match(samUrlPattern) || text.match(noticeIdPattern);
+    const match = text.match(samUrlPattern) || text.match(noticeIdPattern);
     if (match) {
       noticeId = match[1];
     }
@@ -128,7 +124,7 @@ Hard rules:
     // (This would require parsing the thread - simplified for now)
 
     if (!noticeId) {
-      return "I need the notice ID or SAM.gov link to verify. Can you share it? It looks like: `sam.gov/opp/[notice-id]/view`";
+      return 'I need the notice ID or SAM.gov link to verify. Can you share it? It looks like: `sam.gov/opp/[notice-id]/view`';
     }
 
     console.log(`Maya: Verifying opportunity ${noticeId}`);

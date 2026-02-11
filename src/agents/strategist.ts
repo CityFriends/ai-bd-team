@@ -84,7 +84,13 @@ export class StrategistAgent extends BaseAgent {
 
       // Step 6: Format and post decision request
       console.log(`Strategist: Posting to Slack...`);
-      const { mainMessage, threadDetail } = this.formatDecisionRequest(opp, agencyResearch, partners, assessment, outreach.length);
+      const { mainMessage, threadDetail } = this.formatDecisionRequest(
+        opp,
+        agencyResearch,
+        partners,
+        assessment,
+        outreach.length
+      );
       const { ts: threadTs } = await this.requestDecision(mainMessage);
       await this.reply(threadDetail, threadTs);
 
@@ -122,9 +128,7 @@ export class StrategistAgent extends BaseAgent {
 
     // Combine and dedupe
     const allPartners = [...(partners || []), ...(recentPartners || [])];
-    const uniquePartners = Array.from(
-      new Map(allPartners.map(p => [p.id, p])).values()
-    );
+    const uniquePartners = Array.from(new Map(allPartners.map((p) => [p.id, p])).values());
 
     return uniquePartners;
   }
@@ -137,9 +141,15 @@ export class StrategistAgent extends BaseAgent {
   ): Promise<CaptureAssessment> {
     const client = getAnthropic();
 
-    const partnerList = partners.length > 0
-      ? partners.map(p => `- ${p.name}: ${p.capabilities || 'Unknown'}, Certs: ${p.certifications?.join(', ') || 'None'}`).join('\n')
-      : 'No partners identified yet';
+    const partnerList =
+      partners.length > 0
+        ? partners
+            .map(
+              (p) =>
+                `- ${p.name}: ${p.capabilities || 'Unknown'}, Certs: ${p.certifications?.join(', ') || 'None'}`
+            )
+            .join('\n')
+        : 'No partners identified yet';
 
     const prompt = `You are the capture strategist synthesizing a pursuit decision.
 
@@ -160,11 +170,15 @@ SCOUT'S ASSESSMENT (Initial Fit):
 - Keywords Matched: ${opp.keywords_matched?.join(', ') || 'None'}
 
 ANALYST'S RESEARCH (Agency Intel):
-${agency ? `
+${
+  agency
+    ? `
 - Tech Stack: ${agency.tech_stack || 'Unknown'}
 - Pain Points: ${agency.pain_points || 'Unknown'}
 - Notes: ${agency.research_notes || 'None'}
-` : 'No agency research available'}
+`
+    : 'No agency research available'
+}
 
 CONNECTOR'S PARTNER OPTIONS:
 ${partnerList}
@@ -205,7 +219,7 @@ Respond in JSON:
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const textBlock = response.content.find(block => block.type === 'text');
+    const textBlock = response.content.find((block) => block.type === 'text');
     if (!textBlock || textBlock.type !== 'text') {
       throw new Error('No response from Claude');
     }
@@ -242,11 +256,21 @@ Respond in JSON:
     assessment: CaptureAssessment,
     outreachCount: number
   ): { mainMessage: string; threadDetail: string } {
-    const recEmoji = assessment.recommendation === 'go' ? '✅' : assessment.recommendation === 'no_go' ? '❌' : '⏸️';
-    const probEmoji = assessment.win_probability === 'high' ? '🟢' : assessment.win_probability === 'medium' ? '🟡' : '🔴';
+    const recEmoji =
+      assessment.recommendation === 'go'
+        ? '✅'
+        : assessment.recommendation === 'no_go'
+          ? '❌'
+          : '⏸️';
+    const probEmoji =
+      assessment.win_probability === 'high'
+        ? '🟢'
+        : assessment.win_probability === 'medium'
+          ? '🟡'
+          : '🔴';
 
     // SHORT main message (4-6 lines) - James's decisive voice
-    let mainMessage = '';
+    let mainMessage: string;
 
     if (assessment.recommendation === 'go' && assessment.win_probability === 'high') {
       mainMessage = `Here's how I see it. *${opp.title}*\n\n`;
@@ -337,15 +361,15 @@ Respond in JSON:
       if (activeOpps.length === 0) {
         await this.post(
           `Morning team. Pipeline's empty - no active pursuits.\n\n` +
-          `@Scout - anything interesting overnight?`
+            `@Scout - anything interesting overnight?`
         );
         return;
       }
 
       // Group by status
-      const pursuing = activeOpps.filter(o => o.status === 'pursuing');
-      const researching = activeOpps.filter(o => o.status === 'researching');
-      const newOpps = activeOpps.filter(o => o.status === 'new');
+      const pursuing = activeOpps.filter((o) => o.status === 'pursuing');
+      const researching = activeOpps.filter((o) => o.status === 'researching');
+      const newOpps = activeOpps.filter((o) => o.status === 'new');
 
       // Build standup message
       let message = `*Morning Standup*\n\n`;
@@ -357,7 +381,7 @@ Respond in JSON:
           message += `• ${opp.title} (${opp.agency || 'Unknown'})`;
           message += ` - Due ${opp.due_date || 'TBD'}`;
           if (outreach.length > 0) {
-            const sent = outreach.filter(o => o.email_sent).length;
+            const sent = outreach.filter((o) => o.email_sent).length;
             message += ` | ${sent}/${outreach.length} outreach sent`;
           }
           message += `\n`;
@@ -379,7 +403,7 @@ Respond in JSON:
       }
 
       // Pending decisions
-      const pendingDecisions = activeOpps.filter(o => o.decision === 'pending');
+      const pendingDecisions = activeOpps.filter((o) => o.decision === 'pending');
       if (pendingDecisions.length > 0) {
         message += `*Awaiting Decision:*\n`;
         for (const opp of pendingDecisions) {
@@ -397,7 +421,7 @@ Respond in JSON:
         message += `• Complete research on ${researching.length} opportunities\n`;
       }
       if (pursuing.length > 0) {
-        const nearDeadline = pursuing.filter(o => {
+        const nearDeadline = pursuing.filter((o) => {
           if (!o.due_date) return false;
           const dueDate = new Date(o.due_date);
           const daysUntilDue = (dueDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
@@ -411,7 +435,9 @@ Respond in JSON:
       await this.post(message);
     } catch (error) {
       console.error('Strategist: Error running standup:', error);
-      await this.post(`Morning team. Standup report hit a glitch - checking the pipeline manually.`);
+      await this.post(
+        `Morning team. Standup report hit a glitch - checking the pipeline manually.`
+      );
     }
   }
 

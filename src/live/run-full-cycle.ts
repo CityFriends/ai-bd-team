@@ -2,7 +2,11 @@
 // Full team cycle with real data and real sources
 import 'dotenv/config';
 import { WebClient } from '@slack/web-api';
-import { searchOpportunities, extractAgencyAbbreviation, mapOpportunityType } from '../integrations/sam-gov.js';
+import {
+  searchOpportunities,
+  extractAgencyAbbreviation,
+  mapOpportunityType,
+} from '../integrations/sam-gov.js';
 import { findIncumbent, getVendorHistory, searchFPDS } from '../integrations/fpds.js';
 import { getAgencySpending, getAgencyTrend } from '../integrations/usaspending.js';
 import { searchNews, getAgencyNews } from '../integrations/news-search.js';
@@ -23,10 +27,14 @@ const agents = {
 };
 
 function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function postMessage(agent: keyof typeof agents, text: string, threadTs?: string): Promise<string> {
+async function postMessage(
+  agent: keyof typeof agents,
+  text: string,
+  threadTs?: string
+): Promise<string> {
   const result = await agents[agent].chat.postMessage({
     channel: CHANNEL_ID,
     text,
@@ -43,7 +51,7 @@ async function generateAgentResponse(agent: string, prompt: string): Promise<str
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const textBlock = response.content.find(b => b.type === 'text');
+  const textBlock = response.content.find((b) => b.type === 'text');
   return textBlock?.type === 'text' ? textBlock.text : '';
 }
 
@@ -152,7 +160,14 @@ ${agencyTrend.percentChange !== null ? `Trend: ${agencyTrend.percentChange >= 0 
 Source: ${agencySpending.source}
 
 NEWS:
-${newsResults.recentNews.length > 0 ? newsResults.recentNews.slice(0, 2).map(n => `- ${n.title}`).join('\n') : 'No recent news found'}
+${
+  newsResults.recentNews.length > 0
+    ? newsResults.recentNews
+        .slice(0, 2)
+        .map((n) => `- ${n.title}`)
+        .join('\n')
+    : 'No recent news found'
+}
 ${newsResults.leadershipChanges.length > 0 ? `Leadership: ${newsResults.leadershipChanges[0].title}` : ''}
 Source: ${newsResults.source}
 
@@ -170,11 +185,10 @@ Write a Slack message (5-8 lines) with your analysis. Cite your sources (FPDS, U
   console.log('Step 3: Rosa checking partners...');
 
   // Pick a potential partner to verify (if incumbent found, check them)
-  let partnerVerification = null;
-  let partnerName = incumbentData.incumbent || 'Skylight'; // Default to Skylight as example
+  const partnerName = incumbentData.incumbent || 'Skylight'; // Default to Skylight as example
 
   console.log(`  - Verifying ${partnerName} in SAM...`);
-  partnerVerification = await verifyRegistration(partnerName);
+  const partnerVerification = await verifyRegistration(partnerName);
 
   const rosaPrompt = `You are Rosa, the partner researcher. The team is looking at an opportunity and you've done partner research.
 

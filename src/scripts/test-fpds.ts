@@ -14,7 +14,7 @@ interface FPDSContract {
 }
 
 function extractXMLValue(xml: string, tag: string): string | undefined {
-  const regex = new RegExp(`<${tag}[^>]*>([^<]*)<\/${tag}>`, 'i');
+  const regex = new RegExp(`<${tag}[^>]*>([^<]*)</${tag}>`, 'i');
   const match = xml.match(regex);
   return match ? match[1].trim() : undefined;
 }
@@ -45,7 +45,9 @@ function parseRSSFeed(xml: string, limit: number): FPDSContract[] {
 
     // Parse amount
     let amount = 0;
-    const amountMatch = title.match(/(?:for the amount of |for |amount of )\$?([-\d,]+(?:\.\d{2})?)/i);
+    const amountMatch = title.match(
+      /(?:for the amount of |for |amount of )\$?([-\d,]+(?:\.\d{2})?)/i
+    );
     if (amountMatch) amount = parseFloat(amountMatch[1].replace(/,/g, ''));
 
     // Parse contract ID
@@ -59,7 +61,7 @@ function parseRSSFeed(xml: string, limit: number): FPDSContract[] {
     if (agencyMatch) agencyName = `Agency ${agencyMatch[1]}`;
 
     // Parse date
-    let signedDate = pubDate.split('T')[0] || '';
+    const signedDate = pubDate.split('T')[0] || '';
 
     contracts.push({
       contractId,
@@ -85,7 +87,7 @@ async function searchFPDS(query: string): Promise<FPDSContract[]> {
   console.log(`Searching: ${query}`);
   const response = await fetch(url.toString(), {
     headers: {
-      'Accept': 'application/xml',
+      Accept: 'application/xml',
       'User-Agent': 'BD-Team/1.0',
     },
   });
@@ -101,24 +103,26 @@ async function test() {
   console.log('Test 1: "Agile Six"');
   const agileResults = await searchFPDS('Agile Six');
   console.log(`Found ${agileResults.length} contracts`);
-  agileResults.slice(0, 5).forEach(c => {
-    console.log(`  - ${c.vendorName}: $${(c.obligatedAmount/1000000).toFixed(2)}M (${c.signedDate})`);
+  agileResults.slice(0, 5).forEach((c) => {
+    console.log(
+      `  - ${c.vendorName}: $${(c.obligatedAmount / 1000000).toFixed(2)}M (${c.signedDate})`
+    );
   });
 
   // Test 2: Quality Payment Program
   console.log('\nTest 2: "Quality Payment Program"');
   const qppResults = await searchFPDS('Quality Payment Program');
   console.log(`Found ${qppResults.length} contracts`);
-  qppResults.slice(0, 5).forEach(c => {
-    console.log(`  - ${c.vendorName}: $${(c.obligatedAmount/1000000).toFixed(2)}M`);
+  qppResults.slice(0, 5).forEach((c) => {
+    console.log(`  - ${c.vendorName}: $${(c.obligatedAmount / 1000000).toFixed(2)}M`);
   });
 
   // Test 3: VA contracts
   console.log('\nTest 3: "VA veterans modernization"');
   const vaResults = await searchFPDS('VA veterans modernization');
   console.log(`Found ${vaResults.length} contracts`);
-  vaResults.slice(0, 5).forEach(c => {
-    console.log(`  - ${c.vendorName}: $${(c.obligatedAmount/1000000).toFixed(2)}M`);
+  vaResults.slice(0, 5).forEach((c) => {
+    console.log(`  - ${c.vendorName}: $${(c.obligatedAmount / 1000000).toFixed(2)}M`);
   });
 }
 

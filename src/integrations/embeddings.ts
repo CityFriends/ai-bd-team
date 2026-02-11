@@ -62,7 +62,7 @@ export async function embedBatch(texts: string[]): Promise<EmbeddingResult[]> {
   const client = getOpenAI();
 
   // Clean texts
-  const cleanTexts = texts.map(t => t.trim().slice(0, 30000)).filter(t => t.length > 0);
+  const cleanTexts = texts.map((t) => t.trim().slice(0, 30000)).filter((t) => t.length > 0);
 
   if (cleanTexts.length === 0) {
     return [];
@@ -78,7 +78,9 @@ export async function embedBatch(texts: string[]): Promise<EmbeddingResult[]> {
     return response.data.map((item, index) => ({
       embedding: item.embedding,
       text: cleanTexts[index],
-      tokens: response.usage?.total_tokens ? Math.floor(response.usage.total_tokens / cleanTexts.length) : 0,
+      tokens: response.usage?.total_tokens
+        ? Math.floor(response.usage.total_tokens / cleanTexts.length)
+        : 0,
     }));
   } catch (error) {
     console.error('Batch embedding generation failed:', error);
@@ -126,7 +128,7 @@ export function formatForPgVector(embedding: number[]): string {
  */
 export function parseFromPgVector(vectorStr: string): number[] {
   // Remove brackets and split
-  const cleanStr = vectorStr.replace(/[\[\]]/g, '');
+  const cleanStr = vectorStr.replace(/[[\]]/g, '');
   return cleanStr.split(',').map(Number);
 }
 

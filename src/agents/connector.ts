@@ -67,7 +67,9 @@ export class ConnectorAgent extends BaseAgent {
 
       // Step 1: Analyze teaming needs
       const teamingAnalysis = await this.analyzeTeamingNeeds(opp);
-      console.log(`Connector: Should we prime? ${teamingAnalysis.should_prime ? 'Yes' : 'No/Maybe sub'}`);
+      console.log(
+        `Connector: Should we prime? ${teamingAnalysis.should_prime ? 'Yes' : 'No/Maybe sub'}`
+      );
 
       // Step 2: Search existing partners in database
       console.log(`Connector: Searching existing partner database...`);
@@ -87,7 +89,11 @@ export class ConnectorAgent extends BaseAgent {
 
       // Step 5: Post to Slack with Rosa's personality
       console.log(`Connector: Posting to Slack...`);
-      const { mainMessage, threadDetail } = this.formatPartnerMessage(opp, teamingAnalysis, partnerRecommendations);
+      const { mainMessage, threadDetail } = this.formatPartnerMessage(
+        opp,
+        teamingAnalysis,
+        partnerRecommendations
+      );
       const { ts: threadTs } = await this.requestDecision(mainMessage);
       await this.reply(threadDetail, threadTs);
 
@@ -142,7 +148,7 @@ Respond in JSON:
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const textBlock = response.content.find(block => block.type === 'text');
+    const textBlock = response.content.find((block) => block.type === 'text');
     if (!textBlock || textBlock.type !== 'text') {
       throw new Error('No response from Claude');
     }
@@ -181,9 +187,7 @@ Respond in JSON:
     partners.push(...capabilityPartners);
 
     // Dedupe
-    const uniquePartners = Array.from(
-      new Map(partners.map(p => [p.id, p])).values()
-    );
+    const uniquePartners = Array.from(new Map(partners.map((p) => [p.id, p])).values());
 
     return uniquePartners;
   }
@@ -196,11 +200,15 @@ Respond in JSON:
   ): Promise<PartnerRecommendation[]> {
     const client = getAnthropic();
 
-    const existingList = existingPartners.length > 0
-      ? existingPartners.map(p =>
-        `- ${p.name}: ${p.capabilities || 'Unknown capabilities'}, Certs: ${p.certifications?.join(', ') || 'None'}, Relationship: ${p.relationship_status}`
-      ).join('\n')
-      : 'No existing partners in database match this opportunity.';
+    const existingList =
+      existingPartners.length > 0
+        ? existingPartners
+            .map(
+              (p) =>
+                `- ${p.name}: ${p.capabilities || 'Unknown capabilities'}, Certs: ${p.certifications?.join(', ') || 'None'}, Relationship: ${p.relationship_status}`
+            )
+            .join('\n')
+        : 'No existing partners in database match this opportunity.';
 
     const prompt = `You are the relationship-focused partner finder for a government BD team.
 
@@ -249,7 +257,7 @@ Respond in JSON:
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const textBlock = response.content.find(block => block.type === 'text');
+    const textBlock = response.content.find((block) => block.type === 'text');
     if (!textBlock || textBlock.type !== 'text') {
       throw new Error('No response from Claude');
     }
@@ -263,13 +271,15 @@ Respond in JSON:
       const parsed = JSON.parse(jsonText.trim());
       return parsed.recommendations || [];
     } catch {
-      return [{
-        name: 'Partner research needed',
-        type: 'suggested',
-        why: 'Unable to generate specific recommendations',
-        relationship: 'Unknown',
-        priority: 'medium',
-      }];
+      return [
+        {
+          name: 'Partner research needed',
+          type: 'suggested',
+          why: 'Unable to generate specific recommendations',
+          relationship: 'Unknown',
+          priority: 'medium',
+        },
+      ];
     }
   }
 
@@ -312,14 +322,14 @@ Respond in JSON:
     teaming: TeamingAnalysis,
     recommendations: PartnerRecommendation[]
   ): { mainMessage: string; threadDetail: string } {
-    const highPriority = recommendations.filter(r => r.priority === 'high');
+    const highPriority = recommendations.filter((r) => r.priority === 'high');
     const sortedRecs = [...recommendations].sort((a, b) => {
       const order = { high: 0, medium: 1, low: 2 };
       return order[a.priority] - order[b.priority];
     });
 
     // SHORT main message (4-6 lines) - Rosa's warm, connected style
-    let mainMessage = '';
+    let mainMessage: string;
 
     if (highPriority.length >= 2) {
       mainMessage = `I was just talking to some folks about *${opp.title}*...\n`;
@@ -352,7 +362,8 @@ Respond in JSON:
 
     for (let i = 0; i < Math.min(sortedRecs.length, 5); i++) {
       const rec = sortedRecs[i];
-      const priorityEmoji = rec.priority === 'high' ? '🔥' : rec.priority === 'medium' ? '👍' : '🤔';
+      const priorityEmoji =
+        rec.priority === 'high' ? '🔥' : rec.priority === 'medium' ? '👍' : '🤔';
 
       threadDetail += `${priorityEmoji} *${rec.name}*`;
       if (rec.type === 'existing') {

@@ -31,35 +31,43 @@ import {
 } from './phrases.js';
 
 // Agent display info for posting (with profile pictures)
-const AGENT_INFO: Record<AgentName, {
-  username: string;
-  displayName: string;
-  icon_url: string;
-}> = {
+const AGENT_INFO: Record<
+  AgentName,
+  {
+    username: string;
+    displayName: string;
+    icon_url: string;
+  }
+> = {
   scout: {
     username: 'Maya',
     displayName: 'Scout',
-    icon_url: 'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/Maya.jpeg',
+    icon_url:
+      'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/Maya.jpeg',
   },
   analyst: {
     username: 'David',
     displayName: 'Analyst',
-    icon_url: 'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/David.jpeg',
+    icon_url:
+      'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/David.jpeg',
   },
   connector: {
     username: 'Rosa',
     displayName: 'Connector',
-    icon_url: 'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/Rosa.jpeg',
+    icon_url:
+      'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/Rosa.jpeg',
   },
   strategist: {
     username: 'James',
     displayName: 'Strategist',
-    icon_url: 'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/James.jpeg',
+    icon_url:
+      'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/James.jpeg',
   },
   pm: {
     username: 'Patricia',
     displayName: 'PM',
-    icon_url: 'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/Patricia.jpeg',
+    icon_url:
+      'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/Patricia.jpeg',
   },
 };
 
@@ -77,7 +85,7 @@ interface ConversationContext {
 
 // Sleep helper
 function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // Random delay within range
@@ -86,11 +94,7 @@ function randomDelay(min: number, max: number): number {
 }
 
 // Post as agent with custom username and profile picture
-async function postAsAgent(
-  agent: AgentName,
-  text: string,
-  threadTs?: string
-): Promise<string> {
+async function postAsAgent(agent: AgentName, text: string, threadTs?: string): Promise<string> {
   const { username, icon_url } = AGENT_INFO[agent];
   const app = getSlackApp();
   const channel = getChannelId();
@@ -125,7 +129,10 @@ async function addReaction(messageTs: string, reaction: string): Promise<void> {
 }
 
 // Maybe add a reaction (30-50% chance)
-async function maybeReact(messageTs: string, sentiment: 'positive' | 'concern' | 'watching'): Promise<void> {
+async function maybeReact(
+  messageTs: string,
+  sentiment: 'positive' | 'concern' | 'watching'
+): Promise<void> {
   if (Math.random() > 0.4) return; // 40% chance to react
 
   let reactionPool: string[];
@@ -211,9 +218,8 @@ function buildMayaMessage(opp: Opportunity, analysis: OpportunityAnalysis): stri
 
   // Short description
   if (opp.description) {
-    const snippet = opp.description.length > 200
-      ? opp.description.substring(0, 200) + '...'
-      : opp.description;
+    const snippet =
+      opp.description.length > 200 ? opp.description.substring(0, 200) + '...' : opp.description;
     message += `_${snippet}_\n\n`;
   }
 
@@ -229,14 +235,11 @@ function buildMayaMessage(opp: Opportunity, analysis: OpportunityAnalysis): stri
 }
 
 // Build David's message
-function buildDavidMessage(
-  ctx: ConversationContext,
-  isReplyToMaya: boolean
-): string {
+function buildDavidMessage(ctx: ConversationContext, isReplyToMaya: boolean): string {
   const { oppAnalysis, dynamic } = ctx;
   const opener = getDavidOpener(oppAnalysis.davidSentiment);
 
-  let message = '';
+  let message: string;
 
   if (isReplyToMaya && oppAnalysis.davidSentiment === 'skeptical' && oppAnalysis.fitScore >= 70) {
     // Acknowledge Maya's find but express concern
@@ -277,7 +280,7 @@ function buildRosaMessage(ctx: ConversationContext): string {
   const { partnerAnalysis, oppAnalysis, dynamic } = ctx;
   const opener = getRosaOpener(partnerAnalysis.partnerConfidence);
 
-  let message = '';
+  let message: string;
 
   // If David was skeptical but Rosa has connections
   if (oppAnalysis.davidSentiment === 'skeptical' && partnerAnalysis.partnerConfidence === 'high') {
@@ -362,8 +365,12 @@ function buildJamesMessage(ctx: ConversationContext): string {
   }
 
   // Win probability
-  const pwinEmoji = strategyAnalysis.winProbability === 'high' ? '🟢' :
-                    strategyAnalysis.winProbability === 'medium' ? '🟡' : '🔴';
+  const pwinEmoji =
+    strategyAnalysis.winProbability === 'high'
+      ? '🟢'
+      : strategyAnalysis.winProbability === 'medium'
+        ? '🟡'
+        : '🔴';
   message += `Win probability: ${pwinEmoji} ${strategyAnalysis.winProbability.toUpperCase()}\n\n`;
 
   // Next steps if go
@@ -400,8 +407,12 @@ function buildPatriciaSummary(ctx: ConversationContext): string {
   message += `✅ Researched (David)\n`;
   message += `✅ Partners reviewed (Rosa)\n`;
 
-  const recEmoji = strategyAnalysis.recommendation === 'go' || strategyAnalysis.recommendation === 'lean_go'
-    ? '✅' : strategyAnalysis.recommendation === 'no_go' ? '❌' : '🤔';
+  const recEmoji =
+    strategyAnalysis.recommendation === 'go' || strategyAnalysis.recommendation === 'lean_go'
+      ? '✅'
+      : strategyAnalysis.recommendation === 'no_go'
+        ? '❌'
+        : '🤔';
   message += `${recEmoji} Recommendation: *${strategyAnalysis.recommendation.toUpperCase().replace('_', ' ')}* (James)\n\n`;
 
   // The ask
@@ -411,8 +422,10 @@ function buildPatriciaSummary(ctx: ConversationContext): string {
     message += `_Note: Team had some debate on this one - see thread for full discussion._\n\n`;
   }
 
-  const recText = strategyAnalysis.recommendation === 'go' || strategyAnalysis.recommendation === 'lean_go'
-    ? 'pursue' : 'pass';
+  const recText =
+    strategyAnalysis.recommendation === 'go' || strategyAnalysis.recommendation === 'lean_go'
+      ? 'pursue'
+      : 'pass';
   message += `Team recommends we ${recText}. Reply *GO* or *PASS*.`;
 
   return message;
@@ -435,10 +448,7 @@ export async function runConversation(
 
   // Get partners
   const supabase = getSupabase();
-  const { data: partners } = await supabase
-    .from('companies')
-    .select('*')
-    .limit(10);
+  const { data: partners } = await supabase.from('companies').select('*').limit(10);
 
   // Run analysis
   console.log('ConversationEngine: Analyzing opportunity...');
@@ -447,7 +457,9 @@ export async function runConversation(
   const strategyAnalysis = analyzeStrategy(opportunity, oppAnalysis, partnerAnalysis);
   const dynamic = determineConversationDynamic(oppAnalysis, partnerAnalysis, strategyAnalysis);
 
-  console.log(`ConversationEngine: Dynamic = ${dynamic.type}, David = ${oppAnalysis.davidSentiment}, Rec = ${strategyAnalysis.recommendation}`);
+  console.log(
+    `ConversationEngine: Dynamic = ${dynamic.type}, David = ${oppAnalysis.davidSentiment}, Rec = ${strategyAnalysis.recommendation}`
+  );
 
   // Step 1: Maya posts in main channel
   console.log('ConversationEngine: Maya posting...');

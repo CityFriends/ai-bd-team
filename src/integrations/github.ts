@@ -61,10 +61,7 @@ export function parseGitHubUrl(url: string): { owner: string; repo: string } | n
   // https://github.com/owner/repo.git
   // github.com/owner/repo
   // owner/repo (simple format)
-  const patterns = [
-    /github\.com\/([^\/]+)\/([^\/\s.]+)/i,
-    /^([^\/]+)\/([^\/\s]+)$/,
-  ];
+  const patterns = [/github\.com\/([^/]+)\/([^/\s.]+)/i, /^([^/]+)\/([^/\s]+)$/];
 
   for (const pattern of patterns) {
     const match = url.match(pattern);
@@ -93,7 +90,7 @@ export async function getRepoStructure(owner: string, repo: string): Promise<Rep
       return [];
     }
 
-    return data.map(item => ({
+    return data.map((item) => ({
       name: item.name,
       path: item.path,
       type: item.type as 'file' | 'dir',
@@ -106,7 +103,11 @@ export async function getRepoStructure(owner: string, repo: string): Promise<Rep
 }
 
 // Get file content from a repository
-export async function getFileContent(owner: string, repo: string, path: string): Promise<string | null> {
+export async function getFileContent(
+  owner: string,
+  repo: string,
+  path: string
+): Promise<string | null> {
   const octokit = getOctokit();
 
   try {
@@ -198,10 +199,12 @@ function identifyTechStack(
   }
 
   // From file structure
-  const fileNames = structure.map(f => f.name.toLowerCase());
-  if (fileNames.includes('dockerfile') || fileNames.includes('docker-compose.yml')) stack.push('Docker');
+  const fileNames = structure.map((f) => f.name.toLowerCase());
+  if (fileNames.includes('dockerfile') || fileNames.includes('docker-compose.yml'))
+    stack.push('Docker');
   if (fileNames.includes('.github')) stack.push('GitHub Actions');
-  if (fileNames.includes('terraform') || fileNames.some(f => f.endsWith('.tf'))) stack.push('Terraform');
+  if (fileNames.includes('terraform') || fileNames.some((f) => f.endsWith('.tf')))
+    stack.push('Terraform');
   if (fileNames.includes('kubernetes') || fileNames.includes('k8s')) stack.push('Kubernetes');
   if (fileNames.includes('serverless.yml')) stack.push('Serverless');
 
@@ -216,63 +219,71 @@ function identifyComplianceConcerns(
   packageJson: PackageInfo | null
 ): string[] {
   const concerns: string[] = [];
-  const fileNames = structure.map(f => f.name.toLowerCase());
+  const fileNames = structure.map((f) => f.name.toLowerCase());
   const readmeLower = (readme || '').toLowerCase();
 
   // Check for accessibility (Section 508)
-  const hasA11yDeps = packageJson?.dependencies && (
-    packageJson.dependencies['axe-core'] ||
-    packageJson.dependencies['jest-axe'] ||
-    packageJson.dependencies['@axe-core/react'] ||
-    packageJson.dependencies['pa11y']
-  );
+  const hasA11yDeps =
+    packageJson?.dependencies &&
+    (packageJson.dependencies['axe-core'] ||
+      packageJson.dependencies['jest-axe'] ||
+      packageJson.dependencies['@axe-core/react'] ||
+      packageJson.dependencies['pa11y']);
   if (!hasA11yDeps && !readmeLower.includes('accessibility') && !readmeLower.includes('508')) {
     concerns.push('No accessibility (Section 508) tooling detected');
   }
 
   // Check for security scanning
-  const hasSecurityDeps = packageJson?.devDependencies && (
-    packageJson.devDependencies['eslint-plugin-security'] ||
-    packageJson.devDependencies['snyk'] ||
-    packageJson.devDependencies['npm-audit']
-  );
+  const hasSecurityDeps =
+    packageJson?.devDependencies &&
+    (packageJson.devDependencies['eslint-plugin-security'] ||
+      packageJson.devDependencies['snyk'] ||
+      packageJson.devDependencies['npm-audit']);
   if (!hasSecurityDeps && !fileNames.includes('.snyk') && !fileNames.includes('security.md')) {
     concerns.push('No security scanning tooling detected');
   }
 
   // Check for USWDS (gov design system)
-  const hasUSWDS = packageJson?.dependencies && (
-    packageJson.dependencies['@uswds/uswds'] ||
-    packageJson.dependencies['uswds']
-  );
+  const hasUSWDS =
+    packageJson?.dependencies &&
+    (packageJson.dependencies['@uswds/uswds'] || packageJson.dependencies['uswds']);
   if (!hasUSWDS && !readmeLower.includes('uswds') && !readmeLower.includes('design system')) {
     concerns.push('Not using USWDS (US Web Design System)');
   }
 
   // Check for Login.gov / Auth patterns
   if (readmeLower.includes('login') || readmeLower.includes('auth')) {
-    if (!readmeLower.includes('login.gov') && !readmeLower.includes('saml') && !readmeLower.includes('oauth')) {
+    if (
+      !readmeLower.includes('login.gov') &&
+      !readmeLower.includes('saml') &&
+      !readmeLower.includes('oauth')
+    ) {
       concerns.push('Auth mentioned but no Login.gov or standard auth protocol detected');
     }
   }
 
   // Check for testing
-  const hasTests = fileNames.some(f =>
-    f.includes('test') || f.includes('spec') || f === '__tests__' || f === 'tests'
+  const hasTests = fileNames.some(
+    (f) => f.includes('test') || f.includes('spec') || f === '__tests__' || f === 'tests'
   );
   if (!hasTests) {
     concerns.push('No test directory detected');
   }
 
   // Check for documentation
-  const hasDocs = fileNames.includes('docs') || fileNames.includes('documentation') ||
-    fileNames.includes('readme.md') || fileNames.includes('contributing.md');
+  const hasDocs =
+    fileNames.includes('docs') ||
+    fileNames.includes('documentation') ||
+    fileNames.includes('readme.md') ||
+    fileNames.includes('contributing.md');
   if (!hasDocs) {
     concerns.push('Limited documentation');
   }
 
   // Check for license (important for gov work)
-  const hasLicense = fileNames.includes('license') || fileNames.includes('license.md') ||
+  const hasLicense =
+    fileNames.includes('license') ||
+    fileNames.includes('license.md') ||
     fileNames.includes('license.txt');
   if (!hasLicense) {
     concerns.push('No license file detected');
@@ -289,44 +300,65 @@ function generateArchitectureNotes(
   packageJson: PackageInfo | null
 ): string[] {
   const notes: string[] = [];
-  const fileNames = structure.map(f => f.name.toLowerCase());
-  const dirNames = structure.filter(f => f.type === 'dir').map(f => f.name.toLowerCase());
+  const fileNames = structure.map((f) => f.name.toLowerCase());
+  const dirNames = structure.filter((f) => f.type === 'dir').map((f) => f.name.toLowerCase());
 
   // Monorepo detection
-  if (fileNames.includes('lerna.json') || fileNames.includes('pnpm-workspace.yaml') ||
-      dirNames.includes('packages') || dirNames.includes('apps')) {
+  if (
+    fileNames.includes('lerna.json') ||
+    fileNames.includes('pnpm-workspace.yaml') ||
+    dirNames.includes('packages') ||
+    dirNames.includes('apps')
+  ) {
     notes.push('Monorepo architecture detected');
   }
 
   // Microservices detection
-  if (dirNames.includes('services') || dirNames.includes('microservices') ||
-      (dirNames.includes('api') && dirNames.includes('frontend'))) {
+  if (
+    dirNames.includes('services') ||
+    dirNames.includes('microservices') ||
+    (dirNames.includes('api') && dirNames.includes('frontend'))
+  ) {
     notes.push('Microservices or multi-service architecture');
   }
 
   // Static site detection
-  if (techStack.includes('Gatsby') || techStack.includes('Next.js') ||
-      fileNames.includes('_site') || fileNames.includes('public')) {
+  if (
+    techStack.includes('Gatsby') ||
+    techStack.includes('Next.js') ||
+    fileNames.includes('_site') ||
+    fileNames.includes('public')
+  ) {
     if (!techStack.includes('Express.js') && !techStack.includes('NestJS')) {
       notes.push('Static or JAMstack site architecture');
     }
   }
 
   // API-first detection
-  if (dirNames.includes('api') || fileNames.includes('openapi.yaml') ||
-      fileNames.includes('swagger.json')) {
+  if (
+    dirNames.includes('api') ||
+    fileNames.includes('openapi.yaml') ||
+    fileNames.includes('swagger.json')
+  ) {
     notes.push('API-first design with documented endpoints');
   }
 
   // Infrastructure as Code
-  if (techStack.includes('Terraform') || techStack.includes('Kubernetes') ||
-      fileNames.includes('cloudformation')) {
+  if (
+    techStack.includes('Terraform') ||
+    techStack.includes('Kubernetes') ||
+    fileNames.includes('cloudformation')
+  ) {
     notes.push('Infrastructure as Code patterns detected');
   }
 
   // CI/CD
-  if (fileNames.includes('.github') || fileNames.includes('.circleci') ||
-      fileNames.includes('.gitlab-ci.yml') || fileNames.includes('jenkinsfile')) {
+  if (
+    fileNames.includes('.github') ||
+    fileNames.includes('.circleci') ||
+    fileNames.includes('.gitlab-ci.yml') ||
+    fileNames.includes('jenkinsfile')
+  ) {
     notes.push('CI/CD pipeline configured');
   }
 
@@ -404,14 +436,16 @@ export async function analyzeRepository(repoUrl: string): Promise<RepoAnalysis |
     }
 
     const languages = languagesResult.data as Record<string, number>;
-    const fileNames = structure.map(f => f.name.toLowerCase());
+    const fileNames = structure.map((f) => f.name.toLowerCase());
 
     // Check for key directories
-    const hasTests = fileNames.some(f =>
-      f.includes('test') || f.includes('spec') || f === '__tests__' || f === 'tests'
+    const hasTests = fileNames.some(
+      (f) => f.includes('test') || f.includes('spec') || f === '__tests__' || f === 'tests'
     );
     const hasDocs = fileNames.includes('docs') || fileNames.includes('documentation');
-    const hasCI = fileNames.includes('.github') || fileNames.includes('.circleci') ||
+    const hasCI =
+      fileNames.includes('.github') ||
+      fileNames.includes('.circleci') ||
       fileNames.includes('.gitlab-ci.yml');
 
     // Identify tech stack
@@ -472,7 +506,9 @@ export function formatRepoAnalysisForAgent(analysis: RepoAnalysis): string {
 
   parts.push(`\n*Overview:*`);
   parts.push(`• Primary Language: ${analysis.language || 'Unknown'}`);
-  parts.push(`• Stars: ${analysis.stars} | Forks: ${analysis.forks} | Open Issues: ${analysis.openIssues}`);
+  parts.push(
+    `• Stars: ${analysis.stars} | Forks: ${analysis.forks} | Open Issues: ${analysis.openIssues}`
+  );
   if (analysis.lastCommit) {
     const lastCommitDate = new Date(analysis.lastCommit).toLocaleDateString();
     parts.push(`• Last Commit: ${lastCommitDate}`);
@@ -492,21 +528,25 @@ export function formatRepoAnalysisForAgent(analysis: RepoAnalysis): string {
 
   if (analysis.architectureNotes.length > 0) {
     parts.push(`\n*Architecture Notes:*`);
-    analysis.architectureNotes.forEach(note => {
+    analysis.architectureNotes.forEach((note) => {
       parts.push(`• ${note}`);
     });
   }
 
   if (analysis.complianceConcerns.length > 0) {
     parts.push(`\n*Gov Compliance Concerns:*`);
-    analysis.complianceConcerns.forEach(concern => {
+    analysis.complianceConcerns.forEach((concern) => {
       parts.push(`• ⚠️ ${concern}`);
     });
   }
 
   parts.push(`\n*Repository Structure (top-level):*`);
-  const dirs = analysis.structure.filter((f: RepoFile) => f.type === 'dir').map((f: RepoFile) => `📁 ${f.name}`);
-  const files = analysis.structure.filter((f: RepoFile) => f.type === 'file').map((f: RepoFile) => `📄 ${f.name}`);
+  const dirs = analysis.structure
+    .filter((f: RepoFile) => f.type === 'dir')
+    .map((f: RepoFile) => `📁 ${f.name}`);
+  const files = analysis.structure
+    .filter((f: RepoFile) => f.type === 'file')
+    .map((f: RepoFile) => `📄 ${f.name}`);
   parts.push(dirs.slice(0, 10).join('  '));
   parts.push(files.slice(0, 10).join('  '));
 

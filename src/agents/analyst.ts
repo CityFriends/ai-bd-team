@@ -1,6 +1,11 @@
 import { BaseAgent } from './base-agent.js';
 import { ANALYST_SYSTEM_PROMPT, ANALYST_RESPONSE_PROMPT } from '../prompts/analyst.js';
-import { getOpportunity, updateOpportunity, getAgency, upsertAgency } from '../integrations/supabase.js';
+import {
+  getOpportunity,
+  updateOpportunity,
+  getAgency,
+  upsertAgency,
+} from '../integrations/supabase.js';
 import { getAnthropic } from '../integrations/claude.js';
 import type { AgentName, Opportunity } from '../types/index.js';
 
@@ -65,7 +70,11 @@ export class AnalystAgent extends BaseAgent {
 
       // Step 3: Generate Slack message with David's personality
       console.log(`Analyst: Generating report...`);
-      const { mainMessage, threadDetail } = this.formatAnalysisMessage(opp, agencyResearch, analysis);
+      const { mainMessage, threadDetail } = this.formatAnalysisMessage(
+        opp,
+        agencyResearch,
+        analysis
+      );
 
       // Post main message to Slack, then details in thread
       console.log(`Analyst: Posting to Slack...`);
@@ -122,7 +131,7 @@ Respond in JSON format:
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const textBlock = response.content.find(block => block.type === 'text');
+    const textBlock = response.content.find((block) => block.type === 'text');
     if (!textBlock || textBlock.type !== 'text') {
       throw new Error('No response from Claude');
     }
@@ -210,7 +219,7 @@ Respond in JSON:
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const textBlock = response.content.find(block => block.type === 'text');
+    const textBlock = response.content.find((block) => block.type === 'text');
     if (!textBlock || textBlock.type !== 'text') {
       throw new Error('No response from Claude');
     }
@@ -249,8 +258,13 @@ Respond in JSON:
     }
   ): { mainMessage: string; threadDetail: string } {
     // SHORT main message (4-6 lines) - David's measured voice
-    let mainMessage = '';
-    const recEmoji = analysis.recommendation === 'pursue' ? '👍' : analysis.recommendation === 'pass' ? '👎' : '🤷';
+    let mainMessage: string;
+    const recEmoji =
+      analysis.recommendation === 'pursue'
+        ? '👍'
+        : analysis.recommendation === 'pass'
+          ? '👎'
+          : '🤷';
 
     if (analysis.recommendation === 'pass') {
       mainMessage = `Here's the thing about *${opp.title}*...\n`;

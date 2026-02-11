@@ -1,25 +1,61 @@
 import { BaseAgent } from './base-agent.js';
 import { SCOUT_SYSTEM_PROMPT, SCOUT_RESPONSE_PROMPT } from '../prompts/scout.js';
-import { getDailyOpportunities, mapOpportunityType, extractAgencyAbbreviation } from '../integrations/sam-gov.js';
-import { createOpportunity, getOpportunityBySamId, getOpportunity } from '../integrations/supabase.js';
+import {
+  getDailyOpportunities,
+  mapOpportunityType,
+  extractAgencyAbbreviation,
+} from '../integrations/sam-gov.js';
+import {
+  createOpportunity,
+  getOpportunityBySamId,
+  getOpportunity,
+} from '../integrations/supabase.js';
 import type { AgentName, Opportunity, OpportunityScore } from '../types/index.js';
 
 // Scoring constants from the briefing
 const POSITIVE_KEYWORDS = [
-  'human-centered design', 'hcd', 'user experience', 'ux',
-  'user research', 'service design', 'customer experience',
-  'digital services', 'modernization', 'agile', 'prototype',
-  'mvp', 'rapid', 'iterative', 'design thinking',
-  'web application', 'portal', 'cloud', 'devops',
-  'design', 'research', 'usability', 'accessibility',
-  'digital transformation', 'innovation', 'journey map',
+  'human-centered design',
+  'hcd',
+  'user experience',
+  'ux',
+  'user research',
+  'service design',
+  'customer experience',
+  'digital services',
+  'modernization',
+  'agile',
+  'prototype',
+  'mvp',
+  'rapid',
+  'iterative',
+  'design thinking',
+  'web application',
+  'portal',
+  'cloud',
+  'devops',
+  'design',
+  'research',
+  'usability',
+  'accessibility',
+  'digital transformation',
+  'innovation',
+  'journey map',
 ];
 
 const NEGATIVE_KEYWORDS = [
-  'staff augmentation', 'staffing', 'body shop',
-  'mainframe', 'cobol', 'legacy maintenance',
-  'ts/sci', 'top secret', 'secret clearance',
-  'janitorial', 'custodial', 'landscaping', 'construction',
+  'staff augmentation',
+  'staffing',
+  'body shop',
+  'mainframe',
+  'cobol',
+  'legacy maintenance',
+  'ts/sci',
+  'top secret',
+  'secret clearance',
+  'janitorial',
+  'custodial',
+  'landscaping',
+  'construction',
 ];
 
 const PRIORITY_AGENCIES = ['VA', 'HHS', 'DOL', 'STATE', 'ED', 'SBA', 'GSA'];
@@ -58,7 +94,7 @@ export class ScoutAgent extends BaseAgent {
     }
 
     // Build SHORT main message (4-6 lines) - Maya's quick, punchy style
-    let mainMessage = '';
+    let mainMessage: string;
 
     // Opening based on fit score - Maya's voice
     if (opp.fit_score && opp.fit_score >= 80) {
@@ -88,9 +124,8 @@ export class ScoutAgent extends BaseAgent {
     let threadDetail = `*The details:*\n\n`;
 
     if (opp.description) {
-      const snippet = opp.description.length > 400
-        ? opp.description.substring(0, 400) + '...'
-        : opp.description;
+      const snippet =
+        opp.description.length > 400 ? opp.description.substring(0, 400) + '...' : opp.description;
       threadDetail += `_"${snippet}"_\n\n`;
     }
 
@@ -153,7 +188,7 @@ export class ScoutAgent extends BaseAgent {
     }
 
     // Type scoring (0-15 points)
-    if (GOOD_TYPES.some(t => type.includes(t))) {
+    if (GOOD_TYPES.some((t) => type.includes(t))) {
       breakdown.type = 15; // Lower barrier entry points
     } else if (type.includes('RFP') || type.includes('RFQ')) {
       breakdown.type = 10;
@@ -180,9 +215,17 @@ export class ScoutAgent extends BaseAgent {
       breakdown.timeline = 10; // No due date, neutral
     }
 
-    const total = Math.max(0, Math.min(100,
-      breakdown.keywords + breakdown.agency + breakdown.setAside + breakdown.type + breakdown.timeline
-    ));
+    const total = Math.max(
+      0,
+      Math.min(
+        100,
+        breakdown.keywords +
+          breakdown.agency +
+          breakdown.setAside +
+          breakdown.type +
+          breakdown.timeline
+      )
+    );
 
     // Generate reasoning
     let reasoning = '';
@@ -221,7 +264,9 @@ export class ScoutAgent extends BaseAgent {
       console.log(`Scout: Found ${samOpportunities.length} opportunities from SAM.gov`);
 
       if (samOpportunities.length === 0) {
-        await this.post("Morning team. Quiet night on SAM.gov - nothing new in our NAICS codes. I'll keep watching.");
+        await this.post(
+          "Morning team. Quiet night on SAM.gov - nothing new in our NAICS codes. I'll keep watching."
+        );
         return;
       }
 
@@ -237,7 +282,8 @@ export class ScoutAgent extends BaseAgent {
           continue;
         }
 
-        const agency = extractAgencyAbbreviation(samOpp.department, samOpp.subTier) || samOpp.department || null;
+        const agency =
+          extractAgencyAbbreviation(samOpp.department, samOpp.subTier) || samOpp.department || null;
         const type = mapOpportunityType(samOpp.type);
 
         // Score locally (fast)
@@ -281,7 +327,9 @@ export class ScoutAgent extends BaseAgent {
       await this.postDailySummary(processedOpps, samOpportunities.length, skipped);
     } catch (error) {
       console.error('Scout: Error in daily scan:', error);
-      await this.post("Morning team. Hit a snag pulling from SAM.gov this morning - I'll retry in a bit.");
+      await this.post(
+        "Morning team. Hit a snag pulling from SAM.gov this morning - I'll retry in a bit."
+      );
     }
   }
 
@@ -292,12 +340,12 @@ export class ScoutAgent extends BaseAgent {
     skipped: number
   ): Promise<void> {
     const newOpps = processedOpps.length;
-    const highFit = processedOpps.filter(p => p.score.total >= 70);
-    const mediumFit = processedOpps.filter(p => p.score.total >= 50 && p.score.total < 70);
-    const lowFit = processedOpps.filter(p => p.score.total < 50);
+    const highFit = processedOpps.filter((p) => p.score.total >= 70);
+    const mediumFit = processedOpps.filter((p) => p.score.total >= 50 && p.score.total < 70);
+    const lowFit = processedOpps.filter((p) => p.score.total < 50);
 
     // Generate the summary message with Scout's personality
-    let message = '';
+    let message: string;
 
     if (newOpps === 0 && skipped > 0) {
       message = `Morning team. ${totalFromSam} in our NAICS codes overnight, but all ${skipped} were ones we've already seen. Nothing new to report.`;
@@ -317,7 +365,8 @@ export class ScoutAgent extends BaseAgent {
       if (highFit.length > 0) {
         message += `*Worth discussing (${highFit.length}):*\n\n`;
 
-        for (const { opp, score } of highFit.slice(0, 5)) { // Max 5 detailed
+        for (const { opp, score } of highFit.slice(0, 5)) {
+          // Max 5 detailed
           message += `*${opp.title}*\n`;
           message += `${opp.type || 'Unknown'} · ${opp.agency || 'Unknown Agency'}`;
           if (opp.due_date) {
@@ -368,7 +417,9 @@ export class ScoutAgent extends BaseAgent {
       await this.post(message);
     }
 
-    console.log(`Scout: Posted summary to Slack (${highFit.length} high, ${mediumFit.length} medium, ${lowFit.length} low)`);
+    console.log(
+      `Scout: Posted summary to Slack (${highFit.length} high, ${mediumFit.length} medium, ${lowFit.length} low)`
+    );
   }
 
   // Respond to a message in a thread
