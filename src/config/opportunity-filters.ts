@@ -119,7 +119,7 @@ export const OPPORTUNITY_FILTERS = {
 
     // Infrastructure & Operations (not our lane)
     'infrastructure support', 'infrastructure management', 'data center',
-    'network operations', 'noc', 'soc', 'security operations',
+    'network operations', 'network operations center', 'security operations center',
     'managed services', 'it operations', 'o&m', 'operations and maintenance',
     'help desk', 'service desk', 'tier 1 support', 'tier 2 support',
     'end user support', 'desktop support', 'call center',
