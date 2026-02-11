@@ -365,9 +365,9 @@ Be honest and direct. Use your dry humor if appropriate.`;
 }
 
 /**
- * Execute an outreach action (Marcus)
+ * Execute a technical review action (Marcus)
  */
-async function executeOutreach(
+async function executeTechnicalReview(
   action: AgentAction,
   apps: Map<string, App>
 ): Promise<ExecutionResult> {
@@ -378,19 +378,23 @@ async function executeOutreach(
 
   const client = getAnthropic();
 
-  const prompt = `You are Marcus, the relationship builder. You committed to:
+  const prompt = `You are Marcus, the engineering lead. You committed to a technical review:
 "${action.description}"
 
 Context: ${action.context || 'No additional context'}
 
-Write a brief update (2-3 sentences) about this outreach item. Be honest - suggest concrete next steps the human team can take. Don't invent contacts or results.
+Provide a brief technical analysis (3-4 sentences). Include:
+- What you looked at from a technical perspective
+- Key observations about architecture, tech stack, or patterns
+- Any red flags or concerns
+- What looks solid
 
-Your update:`;
+Be honest - if you can't actually access a codebase or system, say so. Don't invent technical details.`;
 
   try {
     const response = await client.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 200,
+      max_tokens: 300,
       messages: [{ role: 'user', content: prompt }],
     });
 
@@ -398,12 +402,12 @@ Your update:`;
     const update = text?.type === 'text' ? text.text : '';
 
     if (!update) {
-      return { success: false, message: 'Failed to generate outreach update' };
+      return { success: false, message: 'Failed to generate technical review' };
     }
 
     const result = await marcusApp.client.chat.postMessage({
       channel: CHANNEL_ID,
-      text: `🤝 *Outreach Reminder:* ${action.description}\n\n${update}`,
+      text: `🔧 *Technical Review:* ${action.description}\n\n${update}`,
     });
 
     return { success: true, message: update, threadTs: result.ts };
@@ -441,11 +445,16 @@ export async function executeAction(
         break;
 
       case 'research':
-        result = await executeResearch(action, apps);
+        // Marcus does technical reviews, David does market research
+        if (action.agent_name === 'marcus') {
+          result = await executeTechnicalReview(action, apps);
+        } else {
+          result = await executeResearch(action, apps);
+        }
         break;
 
-      case 'outreach':
-        result = await executeOutreach(action, apps);
+      case 'technical_review':
+        result = await executeTechnicalReview(action, apps);
         break;
 
       case 'follow_up':

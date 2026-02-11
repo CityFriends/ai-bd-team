@@ -93,7 +93,7 @@ Based on this news, decide if you have a brief TECHNICAL insight to add. You mig
 CRITICAL RULES:
 - ONLY comment on TECHNICAL matters - you are NOT doing outreach, networking, or relationship building
 - DO NOT offer to reach out to anyone or suggest contacts
-- DO NOT commit to any future actions - just offer technical perspective
+- You CAN commit to technical analysis (e.g., "I'll review the codebase", "Let me dig into the architecture")
 - If nothing technical to add, respond with exactly: NO_REACTION
 - Keep it to 1-2 sentences max
 
@@ -250,17 +250,21 @@ export async function postTeamReactions(
       postedReactions.push(reaction);
 
       // Check if the agent committed to a future action
-      // Marcus (engineering lead) doesn't commit to actions - he only gives technical perspective
-      if (reaction.agentName.toLowerCase() !== 'marcus') {
-        const action = await parseActionFromResponse(
-          reaction.agentName.toLowerCase(),
-          reaction.reaction!,
-          newsContent.substring(0, 500),
-          channel,
-          threadTs
-        );
+      const action = await parseActionFromResponse(
+        reaction.agentName.toLowerCase(),
+        reaction.reaction!,
+        newsContent.substring(0, 500),
+        channel,
+        threadTs
+      );
 
-        if (action) {
+      // Marcus can only commit to technical analysis actions, not outreach
+      if (action) {
+        if (reaction.agentName.toLowerCase() === 'marcus' &&
+            action.action_type !== 'research' &&
+            action.action_type !== 'follow_up') {
+          console.log(`[TeamReactions] Skipping non-technical action for Marcus: ${action.action_type}`);
+        } else {
           await createAction(action);
           console.log(`[TeamReactions] ${reaction.agentName} committed to action: ${action.action_type}`);
         }
