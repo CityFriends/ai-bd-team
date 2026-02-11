@@ -108,27 +108,9 @@ async function main() {
     }
   });
 
-  // Patricia: Morning standup 11am CST (17:00 UTC)
-  cron.schedule('0 17 * * 1-5', async () => {
-    console.log(`[${new Date().toLocaleString()}] Patricia: Running morning standup...`);
-    try {
-      await runWithLogging('patricia-standup', runPatriciaMorningCheckin);
-      console.log(`[${new Date().toLocaleString()}] Patricia: Morning standup complete`);
-    } catch (err) {
-      console.error(`[${new Date().toLocaleString()}] Patricia: Morning standup failed:`, err);
-    }
-  });
-
-  // Patricia: Nudge check 2pm CST (20:00 UTC)
-  cron.schedule('0 20 * * 1-5', async () => {
-    console.log(`[${new Date().toLocaleString()}] Patricia: Checking pending items...`);
-    try {
-      await runWithLogging('patricia-nudge', runPatriciaNudgeCheck);
-      console.log(`[${new Date().toLocaleString()}] Patricia: Nudge check complete`);
-    } catch (err) {
-      console.error(`[${new Date().toLocaleString()}] Patricia: Nudge check failed:`, err);
-    }
-  });
+  // NOTE: Patricia's standup and nudge are handled by Railway cron jobs
+  // (src/cron/patricia-standup.ts and src/cron/patricia-nudge.ts)
+  // to avoid duplicate posts
 
   // David: News digest MWF 10am CST (16:00 UTC)
   cron.schedule('0 16 * * 1,3,5', async () => {
@@ -161,6 +143,7 @@ async function main() {
   console.log('    - Maya scan: 8:00 AM CST Mon-Fri');
   console.log('    - Maya weekly: 8:30 AM CST Monday');
   console.log('    - David news: 10:00 AM CST Mon/Wed/Fri');
+  console.log('  Railway Cron Jobs:');
   console.log('    - Patricia standup: 11:00 AM CST Mon-Fri');
   console.log('    - Patricia nudge: 2:00 PM CST Mon-Fri');
   console.log('='.repeat(60));
