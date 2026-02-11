@@ -17,6 +17,7 @@ import { App } from '@slack/bolt';
 import { getNewRelevantNews, formatNewsDigest } from '../integrations/gov-news.js';
 import { scanCMSForecast, scoreCMSOpportunity } from '../integrations/cms-forecast.js';
 import { getAnthropic } from '../integrations/claude.js';
+import { postTeamReactions } from '../integrations/team-reactions.js';
 
 const CHANNEL_ID = process.env.SLACK_CHANNEL_ID || '';
 
@@ -43,21 +44,55 @@ async function getDavidApp(): Promise<App | null> {
 }
 
 /**
- * Post message to Slack
+ * Post message to Slack and return thread timestamp
  */
-async function postToSlack(app: App | null, message: string): Promise<void> {
+async function postToSlack(app: App | null, message: string): Promise<string | null> {
   if (app) {
-    await app.client.chat.postMessage({
+    const result = await app.client.chat.postMessage({
       channel: CHANNEL_ID,
       text: message,
       unfurl_links: false,
     });
     console.log('[David] Posted to Slack');
+    return result.ts || null;
   } else {
     console.log('\n--- Would post to Slack ---');
     console.log(message);
     console.log('----------------------------\n');
+    return null;
   }
+}
+
+/**
+ * Initialize apps for team reactions (Maya, Marcus, Patricia)
+ */
+async function getTeamApps(): Promise<Map<string, App>> {
+  const apps = new Map<string, App>();
+
+  const agentConfigs = [
+    { name: 'maya', botToken: process.env.MAYA_BOT_TOKEN, appToken: process.env.MAYA_APP_TOKEN },
+    { name: 'marcus', botToken: process.env.MARCUS_BOT_TOKEN, appToken: process.env.MARCUS_APP_TOKEN },
+    { name: 'patricia', botToken: process.env.PATRICIA_BOT_TOKEN, appToken: process.env.PATRICIA_APP_TOKEN },
+  ];
+
+  for (const config of agentConfigs) {
+    if (config.botToken && config.appToken) {
+      try {
+        const app = new App({
+          token: config.botToken,
+          appToken: config.appToken,
+          socketMode: true,
+        });
+        await app.start();
+        apps.set(config.name, app);
+        console.log(`[TeamReactions] ${config.name} app initialized`);
+      } catch (err) {
+        console.warn(`[TeamReactions] Failed to initialize ${config.name}:`, err);
+      }
+    }
+  }
+
+  return apps;
 }
 
 /**
@@ -162,7 +197,25 @@ export async function runNewsDigest(): Promise<void> {
   }
 
   // Post to Slack
-  await postToSlack(app, finalMessage);
+  const threadTs = await postToSlack(app, finalMessage);
+
+  // Trigger team reactions (other agents respond naturally)
+  if (threadTs && app) {
+    console.log('[David] Checking for team reactions...');
+    try {
+      const teamApps = await getTeamApps();
+      if (teamApps.size > 0) {
+        await postTeamReactions(teamApps, CHANNEL_ID, threadTs, finalMessage);
+
+        // Clean up team apps
+        for (const [name, teamApp] of teamApps) {
+          await teamApp.stop();
+        }
+      }
+    } catch (err) {
+      console.warn('[David] Team reactions failed:', err);
+    }
+  }
 
   if (app) {
     await app.stop();
