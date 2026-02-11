@@ -17,7 +17,7 @@ COPY . .
 RUN npm run build
 
 # Prune dev dependencies for smaller image
-RUN npm prune --production
+RUN npm prune --omit=dev --legacy-peer-deps
 
 # Start the application
 CMD ["npm", "run", "start:prod"]
