@@ -1,8 +1,17 @@
 import 'dotenv/config';
+import { validateEnv, hasSamGovIntegration } from './config/env.js';
 import { startSlackApp, stopSlackApp } from './integrations/slack.js';
-import { startScheduler, stopScheduler, runScoutScanNow, runStandupNow } from './coordination/scheduler.js';
+import {
+  startScheduler,
+  stopScheduler,
+  runScoutScanNow,
+  runStandupNow,
+} from './coordination/scheduler.js';
 import { startQueueProcessor, stopQueueProcessor } from './coordination/queue.js';
 import { setupTriggers } from './coordination/triggers.js';
+
+// Validate environment variables at startup
+const env = validateEnv();
 
 // Graceful shutdown handling
 let isShuttingDown = false;
@@ -30,33 +39,10 @@ async function main(): Promise<void> {
   console.log('Starting BD Team AI Agents...');
   console.log('=========================================');
 
-  // Verify environment variables
-  const requiredEnvVars = [
-    'SLACK_BOT_TOKEN',
-    'SLACK_SIGNING_SECRET',
-    'SLACK_APP_TOKEN',
-    'SLACK_CHANNEL_ID',
-    'SUPABASE_URL',
-    'ANTHROPIC_API_KEY',
-  ];
-
-  const missing = requiredEnvVars.filter(v => !process.env[v]);
-  if (missing.length > 0) {
-    console.error('Missing required environment variables:');
-    for (const v of missing) {
-      console.error(`  - ${v}`);
-    }
-    process.exit(1);
-  }
-
-  // Optional but recommended
-  if (!process.env.SAM_API_KEY) {
+  // Environment already validated at module load time
+  // Log optional integrations status
+  if (!hasSamGovIntegration()) {
     console.warn('Warning: SAM_API_KEY not set. Scout will not be able to fetch opportunities.');
-  }
-
-  if (!process.env.SUPABASE_SERVICE_KEY && !process.env.SUPABASE_ANON_KEY) {
-    console.error('Missing SUPABASE_SERVICE_KEY or SUPABASE_ANON_KEY');
-    process.exit(1);
   }
 
   try {
