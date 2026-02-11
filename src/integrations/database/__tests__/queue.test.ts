@@ -54,7 +54,7 @@ describe('queue module', () => {
 
       const scheduledFor = new Date('2024-01-01T10:00:00Z');
       const result = await queueAgentTask(
-        'maya',
+        'scout',
         'scan',
         scheduledFor,
         { source: 'sam.gov' },
@@ -64,7 +64,7 @@ describe('queue module', () => {
 
       expect(mockFrom).toHaveBeenCalledWith('agent_queue');
       expect(mockInsert).toHaveBeenCalledWith({
-        agent: 'maya',
+        agent: 'scout',
         action: 'scan',
         scheduled_for: scheduledFor.toISOString(),
         payload: { source: 'sam.gov' },
@@ -79,10 +79,10 @@ describe('queue module', () => {
       mockSingle.mockResolvedValue({ data: queueItem, error: null });
 
       const scheduledFor = new Date('2024-01-01T10:00:00Z');
-      const result = await queueAgentTask('david', 'research', scheduledFor);
+      const result = await queueAgentTask('analyst', 'research', scheduledFor);
 
       expect(mockInsert).toHaveBeenCalledWith({
-        agent: 'david',
+        agent: 'analyst',
         action: 'research',
         scheduled_for: scheduledFor.toISOString(),
         payload: {},
@@ -98,7 +98,7 @@ describe('queue module', () => {
         error: { message: 'Insert failed' },
       });
 
-      await expect(queueAgentTask('maya', 'scan', new Date())).rejects.toEqual({
+      await expect(queueAgentTask('scout', 'scan', new Date())).rejects.toEqual({
         message: 'Insert failed',
       });
     });

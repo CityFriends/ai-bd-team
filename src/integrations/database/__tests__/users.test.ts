@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { testData } from './setup.js';
+import type { UserProfile } from '../users.js';
 
 // Mock the client module
 const mockSelect = vi.fn();
@@ -272,14 +273,14 @@ describe('users module', () => {
       const profile = testData.userProfile({
         display_name: 'Jane Doe',
         role: 'BD Manager',
-        communication_style: 'concise',
+        communication_style: 'concise' as const,
         topics_of_interest: ['VA', 'HCD'],
         agencies_focus: ['HHS', 'DoD'],
-        decision_style: 'aggressive',
+        decision_style: 'aggressive' as const,
         typical_concerns: ['timeline', 'budget'],
         agent_notes: 'Prefers morning updates',
         background: 'Former contracting officer',
-      });
+      }) as UserProfile;
 
       const result = formatUserProfileForAgent(profile);
 
@@ -312,7 +313,7 @@ describe('users module', () => {
         typical_concerns: undefined,
         agent_notes: undefined,
         background: undefined,
-      });
+      }) as UserProfile;
 
       const result = formatUserProfileForAgent(profile);
 
@@ -322,24 +323,24 @@ describe('users module', () => {
 
     it('should handle different communication styles', () => {
       const detailed = formatUserProfileForAgent(
-        testData.userProfile({ communication_style: 'detailed' })
+        testData.userProfile({ communication_style: 'detailed' as const }) as UserProfile
       );
       expect(detailed).toContain('Prefers thorough explanations with context');
 
       const balanced = formatUserProfileForAgent(
-        testData.userProfile({ communication_style: 'balanced' })
+        testData.userProfile({ communication_style: 'balanced' as const }) as UserProfile
       );
       expect(balanced).toContain('Standard communication style');
     });
 
     it('should handle different decision styles', () => {
       const cautious = formatUserProfileForAgent(
-        testData.userProfile({ decision_style: 'cautious' })
+        testData.userProfile({ decision_style: 'cautious' as const }) as UserProfile
       );
       expect(cautious).toContain('Tends to want more research before deciding');
 
       const balanced = formatUserProfileForAgent(
-        testData.userProfile({ decision_style: 'balanced' })
+        testData.userProfile({ decision_style: 'balanced' as const }) as UserProfile
       );
       expect(balanced).toContain('Balanced approach to decisions');
     });

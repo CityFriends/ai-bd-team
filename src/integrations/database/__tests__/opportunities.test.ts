@@ -196,7 +196,7 @@ describe('opportunities module', () => {
     it('should return empty array when no matches', async () => {
       mockOrder.mockReturnValue({ data: [], error: null });
 
-      const result = await getOpportunitiesByStatus('archived');
+      const result = await getOpportunitiesByStatus('passed');
 
       expect(result).toEqual([]);
     });
@@ -255,19 +255,19 @@ describe('opportunities module', () => {
       expect(result).toEqual(updatedOpp);
     });
 
-    it('should set HOLD decision and update status to researching', async () => {
-      const updatedOpp = testData.opportunity({ status: 'researching', decision: 'hold' });
+    it('should set PENDING decision and update status to researching', async () => {
+      const updatedOpp = testData.opportunity({ status: 'researching', decision: 'pending' });
       mockSingle.mockResolvedValue({ data: updatedOpp, error: null });
 
       const mockSelectAfterUpdate = vi.fn().mockReturnValue({ single: mockSingle });
       const mockEqAfterUpdate = vi.fn().mockReturnValue({ select: mockSelectAfterUpdate });
       mockUpdate.mockReturnValue({ eq: mockEqAfterUpdate });
 
-      const result = await setOpportunityDecision('opp-123', 'hold');
+      const result = await setOpportunityDecision('opp-123', 'pending');
 
       expect(mockUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
-          decision: 'hold',
+          decision: 'pending',
           status: 'researching',
         })
       );

@@ -82,13 +82,14 @@ export function createTableMockSupabaseClient(
 }
 
 // Sample test data factories
+// Use proper union types to match the type definitions
 export const testData = {
-  opportunity: (overrides = {}) => ({
+  opportunity: (overrides: Record<string, unknown> = {}) => ({
     id: 'opp-123',
     sam_id: 'SAM-456',
     title: 'Test Opportunity',
     agency: 'Test Agency',
-    status: 'new',
+    status: 'new' as const,
     score: 75,
     due_date: '2024-12-31',
     created_at: '2024-01-01T00:00:00Z',
@@ -96,51 +97,51 @@ export const testData = {
     ...overrides,
   }),
 
-  queueItem: (overrides = {}) => ({
+  queueItem: (overrides: Record<string, unknown> = {}) => ({
     id: 'queue-123',
-    agent: 'maya',
+    agent: 'scout' as const, // AgentName type
     action: 'scan',
-    status: 'pending',
+    status: 'pending' as const,
     scheduled_for: '2024-01-01T10:00:00Z',
     payload: {},
     created_at: '2024-01-01T00:00:00Z',
     ...overrides,
   }),
 
-  workflow: (overrides = {}) => ({
+  workflow: (overrides: Record<string, unknown> = {}) => ({
     id: 'workflow-123',
     notice_id: 'notice-456',
     title: 'Test Workflow',
-    stage: 'found',
-    agent_responsible: 'maya',
+    stage: 'found' as const,
+    agent_responsible: 'scout',
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
     ...overrides,
   }),
 
-  userProfile: (overrides = {}) => ({
+  userProfile: (overrides: Record<string, unknown> = {}) => ({
     id: 'user-123',
     slack_user_id: 'U12345',
     user_name: 'testuser',
     display_name: 'Test User',
     role: 'BD Manager',
-    communication_style: 'balanced',
+    communication_style: 'balanced' as const,
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
     ...overrides,
   }),
 
-  thread: (overrides = {}) => ({
+  thread: (overrides: Record<string, unknown> = {}) => ({
     id: 'thread-123',
     slack_thread_ts: '1234567890.123456',
-    channel_id: 'C12345',
-    topic: 'Test Thread',
+    slack_channel: 'C12345',
+    topic: 'opportunity_review' as const, // ThreadTopic type
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
     ...overrides,
   }),
 
-  threadSummary: (overrides = {}) => ({
+  threadSummary: (overrides: Record<string, unknown> = {}) => ({
     id: 'summary-123',
     thread_ts: '1234567890.123456',
     channel_id: 'C12345',

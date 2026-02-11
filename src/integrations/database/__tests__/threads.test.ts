@@ -58,15 +58,15 @@ describe('threads module', () => {
 
       const result = await createThread({
         slack_thread_ts: '1234567890.123456',
-        channel_id: 'C12345',
-        topic: 'Test Thread',
+        slack_channel: 'C12345',
+        topic: 'opportunity_review',
       });
 
       expect(mockFrom).toHaveBeenCalledWith('conversation_threads');
       expect(mockInsert).toHaveBeenCalledWith({
         slack_thread_ts: '1234567890.123456',
-        channel_id: 'C12345',
-        topic: 'Test Thread',
+        slack_channel: 'C12345',
+        topic: 'opportunity_review',
       });
       expect(result).toEqual(thread);
     });
@@ -121,14 +121,14 @@ describe('threads module', () => {
 
   describe('updateThread', () => {
     it('should update thread with updated_at', async () => {
-      const updatedThread = testData.thread({ topic: 'Updated Topic' });
+      const updatedThread = testData.thread({ topic: 'partner_search' });
       mockSingle.mockResolvedValue({ data: updatedThread, error: null });
 
-      const result = await updateThread('thread-123', { topic: 'Updated Topic' });
+      const result = await updateThread('thread-123', { topic: 'partner_search' });
 
       expect(mockFrom).toHaveBeenCalledWith('conversation_threads');
       expect(mockUpdate).toHaveBeenCalledWith({
-        topic: 'Updated Topic',
+        topic: 'partner_search',
         updated_at: expect.any(String),
       });
       expect(mockEq).toHaveBeenCalledWith('id', 'thread-123');
@@ -141,7 +141,7 @@ describe('threads module', () => {
         error: { message: 'Update failed' },
       });
 
-      await expect(updateThread('thread-123', { topic: 'Test' })).rejects.toEqual({
+      await expect(updateThread('thread-123', { topic: 'standup' })).rejects.toEqual({
         message: 'Update failed',
       });
     });
