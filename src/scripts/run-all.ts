@@ -49,6 +49,11 @@ async function runPatriciaNudgeCheck() {
   await runNudgeCheck();
 }
 
+async function runDavidNewsDigest() {
+  const { runNewsDigest } = await import('./david-news-digest.js');
+  await runNewsDigest();
+}
+
 async function main() {
   console.log('='.repeat(60));
   console.log('  AI BD Team - Starting All Services');
@@ -120,6 +125,17 @@ async function main() {
     }
   });
 
+  // David: News digest MWF 10am CST (16:00 UTC)
+  cron.schedule('0 16 * * 1,3,5', async () => {
+    console.log(`[${new Date().toLocaleString()}] David: Running news digest...`);
+    try {
+      await runWithLogging('david-news-digest', runDavidNewsDigest);
+      console.log(`[${new Date().toLocaleString()}] David: News digest complete`);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] David: News digest failed:`, err);
+    }
+  });
+
   console.log('  ✓ Scheduled jobs configured\n');
 
   console.log('='.repeat(60));
@@ -128,6 +144,7 @@ async function main() {
   console.log('    - Live agents: Always listening');
   console.log('    - Maya scan: 8:00 AM CST Mon-Fri');
   console.log('    - Maya weekly: 8:30 AM CST Monday');
+  console.log('    - David news: 10:00 AM CST Mon/Wed/Fri');
   console.log('    - Patricia standup: 11:00 AM CST Mon-Fri');
   console.log('    - Patricia nudge: 2:00 PM CST Mon-Fri');
   console.log('='.repeat(60));

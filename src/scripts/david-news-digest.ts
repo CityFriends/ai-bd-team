@@ -4,7 +4,7 @@
  * Scans government news sources and delivers a morning briefing.
  * Also includes CMS forecast updates when available.
  *
- * Schedule: Daily at 10:00 AM CST (16:00 UTC)
+ * Schedule: Monday, Wednesday, Friday at 10:00 AM CST (16:00 UTC)
  *
  * Usage:
  *   npm run david:news           # Run once now
@@ -183,15 +183,16 @@ async function main(): Promise<void> {
     console.log('  David News Digest - Scheduled Mode');
     console.log('='.repeat(60));
     console.log('\nSchedule:');
-    console.log('  - Daily at 10:00 AM CST (16:00 UTC)');
+    console.log('  - Monday, Wednesday, Friday at 10:00 AM CST (16:00 UTC)');
     console.log('  - Press Ctrl+C to stop\n');
 
     // Run immediately on start
     await runNewsDigest();
 
-    // Daily at 10am CST (16:00 UTC)
+    // MWF at 10am CST (16:00 UTC)
     // CST is UTC-6, so 10am CST = 16:00 UTC
-    cron.schedule('0 16 * * *', async () => {
+    // 1 = Monday, 3 = Wednesday, 5 = Friday
+    cron.schedule('0 16 * * 1,3,5', async () => {
       console.log('\n[Cron] Running scheduled news digest...');
       await runNewsDigest();
     });
