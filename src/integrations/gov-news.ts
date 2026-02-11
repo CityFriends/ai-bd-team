@@ -457,13 +457,44 @@ export function formatNewsDigest(news: GovNewsItem[]): string {
     return "Quiet news day - nothing significant to report from my usual sources.";
   }
 
+  // Deduplicate by URL first
+  const seenUrls = new Set<string>();
+  const uniqueNews = news.filter(item => {
+    if (!item.url || seenUrls.has(item.url)) return false;
+    seenUrls.add(item.url);
+    return true;
+  });
+
   let digest = `📰 *Government News Digest*\n\n`;
 
-  // Group by category
-  const procurement = news.filter(n => n.reasons?.some(r => r.includes('BD relevance')));
-  const tech = news.filter(n => !procurement.includes(n) && n.reasons?.some(r => r.includes('Tech')));
-  const policy = news.filter(n => !procurement.includes(n) && !tech.includes(n) && n.reasons?.some(r => r.includes('Policy')));
-  const other = news.filter(n => !procurement.includes(n) && !tech.includes(n) && !policy.includes(n));
+  // Group by category (mutually exclusive - each item in only one category)
+  const usedUrls = new Set<string>();
+
+  const procurement = uniqueNews.filter(n => {
+    if (n.reasons?.some(r => r.includes('BD relevance'))) {
+      usedUrls.add(n.url);
+      return true;
+    }
+    return false;
+  });
+
+  const tech = uniqueNews.filter(n => {
+    if (!usedUrls.has(n.url) && n.reasons?.some(r => r.includes('Tech'))) {
+      usedUrls.add(n.url);
+      return true;
+    }
+    return false;
+  });
+
+  const policy = uniqueNews.filter(n => {
+    if (!usedUrls.has(n.url) && n.reasons?.some(r => r.includes('Policy'))) {
+      usedUrls.add(n.url);
+      return true;
+    }
+    return false;
+  });
+
+  const other = uniqueNews.filter(n => !usedUrls.has(n.url));
 
   if (procurement.length > 0) {
     digest += `*Procurement & Contracts*\n`;
