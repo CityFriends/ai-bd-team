@@ -29,6 +29,7 @@ import {
 } from '../config/opportunity-filters.js';
 import { createOpportunityWorkflow } from '../integrations/supabase.js';
 import { queueNotification, flushNotifications, getPendingCount } from '../coordination/notification-batcher.js';
+import { scanEBuyEmails, scoreEBuyOpportunity, type EBuyOpportunity } from '../integrations/gsa-ebuy.js';
 import type { SAMOpportunity } from '../types/index.js';
 
 // Load Notion hub IDs if available
@@ -668,11 +669,79 @@ export async function runDailyScan() {
     }
   }
 
+  // ============================================
+  // GSA eBuy Email Scanning
+  // ============================================
+  await scanAndPostEBuyOpportunities(app);
+
   if (app) {
     await app.stop();
   }
 
   console.log('\nDaily scan complete');
+}
+
+/**
+ * Scan GSA eBuy alert emails and post relevant opportunities
+ */
+async function scanAndPostEBuyOpportunities(app: App | null): Promise<void> {
+  // Check if Gmail credentials are configured
+  if (!process.env.GMAIL_CLIENT_ID || !process.env.GMAIL_REFRESH_TOKEN) {
+    console.log('[eBuy] Gmail credentials not configured, skipping eBuy scan');
+    return;
+  }
+
+  console.log('\n' + '-'.repeat(40));
+  console.log('  Scanning GSA eBuy emails...');
+  console.log('-'.repeat(40));
+
+  try {
+    const ebuyOpportunities = await scanEBuyEmails();
+
+    if (ebuyOpportunities.length === 0) {
+      console.log('[eBuy] No new relevant eBuy opportunities');
+      return;
+    }
+
+    console.log(`[eBuy] Found ${ebuyOpportunities.length} new opportunities to post`);
+
+    for (const opp of ebuyOpportunities) {
+      const { score, reasons } = scoreEBuyOpportunity(opp);
+
+      // Build message for eBuy opportunity
+      const statusEmoji = opp.status === 'NEW REQUEST' ? '🆕' : opp.status === 'AMENDED' ? '📝' : '📋';
+      const message = `${statusEmoji} *GSA eBuy Opportunity*
+
+*${opp.title}*
+
+• Request ID: ${opp.requestId}
+• Status: ${opp.status}
+• Due: ${opp.dueDate}
+• Source: GSA eBuy (Schedule contract)
+
+${reasons.length > 0 ? `_Why flagged: ${reasons.join(', ')}_` : ''}
+
+Login to eBuy to view details and respond.`;
+
+      await postToSlack(app, message);
+
+      // Record that we posted it
+      try {
+        const supabase = getSupabase();
+        await supabase
+          .from('seen_ebuy_opportunities')
+          .update({ posted_at: new Date().toISOString(), score })
+          .eq('request_id', opp.requestId);
+      } catch {
+        // Ignore
+      }
+
+      await new Promise(r => setTimeout(r, 1500)); // Delay between posts
+    }
+
+  } catch (err) {
+    console.warn('[eBuy] Error scanning eBuy emails:', err);
+  }
 }
 
 export async function runWeeklySummary() {
