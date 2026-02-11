@@ -200,19 +200,22 @@ export async function getTeamReactions(newsContent: string): Promise<TeamReactio
 
 /**
  * Post team reactions as thread replies
+ * Returns the reactions that were posted (for David's follow-up)
  */
 export async function postTeamReactions(
   apps: Map<string, App>,
   channel: string,
   threadTs: string,
   newsContent: string
-): Promise<void> {
+): Promise<TeamReaction[]> {
   const reactions = await getTeamReactions(newsContent);
 
   if (reactions.length === 0) {
     console.log('[TeamReactions] No team reactions to post');
-    return;
+    return [];
   }
+
+  const postedReactions: TeamReaction[] = [];
 
   // Small delay before first reaction (feels more natural)
   await new Promise(r => setTimeout(r, 3000 + Math.random() * 5000));
@@ -233,11 +236,67 @@ export async function postTeamReactions(
         text: reaction.reaction!,
       });
       console.log(`[TeamReactions] ${reaction.agentName} replied in thread`);
+      postedReactions.push(reaction);
 
       // Delay between reactions (feels more natural)
       await new Promise(r => setTimeout(r, 2000 + Math.random() * 3000));
     } catch (err) {
       console.error(`[TeamReactions] Failed to post ${reaction.agentName}'s reaction:`, err);
     }
+  }
+
+  return postedReactions;
+}
+
+/**
+ * Generate David's follow-up response to team comments
+ * He wraps up the conversation naturally
+ */
+export async function getDavidFollowUp(
+  newsContent: string,
+  teamReactions: TeamReaction[]
+): Promise<string | null> {
+  if (teamReactions.length === 0) return null;
+
+  const client = getAnthropic();
+
+  const reactionsText = teamReactions
+    .map(r => `${r.agentName}: "${r.reaction}"`)
+    .join('\n');
+
+  const prompt = `You are David, the senior research analyst for Friends From The City's BD team.
+
+Your background: 42 years old, Korean American, grew up in Jersey, Rutgers grad, lives in Fairfax now. 15+ years in federal contracting research. Direct, dry humor, dad energy.
+
+You just posted a news digest and your teammates responded:
+
+${reactionsText}
+
+Write a brief follow-up (1-2 sentences max) that:
+- Acknowledges their input naturally
+- Maybe adds one quick thought or confirms next steps
+- Wraps up the conversation (you're ending it, not continuing)
+
+Your voice: Direct, a little dry humor if appropriate. Don't be overly enthusiastic.
+
+Examples of good follow-ups:
+- "Good catch, Maya. Keep me posted on those RFPs. Marcus, worth a coffee chat with your VA contact if it's not too much of a reach."
+- "Appreciate the flags, team. I'll dig deeper on the CMS angle for Wednesday's update."
+- "Noted. Maya, let's sync if any of those hit the street this week."
+
+Your brief follow-up:`;
+
+  try {
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 100,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const text = response.content.find(b => b.type === 'text');
+    return text?.type === 'text' ? text.text.trim() : null;
+  } catch (err) {
+    console.error('[TeamReactions] David follow-up error:', err);
+    return null;
   }
 }

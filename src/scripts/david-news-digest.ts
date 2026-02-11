@@ -17,7 +17,7 @@ import { App } from '@slack/bolt';
 import { getNewRelevantNews, formatNewsDigest } from '../integrations/gov-news.js';
 import { scanCMSForecast, scoreCMSOpportunity } from '../integrations/cms-forecast.js';
 import { getAnthropic } from '../integrations/claude.js';
-import { postTeamReactions } from '../integrations/team-reactions.js';
+import { postTeamReactions, getDavidFollowUp } from '../integrations/team-reactions.js';
 
 const CHANNEL_ID = process.env.SLACK_CHANNEL_ID || '';
 
@@ -205,7 +205,23 @@ export async function runNewsDigest(): Promise<void> {
     try {
       const teamApps = await getTeamApps();
       if (teamApps.size > 0) {
-        await postTeamReactions(teamApps, CHANNEL_ID, threadTs, finalMessage);
+        const postedReactions = await postTeamReactions(teamApps, CHANNEL_ID, threadTs, finalMessage);
+
+        // David responds to wrap up the conversation
+        if (postedReactions.length > 0) {
+          console.log('[David] Generating follow-up response...');
+          await new Promise(r => setTimeout(r, 3000 + Math.random() * 4000));
+
+          const followUp = await getDavidFollowUp(finalMessage, postedReactions);
+          if (followUp) {
+            await app.client.chat.postMessage({
+              channel: CHANNEL_ID,
+              thread_ts: threadTs,
+              text: followUp,
+            });
+            console.log('[David] Posted follow-up to thread');
+          }
+        }
 
         // Clean up team apps
         for (const [name, teamApp] of teamApps) {
