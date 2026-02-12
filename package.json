@@ -130,6 +130,9 @@
     "*.ts": [
       "prettier --write",
       "eslint --fix"
+    ],
+    "*.{ts,tsx}": [
+      "bash -c 'npm run typecheck'"
     ]
   }
 }
