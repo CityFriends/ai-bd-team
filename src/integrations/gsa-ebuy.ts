@@ -102,13 +102,20 @@ export async function getGmailClient() {
 }
 
 /**
- * Fetch unread eBuy notification emails from Gmail
+ * Fetch eBuy notification emails from Gmail
+ * @param maxResults - Maximum number of emails to fetch
+ * @param unreadOnly - If true, only fetch unread emails (default: false to catch all)
  */
-export async function fetchEBuyEmails(maxResults = 10): Promise<{ id: string; body: string }[]> {
+export async function fetchEBuyEmails(
+  maxResults = 10,
+  unreadOnly = false
+): Promise<{ id: string; body: string }[]> {
   const gmail = await getGmailClient();
 
-  // Search for eBuy emails - from GSA eBuy, unread
-  const query = 'from:ebuy_admin@gsa.gov subject:eBuy is:unread';
+  // Search for eBuy emails - from GSA eBuy
+  const query = unreadOnly
+    ? 'from:ebuy_admin@gsa.gov subject:eBuy is:unread'
+    : 'from:ebuy_admin@gsa.gov subject:eBuy';
 
   const response = await gmail.users.messages.list({
     userId: 'me',
@@ -295,11 +302,13 @@ export function scoreEBuyOpportunity(opp: EBuyOpportunity): {
 
 /**
  * Main function: Scan eBuy emails and return new opportunities
+ * Scans both read and unread emails, uses database to deduplicate
  */
 export async function scanEBuyEmails(): Promise<EBuyOpportunity[]> {
-  console.log('[eBuy] Starting email scan...');
+  console.log('[eBuy] Starting email scan (read + unread)...');
 
-  const emails = await fetchEBuyEmails();
+  // Fetch both read and unread emails - database handles deduplication
+  const emails = await fetchEBuyEmails(20, false);
   const allOpportunities: EBuyOpportunity[] = [];
   const processedEmailIds: string[] = [];
 
