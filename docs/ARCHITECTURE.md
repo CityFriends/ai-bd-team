@@ -1,550 +1,693 @@
 # AI BD Team - Architecture
 
+*Last Updated: February 2026*
+
 ## System Overview
 
-The AI BD Team is a multi-agent system that simulates a government contracting business development team. Seven AI agents with distinct personalities collaborate in a Slack workspace to find, research, and evaluate federal opportunities.
+The AI BD Team is an event-driven multi-agent system that simulates a government contracting business development team. Seven AI agents with distinct personalities collaborate in a Slack workspace to find, research, and evaluate federal opportunities using real government data APIs.
+
+---
 
 ## High-Level Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SLACK WORKSPACE                                 │
-│  ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐   │
-│  │ Maya  │ │ David │ │ Rosa  │ │ James │ │Patric.│ │ Jodie │ │Marcus │   │
-│  │(Scout)│ │(Anlst)│ │(Cnnct)│ │(Strat)│ │ (PM)  │ │(Write)│ │(Engin)│   │
-│  └───┬───┘ └───┬───┘ └───┬───┘ └───┬───┘ └───┬───┘ └───┬───┘ └───┬───┘   │
-│      │         │         │         │         │         │         │         │
-│      └─────────┴─────────┴─────────┴─────────┴─────────┴─────────┘         │
-│                               │                                              │
-│                    Socket Mode Connection                                    │
-└───────────────────────────────┼─────────────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           NODE.JS APPLICATION                                │
-│                                                                              │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │                         Live Agent System                             │  │
-│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐     │  │
-│  │  │ Message    │  │ Research   │  │ Response   │  │ Memory     │     │  │
-│  │  │ Handler    │──│ Context    │──│ Generator  │──│ Manager    │     │  │
-│  │  └────────────┘  └────────────┘  └────────────┘  └────────────┘     │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                                    │                                         │
-│                                    ▼                                         │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │                        Integration Layer                              │  │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐       │  │
-│  │  │ SAM.gov │ │  FPDS   │ │USASpend │ │ SerpAPI │ │   FAR   │       │  │
-│  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘       │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              EXTERNAL SERVICES                               │
-│                                                                              │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐       │
-│  │  Supabase   │  │  Anthropic  │  │   SAM.gov   │  │   SerpAPI   │       │
-│  │  (Postgres) │  │   Claude    │  │    APIs     │  │   (News)    │       │
-│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘       │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                    SLACK WORKSPACE                                       │
+│                                                                                          │
+│   ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ │
+│   │  Maya   │ │  David  │ │  Rosa   │ │  James  │ │Patricia │ │  Jodie  │ │ Marcus  │ │
+│   │ (Scout) │ │(Analyst)│ │(Connect)│ │(Stratgy)│ │  (PM)   │ │(Writer) │ │ (Engin) │ │
+│   └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ │
+│        │           │           │           │           │           │           │        │
+│        └───────────┴───────────┴───────────┴───────────┴───────────┴───────────┘        │
+│                                         │                                                │
+│                              Socket Mode WebSocket                                       │
+└─────────────────────────────────────────┼───────────────────────────────────────────────┘
+                                          │
+                                          ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                              NODE.JS APPLICATION (Railway)                               │
+│                                                                                          │
+│  ┌────────────────────────────────────────────────────────────────────────────────────┐ │
+│  │                              LIVE AGENT SYSTEM                                      │ │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │ │
+│  │  │   Message    │  │   Research   │  │   Claude     │  │   Memory     │           │ │
+│  │  │   Handler    │──│   Context    │──│   Response   │──│   Manager    │           │ │
+│  │  │              │  │   Builder    │  │   Generator  │  │              │           │ │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘           │ │
+│  └────────────────────────────────────────────────────────────────────────────────────┘ │
+│                                          │                                               │
+│  ┌────────────────────────────────────────────────────────────────────────────────────┐ │
+│  │                              EVENT SYSTEM                                           │ │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │ │
+│  │  │   Event      │  │    Event     │  │   Agent      │  │   Chain      │           │ │
+│  │  │   Bus        │──│   Processor  │──│   Handlers   │──│   Tracker    │           │ │
+│  │  │              │  │              │  │              │  │              │           │ │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘           │ │
+│  └────────────────────────────────────────────────────────────────────────────────────┘ │
+│                                          │                                               │
+│  ┌────────────────────────────────────────────────────────────────────────────────────┐ │
+│  │                           INTEGRATION LAYER                                         │ │
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐         │ │
+│  │  │ SAM.gov │ │  FPDS/  │ │ SerpAPI │ │   FAR   │ │ GitHub  │ │ Notion  │         │ │
+│  │  │         │ │USASpend │ │ (News)  │ │(pgvec.) │ │(@octo)  │ │  Hub    │         │ │
+│  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘         │ │
+│  └────────────────────────────────────────────────────────────────────────────────────┘ │
+│                                          │                                               │
+│  ┌────────────────────────────────────────────────────────────────────────────────────┐ │
+│  │                           SCHEDULED JOBS (node-cron)                                │ │
+│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐                     │ │
+│  │  │ Maya Scanner    │  │ Patricia Check  │  │ David News      │                     │ │
+│  │  │ (8am Mon-Fri)   │  │ (11am/2pm)      │  │ (8am MWF)       │                     │ │
+│  │  └─────────────────┘  └─────────────────┘  └─────────────────┘                     │ │
+│  └────────────────────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────┼───────────────────────────────────────────────┘
+                                          │
+                                          ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                  EXTERNAL SERVICES                                       │
+│                                                                                          │
+│  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐            │
+│  │   Supabase    │  │   Anthropic   │  │   SAM.gov     │  │    SerpAPI    │            │
+│  │  (PostgreSQL  │  │    Claude     │  │     APIs      │  │    (News)     │            │
+│  │   + pgvector) │  │               │  │               │  │               │            │
+│  └───────────────┘  └───────────────┘  └───────────────┘  └───────────────┘            │
+│                                                                                          │
+│  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐            │
+│  │  USASpending  │  │    GitHub     │  │    Notion     │  │     Slack     │            │
+│  │               │  │  (@octokit)   │  │      Hub      │  │   (Socket)    │            │
+│  └───────────────┘  └───────────────┘  └───────────────┘  └───────────────┘            │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Data Flow
+---
 
-### 1. Message Reception
+## Data Flow: Opportunity Discovery to Pursuit
+
+### Complete Opportunity Workflow
+
 ```
-User @mentions agent in Slack
-        │
-        ▼
-Slack sends event via Socket Mode
-        │
-        ▼
-Agent's event handler receives message
-        │
-        ▼
-Deduplication check (processedMessages Set)
-        │
-        ▼
-Other agent mention check (prevents pile-ons)
-        │
-        ▼
-Message claiming (Supabase message_claims table)
+                              ┌─────────────────────────────────────────┐
+                              │              SAM.gov API                 │
+                              │     (Federal Opportunities)              │
+                              └──────────────────┬──────────────────────┘
+                                                 │
+                                    8am Daily Poll (NAICS 541511/12/19)
+                                                 │
+                                                 ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                     MAYA (SCOUT)                                         │
+│                                                                                          │
+│   ┌────────────────────────────────────────────────────────────────────────────────┐   │
+│   │  1. Fetch new opportunities from SAM.gov                                        │   │
+│   │  2. Score each opportunity (0-100):                                             │   │
+│   │     - Keywords (0-30): HCD, UX, modernization, etc.                             │   │
+│   │     - Agency (0-20): VA, HHS, DOL priority                                      │   │
+│   │     - Set-aside (0-15): 8(a), WOSB preference                                   │   │
+│   │     - Type (0-15): RFI/Sources Sought bonus                                     │   │
+│   │     - Timeline (0-20): 14-45 days sweet spot                                    │   │
+│   │  3. Validate: noticeId, title, postedDate must exist                            │   │
+│   │  4. Post to Slack with personality-driven summary                               │   │
+│   └────────────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                          │
+│   Publishes: NEW_OPPORTUNITY event                                                       │
+└──────────────────────────────────────────┬──────────────────────────────────────────────┘
+                                           │
+                                           │ Event triggers David
+                                           ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                    DAVID (ANALYST)                                       │
+│                                                                                          │
+│   ┌────────────────────────────────────────────────────────────────────────────────┐   │
+│   │  Parallel Research:                                                              │   │
+│   │  ├── USASpending: Agency budget trends, spending categories                     │   │
+│   │  ├── Contract Data: Incumbent contracts, vendor history                         │   │
+│   │  ├── SerpAPI: Agency news, leadership changes (30 days)                         │   │
+│   │  ├── Competitor Intel: Protests, performance issues                             │   │
+│   │  └── FAR: Relevant acquisition regulations                                      │   │
+│   │                                                                                  │   │
+│   │  Output: Red flags, green flags, incumbent analysis, risk assessment            │   │
+│   └────────────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                          │
+│   Publishes: RESEARCH_COMPLETE event                                                     │
+└──────────────────────────────────────────┬──────────────────────────────────────────────┘
+                                           │
+                              ┌────────────┴────────────┐
+                              │                         │
+                              ▼                         ▼
+┌──────────────────────────────────────┐  ┌──────────────────────────────────────┐
+│         MARCUS (ENGINEERING)          │  │           ROSA (CONNECTOR)            │
+│                                        │  │                                        │
+│   ┌────────────────────────────────┐  │  │   ┌────────────────────────────────┐  │
+│   │  If technical opportunity:      │  │  │   │  Partner search:                │  │
+│   │  ├── Analyze linked repos       │  │  │   │  ├── Query partner database     │  │
+│   │  ├── Assess tech stack          │  │  │   │  ├── Match NAICS/capabilities   │  │
+│   │  ├── FedRAMP/ATO requirements   │  │  │   │  ├── Check certifications       │  │
+│   │  ├── Section 508 compliance     │  │  │   │  ├── Evaluate relationship      │  │
+│   │  └── Architecture concerns      │  │  │   │  └── Prime vs. sub analysis     │  │
+│   └────────────────────────────────┘  │  │   └────────────────────────────────┘  │
+│                                        │  │                                        │
+│   Publishes: TECH_ASSESSMENT_COMPLETE  │  │   Publishes: RELATIONSHIP_CHECK_DONE  │
+└──────────────────────────────────────┘  └──────────────────────────────────────┘
+                              │                         │
+                              └────────────┬────────────┘
+                                           │
+                                           ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   JAMES (STRATEGIST)                                     │
+│                                                                                          │
+│   ┌────────────────────────────────────────────────────────────────────────────────┐   │
+│   │  Waits for: RESEARCH_COMPLETE + TECH_ASSESSMENT + RELATIONSHIP_CHECK            │   │
+│   │                                                                                  │   │
+│   │  Synthesis:                                                                      │   │
+│   │  ├── Consult team_playbook for relevant rules                                   │   │
+│   │  ├── Calculate win probability (HIGH/MEDIUM/LOW)                                │   │
+│   │  ├── Determine approach (PRIME/SUB/NO-BID)                                      │   │
+│   │  ├── Identify discriminators                                                     │   │
+│   │  ├── List key risks                                                              │   │
+│   │  └── Estimate investment (hours)                                                │   │
+│   │                                                                                  │   │
+│   │  Output: GO / NO-GO / HOLD recommendation with reasoning                        │   │
+│   │  Action: @Lapedra for final decision                                            │   │
+│   └────────────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                          │
+│   Publishes: GO_NO_GO_DECISION event                                                     │
+└──────────────────────────────────────────┬──────────────────────────────────────────────┘
+                                           │
+                                           │ Human decision required
+                                           ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   HUMAN DECISION                                         │
+│                                                                                          │
+│   @Lapedra reviews in Slack or Notion Hub:                                              │
+│   ├── All agent analysis in single thread                                               │
+│   ├── Win probability and risks                                                         │
+│   ├── Teaming recommendation                                                            │
+│   └── Makes GO / NO-GO / HOLD decision                                                  │
+│                                                                                          │
+│   Decision recorded in: decision_patterns table                                          │
+└──────────────────────────────────────────┬──────────────────────────────────────────────┘
+                                           │
+                                           │ If GO decision
+                                           ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   PATRICIA (PM)                                          │
+│                                                                                          │
+│   ┌────────────────────────────────────────────────────────────────────────────────┐   │
+│   │  Pipeline Management:                                                            │   │
+│   │  ├── Update opportunity status to "pursuing"                                    │   │
+│   │  ├── Track key deadlines (Q&A, proposal, orals)                                 │   │
+│   │  ├── Schedule follow-up reminders                                               │   │
+│   │  ├── Monitor progress in morning standups                                       │   │
+│   │  └── Nudge for pending items (2pm daily)                                        │   │
+│   └────────────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                          │
+│   Publishes: PURSUIT_SCHEDULED event                                                     │
+└──────────────────────────────────────────┬──────────────────────────────────────────────┘
+                                           │
+                                           │ Sync to human tools
+                                           ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   NOTION HUB                                             │
+│                                                                                          │
+│   ┌────────────────────────────────────────────────────────────────────────────────┐   │
+│   │  8 Synchronized Databases:                                                       │   │
+│   │  ├── Opportunities: Full pipeline with all agent analysis                       │   │
+│   │  ├── Partners: Teaming partner database                                          │   │
+│   │  ├── Activity Log: All agent actions                                             │   │
+│   │  ├── Decisions: Go/No-Go with outcomes                                           │   │
+│   │  └── ... (4 more databases)                                                      │   │
+│   │                                                                                  │   │
+│   │  Bidirectional sync: Human edits flow back to agents                            │   │
+│   └────────────────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 2. Research Phase
+---
+
+## Event-Driven Architecture
+
+### Event System Components
+
 ```
-Message parsed and cleaned
-        │
-        ▼
-Topic detection (detectTopics)
-  - Agency mentioned?
-  - Company mentioned?
-  - Competitor mentioned?
-  - FAR question?
-  - FPDS/spending query?
-        │
-        ▼
-Parallel API calls based on topics
-  - News search (SerpAPI)
-  - FPDS contract data
-  - USASpending budgets
-  - SAM.gov entity verification
-  - FAR section lookup
-  - Competitor intel search
-        │
-        ▼
-Research context assembled
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                    EVENT BUS                                             │
+│                                                                                          │
+│   ┌────────────────────┐     ┌────────────────────┐     ┌────────────────────┐        │
+│   │   publishEvent()   │────▶│  agent_events      │────▶│  claimEvents()     │        │
+│   │                    │     │  (Supabase table)  │     │                    │        │
+│   └────────────────────┘     └────────────────────┘     └────────────────────┘        │
+│                                       │                          │                      │
+│                                       │                          │                      │
+│   ┌────────────────────┐              │              ┌────────────────────┐            │
+│   │ agent_subscriptions│◀─────────────┘              │  EventProcessor    │            │
+│   │ (routing rules)    │                             │  (polling loop)    │            │
+│   └────────────────────┘                             └─────────┬──────────┘            │
+│                                                                │                        │
+│                                                                ▼                        │
+│   ┌─────────────────────────────────────────────────────────────────────────────────┐  │
+│   │                           AGENT HANDLERS                                         │  │
+│   │                                                                                  │  │
+│   │   maya.handlers.ts    │  david.handlers.ts   │  rosa.handlers.ts                │  │
+│   │   james.handlers.ts   │  patricia.handlers.ts│  marcus.handlers.ts              │  │
+│   └─────────────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                          │
+│   Event Statuses: pending → claimed → processing → completed/failed/expired             │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3. Response Generation
+### Default Event Subscriptions
+
 ```
-Research context + Thread history + Memory
-        │
-        ▼
-Agent system prompt + expertise
-        │
-        ▼
-Claude API call (claude-sonnet-4-20250514)
-        │
-        ▼
-JSON response parsed
-  {
-    shouldRespond: boolean,
-    response: string,
-    sources: string[],
-    confidenceLevel: "HIGH"|"MEDIUM"|"LOW",
-    reaction: string (optional)
-  }
-        │
-        ▼
-Natural delay (2-8 seconds)
-        │
-        ▼
-Post to Slack thread
-        │
-        ▼
-Log to agent_memory table
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                              EVENT SUBSCRIPTIONS                                         │
+│                                                                                          │
+│   Event Type                    │  Subscribed Agents                                     │
+│   ─────────────────────────────────────────────────────────────────────────────────     │
+│   NEW_OPPORTUNITY               │  David                                                │
+│   RESEARCH_COMPLETE             │  Marcus, Rosa, James                                  │
+│   TECH_ASSESSMENT_COMPLETE      │  James                                                │
+│   RELATIONSHIP_CHECK_COMPLETE   │  James                                                │
+│   GO_NO_GO_DECISION             │  Patricia, Marcus (if GO)                             │
+│   DEADLINE_WARNING              │  Patricia                                             │
+│   PIPELINE_HEALTH_CHECK         │  Patricia                                             │
+│   SYSTEM_HEALTH_CHECK           │  Marcus                                               │
+│   PURSUIT_DECISION_FEEDBACK     │  Maya (learning)                                      │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Component Relationships
+### Chain Reaction Example
 
-### Agent Classes
 ```
-LiveAgent (abstract base)
+Maya posts opportunity (score: 78)
     │
-    ├── MayaAgent (Scout)
-    ├── DavidAgent (Analyst)
-    ├── RosaAgent (Connector)
-    ├── JamesAgent (Strategist)
-    ├── PatriciaAgent (PM)
-    ├── JodieAgent (Writer)
-    └── MarcusAgent (Engineering Lead)
+    └──▶ NEW_OPPORTUNITY published
+              │
+              └──▶ David claims event (10-30s delay)
+                        │
+                        ├── Researches incumbent (Booz Allen)
+                        ├── Finds GAO protest news
+                        ├── Gets VA spending trends
+                        │
+                        └──▶ RESEARCH_COMPLETE published
+                                  │
+                                  ├──▶ Marcus claims (tech review)
+                                  │         └──▶ TECH_ASSESSMENT_COMPLETE
+                                  │
+                                  ├──▶ Rosa claims (teaming check)
+                                  │         └──▶ RELATIONSHIP_CHECK_COMPLETE
+                                  │
+                                  └──▶ James waits for both...
+                                              │
+                                              └── Synthesizes all inputs
+                                                      │
+                                                      └──▶ GO_NO_GO_DECISION
+                                                                │
+                                                                └──▶ @Lapedra in thread
+                                                                          │
+                                                                          └── Human decides GO
+                                                                                    │
+                                                                                    └──▶ Patricia schedules
 ```
 
-### Integration Modules
-```
-research-context.ts
-    │
-    ├── news-search.ts (SerpAPI)
-    ├── fpds.ts (contract data)
-    ├── usaspending.ts (budgets)
-    ├── sam-entity.ts (entity verification)
-    ├── far-search.ts (FAR citations)
-    ├── github.ts (repo analysis via @octokit/rest)
-    └── supabase.ts (competitor intel)
+---
 
-company-context.ts
-    │
-    ├── Loads company_profile
-    ├── Loads past_performance
-    ├── Loads teaming_partners
-    ├── Loads key_personnel
-    └── Loads case_studies
+## Database ERD
+
+### Core Tables
+
 ```
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                  CORE OPERATIONS                                         │
+│                                                                                          │
+│   ┌──────────────────┐          ┌──────────────────┐         ┌──────────────────┐      │
+│   │   opportunities  │          │     agencies     │         │    companies     │      │
+│   │──────────────────│          │──────────────────│         │──────────────────│      │
+│   │ sam_id (PK)      │          │ abbreviation(PK) │         │ id (PK)          │      │
+│   │ title            │          │ tech_stack       │         │ name             │      │
+│   │ agency           │──────────│ pain_points      │         │ certifications[] │      │
+│   │ fit_score        │          │ key_personnel    │         │ naics_codes[]    │      │
+│   │ status           │          │ our_history      │         │ relationship_    │      │
+│   │ decision         │          │ research_notes   │         │   status         │      │
+│   └──────────────────┘          └──────────────────┘         └──────────────────┘      │
+│                                                                         │               │
+│   ┌──────────────────┐          ┌──────────────────┐                   │               │
+│   │     outreach     │          │conversation_     │                   │               │
+│   │──────────────────│          │    threads       │                   │               │
+│   │ id (PK)          │          │──────────────────│                   │               │
+│   │ company_id (FK)  │──────────│ slack_thread_ts  │                   │               │
+│   │ opportunity_id   │          │ opportunity_id   │◀──────────────────┘               │
+│   │ status           │          │ agents_involved[]│                                    │
+│   │ draft_content    │          │ context_summary  │                                    │
+│   └──────────────────┘          └──────────────────┘                                    │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Agent Coordination Tables
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                               AGENT COORDINATION                                         │
+│                                                                                          │
+│   ┌──────────────────┐          ┌──────────────────┐         ┌──────────────────┐      │
+│   │  message_claims  │          │   agent_memory   │         │   agent_queue    │      │
+│   │──────────────────│          │──────────────────│         │──────────────────│      │
+│   │ message_ts (PK)  │          │ id (PK)          │         │ id (PK)          │      │
+│   │ thread_ts        │          │ agent            │         │ agent            │      │
+│   │ agent            │          │ message_ts       │         │ action           │      │
+│   │ claimed_at       │          │ response_text    │         │ scheduled_for    │      │
+│   │ responded        │          │ sources[]        │         │ status           │      │
+│   └──────────────────┘          │ confidence_level │         │ payload (JSONB)  │      │
+│                                 └──────────────────┘         └──────────────────┘      │
+│                                                                                          │
+│   ┌──────────────────┐          ┌──────────────────┐         ┌──────────────────┐      │
+│   │  research_cache  │          │ agent_availability│        │ cron_job_runs    │      │
+│   │──────────────────│          │──────────────────│         │──────────────────│      │
+│   │ cache_key (PK)   │          │ agent (PK)       │         │ job_name (PK)    │      │
+│   │ source           │          │ status           │         │ last_run         │      │
+│   │ data (JSONB)     │          │ reason           │         │ next_run         │      │
+│   │ created_at       │          │ until_time       │         │ status           │      │
+│   └──────────────────┘          └──────────────────┘         └──────────────────┘      │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Memory & Learning Tables
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                MEMORY & LEARNING                                         │
+│                                                                                          │
+│   ┌──────────────────┐          ┌──────────────────┐         ┌──────────────────┐      │
+│   │   user_context   │          │decision_patterns │         │conversation_     │      │
+│   │──────────────────│          │──────────────────│         │    memory        │      │
+│   │ id (PK)          │          │ id (PK)          │         │──────────────────│      │
+│   │ user_name        │          │ decision         │         │ id (PK)          │      │
+│   │ context_type     │          │ agency           │         │ memory_type      │      │
+│   │ content          │          │ key_factors[]    │         │ summary          │      │
+│   │ mentioned_by     │          │ reasoning        │         │ importance       │      │
+│   │ still_relevant   │          │ created_at       │         │ participants[]   │      │
+│   └──────────────────┘          └──────────────────┘         └──────────────────┘      │
+│                                                                                          │
+│   ┌──────────────────┐          ┌──────────────────┐                                    │
+│   │   team_playbook  │          │playbook_         │                                    │
+│   │──────────────────│          │  applications    │                                    │
+│   │ id (PK)          │          │──────────────────│                                    │
+│   │ rule_type        │          │ id (PK)          │                                    │
+│   │ category         │          │ rule_id (FK)     │                                    │
+│   │ condition        │          │ opportunity_id   │                                    │
+│   │ confidence       │          │ applied/overridden│                                   │
+│   │ status           │          │ reason           │                                    │
+│   └──────────────────┘          └──────────────────┘                                    │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Intelligence Tables
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                  INTELLIGENCE                                            │
+│                                                                                          │
+│   ┌──────────────────┐          ┌──────────────────┐         ┌──────────────────┐      │
+│   │ competitor_intel │          │   seen_awards    │         │ agency_forecasts │      │
+│   │──────────────────│          │──────────────────│         │──────────────────│      │
+│   │ id (PK)          │          │ contract_id (PK) │         │ id (PK)          │      │
+│   │ company_name     │          │ vendor_name      │         │ agency           │      │
+│   │ intel_type       │          │ agency_code      │         │ title            │      │
+│   │ summary          │          │ amount           │         │ relevance_score  │      │
+│   │ source_url       │          │ seen_at          │         │ posted_on_sam    │      │
+│   │ discovered_by    │          └──────────────────┘         └──────────────────┘      │
+│   └──────────────────┘                                                                  │
+│                                                                                          │
+│   ┌──────────────────┐          ┌──────────────────┐                                    │
+│   │   far_sections   │          │    documents     │                                    │
+│   │──────────────────│          │──────────────────│                                    │
+│   │ id (PK)          │          │ id (PK)          │                                    │
+│   │ part             │          │ filename         │                                    │
+│   │ section          │          │ content          │                                    │
+│   │ title            │          │ document_type    │                                    │
+│   │ full_text        │          │ embedding        │ ◀── pgvector                      │
+│   │ embedding        │ ◀── pgvector                │                                    │
+│   └──────────────────┘          └──────────────────┘                                    │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## API Integration Map
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                               API INTEGRATION MAP                                        │
+│                                                                                          │
+│                                 ┌─────────────────┐                                     │
+│                                 │   Maya (Scout)  │                                     │
+│                                 └────────┬────────┘                                     │
+│                                          │                                               │
+│                          ┌───────────────┼───────────────┐                              │
+│                          ▼               ▼               ▼                              │
+│                   ┌───────────┐   ┌───────────┐   ┌───────────┐                        │
+│                   │ SAM.gov   │   │  SerpAPI  │   │  Notion   │                        │
+│                   │ Opps API  │   │   News    │   │   Hub     │                        │
+│                   └───────────┘   └───────────┘   └───────────┘                        │
+│                                                                                          │
+│                                 ┌─────────────────┐                                     │
+│                                 │ David (Analyst) │                                     │
+│                                 └────────┬────────┘                                     │
+│                                          │                                               │
+│              ┌───────────────┬───────────┼───────────┬───────────────┐                  │
+│              ▼               ▼           ▼           ▼               ▼                  │
+│       ┌───────────┐   ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐          │
+│       │USASpending│   │ Contract  │ │  SerpAPI  │ │    FAR    │ │ Supabase  │          │
+│       │   API     │   │   Data    │ │   News    │ │  pgvector │ │   Intel   │          │
+│       └───────────┘   └───────────┘ └───────────┘ └───────────┘ └───────────┘          │
+│                                                                                          │
+│                                 ┌─────────────────┐                                     │
+│                                 │Rosa (Connector) │                                     │
+│                                 └────────┬────────┘                                     │
+│                                          │                                               │
+│                          ┌───────────────┼───────────────┐                              │
+│                          ▼               ▼               ▼                              │
+│                   ┌───────────┐   ┌───────────┐   ┌───────────┐                        │
+│                   │ SAM.gov   │   │  SerpAPI  │   │ companies │                        │
+│                   │ Entity    │   │   News    │   │   table   │                        │
+│                   └───────────┘   └───────────┘   └───────────┘                        │
+│                                                                                          │
+│                                 ┌─────────────────┐                                     │
+│                                 │Marcus (Engineer)│                                     │
+│                                 └────────┬────────┘                                     │
+│                                          │                                               │
+│                                          ▼                                               │
+│                                   ┌───────────┐                                         │
+│                                   │  GitHub   │                                         │
+│                                   │ @octokit  │                                         │
+│                                   └───────────┘                                         │
+│                                                                                          │
+│                                 ┌─────────────────┐                                     │
+│                                 │   All Agents    │                                     │
+│                                 └────────┬────────┘                                     │
+│                                          │                                               │
+│                          ┌───────────────┼───────────────┐                              │
+│                          ▼               ▼               ▼                              │
+│                   ┌───────────┐   ┌───────────┐   ┌───────────┐                        │
+│                   │ Anthropic │   │   Slack   │   │ Supabase  │                        │
+│                   │  Claude   │   │   Bolt    │   │   DB      │                        │
+│                   └───────────┘   └───────────┘   └───────────┘                        │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
 
 ## File Structure
 
 ```
 ai-bd-team/
 ├── src/
-│   ├── live/                    # Real-time Slack agents
-│   │   ├── agent.ts             # Base LiveAgent class
-│   │   ├── maya.ts              # Scout agent
-│   │   ├── david.ts             # Analyst agent
-│   │   ├── rosa.ts              # Connector agent
-│   │   ├── james.ts             # Strategist agent
-│   │   ├── patricia.ts          # PM agent
-│   │   ├── jodie.ts             # Writer agent
-│   │   ├── marcus.ts            # Engineering Lead agent
-│   │   ├── run-team.ts          # Starts all agents
-│   │   ├── run-marcus.ts        # Standalone Marcus runner
-│   │   ├── warmups.ts           # Agent personality textures
-│   │   └── types.ts             # Type definitions
+│   ├── live/                          # Real-time Slack agents
+│   │   ├── agent.ts                   # Base LiveAgent class (2000 lines)
+│   │   ├── maya.ts                    # Scout agent
+│   │   ├── david.ts                   # Analyst agent
+│   │   ├── rosa.ts                    # Connector agent
+│   │   ├── james.ts                   # Strategist agent
+│   │   ├── patricia.ts                # PM agent
+│   │   ├── jodie.ts                   # Writer agent (partial)
+│   │   ├── marcus.ts                  # Engineering Lead
+│   │   ├── run-team.ts                # Starts all agents
+│   │   ├── warmups.ts                 # Personality textures
+│   │   └── types.ts                   # Type definitions
 │   │
-│   ├── integrations/            # External API integrations
-│   │   ├── supabase.ts          # Database operations
-│   │   ├── claude.ts            # Anthropic API client
-│   │   ├── slack.ts             # Slack utilities
-│   │   ├── sam-gov.ts           # SAM.gov opportunities
-│   │   ├── sam-entity.ts        # SAM.gov entity lookup
-│   │   ├── fpds.ts              # FPDS contract data
-│   │   ├── usaspending.ts       # USASpending API
-│   │   ├── news-search.ts       # SerpAPI news search
-│   │   ├── far-search.ts        # FAR semantic search
-│   │   ├── github.ts            # GitHub repo analysis (@octokit/rest)
-│   │   ├── research-context.ts  # Unified research orchestration
-│   │   └── award-monitor.ts     # FPDS award polling
+│   ├── integrations/                  # External API integrations
+│   │   ├── sam-gov.ts                 # SAM.gov opportunities
+│   │   ├── sam-entity.ts              # SAM.gov entity lookup
+│   │   ├── usaspending.ts             # USASpending API
+│   │   ├── contract-data.ts           # FPDS/contract data
+│   │   ├── news-search.ts             # SerpAPI news
+│   │   ├── far-search.ts              # FAR semantic search
+│   │   ├── github.ts                  # GitHub repo analysis
+│   │   ├── notion-hub.ts              # Notion integration
+│   │   ├── agency-forecasts.ts        # 12-agency scraping
+│   │   ├── award-monitor.ts           # Award detection
+│   │   ├── research-context.ts        # Unified research
+│   │   ├── claude.ts                  # Anthropic API
+│   │   ├── slack.ts                   # Slack utilities
+│   │   └── supabase.ts                # Database operations
 │   │
-│   ├── context/                 # Company context loading
-│   │   └── company-context.ts   # Loads company profile, past perf, partners
+│   ├── events/                        # Event-driven system
+│   │   ├── eventTypes.ts              # Event definitions
+│   │   ├── eventBus.ts                # Publish/subscribe
+│   │   ├── eventProcessor.ts          # Event routing
+│   │   └── handlers/                  # Agent handlers
+│   │       ├── maya.handlers.ts
+│   │       ├── david.handlers.ts
+│   │       ├── rosa.handlers.ts
+│   │       ├── james.handlers.ts
+│   │       ├── patricia.handlers.ts
+│   │       └── marcus.handlers.ts
 │   │
-│   ├── scripts/                 # Utility scripts
-│   │   ├── scrape-company.ts    # Website scraper for company data
-│   │   ├── onboard-company.ts   # Patricia's onboarding CLI
-│   │   ├── import-notion.ts     # Full Notion import (contracts, CRM, rates)
-│   │   ├── sync-scheduler.ts    # Scheduled Notion sync
-│   │   ├── update-company-data.ts # Manual data updates
-│   │   ├── parse-far.ts         # Parse FAR XML
-│   │   ├── update-far.ts        # Refresh FAR data
-│   │   ├── check-awards.ts      # Manual award check
-│   │   └── award-scheduler.ts   # Scheduled award checks
+│   ├── playbook/                      # Self-organizing rules
+│   │   ├── types.ts                   # Rule types
+│   │   ├── database.ts                # DB operations
+│   │   ├── rules.ts                   # Rule consultation
+│   │   └── retrospective.ts           # Monthly analysis
 │   │
-│   ├── agents/                  # Legacy agent implementations
-│   ├── coordination/            # Legacy coordination layer
-│   └── types/                   # Shared type definitions
+│   ├── context/                       # Company context
+│   │   └── company-context.ts         # Knowledge base loader
+│   │
+│   ├── prompts/                       # Agent system prompts
+│   │   ├── scout.ts
+│   │   ├── analyst.ts
+│   │   ├── connector.ts
+│   │   ├── strategist.ts
+│   │   └── pm.ts
+│   │
+│   ├── scripts/                       # Utility scripts
+│   │   ├── maya-scanner.ts            # Opportunity scanner
+│   │   ├── patricia-checkin.ts        # Morning standup
+│   │   ├── david-news-digest.ts       # News digest
+│   │   ├── import-notion.ts           # Notion import
+│   │   └── ...
+│   │
+│   └── cron/                          # Scheduled jobs
+│       ├── event-triggers.ts          # Autonomous events
+│       └── patricia-retrospective.ts  # Monthly analysis
 │
-├── supabase/                    # Database migrations
-│   ├── company-knowledge-base.sql    # Full company KB schema (11 tables)
-│   ├── company-knowledge-base-novector.sql  # Version without pgvector
-│   ├── sync-log.sql             # Sync audit logging
-│   ├── far-sections.sql         # FAR with embeddings
-│   ├── seen-awards.sql          # Award deduplication
-│   └── competitor-intel.sql     # Competitor intelligence
+├── supabase/                          # Database migrations
+│   ├── schema.sql                     # Main schema
+│   ├── migrations/
+│   │   ├── 20260212_agent_events.sql
+│   │   ├── 20260212_team_playbook.sql
+│   │   └── ...
+│   └── ...
 │
-├── docs/                        # Documentation
-└── data/                        # Generated data (gitignored)
+├── docs/                              # Documentation
+└── data/                              # Generated data (gitignored)
 ```
+
+---
 
 ## Key Design Decisions
 
 ### 1. Socket Mode for Slack
-We use Socket Mode instead of HTTP webhooks because:
 - Works behind firewalls
 - No public URL required
 - Real-time bidirectional communication
 - Simpler local development
 
 ### 2. Separate Bot Tokens per Agent
-Each agent has its own Slack bot token because:
 - Appears as distinct users in Slack
-- Can have unique profile pictures/names
+- Unique profile pictures/names
 - Independent rate limits
 - Realistic multi-user feel
 
 ### 3. Message Claiming System
-Prevents multiple agents responding to the same message:
-- First agent to claim wins
+- Prevents pile-ons (multiple agents responding)
 - Uses Supabase `message_claims` table
-- Unique constraint prevents duplicates
+- UNIQUE constraint enforces exclusivity
+- Auto-cleanup after 1 hour
 
-### 4. Research Context Orchestration
-Unified research layer that:
-- Detects relevant topics from message text
-- Calls only necessary APIs
-- Runs API calls in parallel
-- Assembles context for agent prompt
+### 4. Event-Driven + Polling Hybrid
+- Events for agent-to-agent reactivity
+- Cron jobs for scheduled autonomous behavior
+- Additive design: events enhance, don't replace
 
-### 5. Claude for Response Generation
-Using Claude claude-sonnet-4-20250514 because:
+### 5. Claude claude-sonnet-4-20250514 for Response Generation
 - Best balance of speed and quality
 - Strong instruction following
-- Good at maintaining personality
 - Reliable JSON output
+- Good personality maintenance
+
+### 6. Research Context Orchestration
+- Detects topics from message text
+- Calls only necessary APIs
+- Runs API calls in parallel
+- Assembles unified context for prompt
 
 ---
 
-## Agent Intelligence Features
+## Deployment Architecture
 
-### Domain Expertise
-Each agent has deep domain knowledge embedded in their system prompt:
-
-| Agent | Expertise Area |
-|-------|---------------|
-| Maya | Opportunity identification: wired RFPs, SOW red flags, set-asides, NAICS games |
-| David | Competitive intelligence: FPDS patterns, incumbent vulnerability, protest dynamics |
-| Rosa | Teaming strategy: prime vs sub, teaming agreements, JV structures, partner red flags |
-| James | Capture strategy: win probability, bid/no-bid, price-to-win, discriminators |
-| Patricia | Proposal process: compliance matrices, schedules, review cycles, common failures |
-| Jodie | Proposal writing: exec summaries, technical approach, past performance narratives, compliance |
-| Marcus | Gov tech architecture: FedRAMP, ATO, Section 508, GitHub repo analysis, tech stack review |
-
-### Proactive Behavior (Connect the Dots)
-Agents don't just answer literal questions—they surface relevant context:
-- Maya: "I've seen 3 HCD solicitations from VA this month—they're on a kick"
-- David: "They just had a breach at Treasury—that might affect their VA work too"
-- Rosa: "If we team with them here, that opens doors at HHS"
-- James: "The obvious play is X, but have we considered Y?"
-- Patricia: "This overlaps with the HHS proposal—do we have bandwidth?"
-
-### Competitor Intelligence Pipeline
 ```
-Message mentions competitor/incumbent
-        │
-        ▼
-Detect company name (known competitors or pattern match)
-        │
-        ▼
-Parallel news searches:
-  - "[company] protest GAO"
-  - "[company] performance problems"
-  - "[company] contract award"
-  - "[company] federal contract"
-        │
-        ▼
-Save significant findings to competitor_intel table
-        │
-        ▼
-Include in research context for response
-        │
-        ▼
-Agent interprets strategically:
-  "They lost a GAO protest last year—agency might be gun-shy"
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   RAILWAY                                                │
+│                                                                                          │
+│   ┌─────────────────────────────────────────────────────────────────────────────────┐  │
+│   │                           Node.js Application                                    │  │
+│   │                                                                                  │  │
+│   │   ┌─────────────────────────┐    ┌─────────────────────────────────────────┐   │  │
+│   │   │     Live Agents         │    │         Scheduled Jobs                   │   │  │
+│   │   │     (Socket Mode)       │    │         (node-cron)                      │   │  │
+│   │   │                         │    │                                           │   │  │
+│   │   │  Maya    David   Rosa   │    │  8am:   Maya scan                        │   │  │
+│   │   │  James   Patricia       │    │  8am:   David news (MWF)                 │   │  │
+│   │   │  Marcus                 │    │  11am:  Patricia standup                 │   │  │
+│   │   │                         │    │  2pm:   Patricia nudge                   │   │  │
+│   │   │  (Jodie disabled)       │    │  6hr:   Notion sync                      │   │  │
+│   │   └─────────────────────────┘    └─────────────────────────────────────────┘   │  │
+│   │                                                                                  │  │
+│   │   ┌─────────────────────────────────────────────────────────────────────────┐   │  │
+│   │   │                        Event Processor                                   │   │  │
+│   │   │                        (polling loop)                                    │   │  │
+│   │   └─────────────────────────────────────────────────────────────────────────┘   │  │
+│   └─────────────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                          │
+│   Config: Dockerfile + railway.json                                                     │
+│   Auto-deploy: Push to main branch                                                      │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
-
-### Response Quality Controls
-- **Source citations required**: Agents must cite FPDS, SAM.gov, news links
-- **Article URLs required**: When citing news, include actual link
-- **Confidence levels**: HIGH (official source), MEDIUM (inference), LOW (speculation)
-- **No false promises**: Agents can't say "I'll check" or "give me 20 minutes"
-- **Follow-up responses**: Must respond with substance, not just emoji reactions
 
 ---
 
-## Database Tables
+## Security Architecture
 
-### Core Operations
-| Table | Purpose |
-|-------|---------|
-| `message_claims` | Prevents duplicate agent responses |
-| `agent_memory` | Logs all agent responses with sources |
-| `research_cache` | Caches API responses (2-6 hour TTL) |
-
-### Memory & Context
-| Table | Purpose |
-|-------|---------|
-| `user_context` | Personal info about Lapedra/Tamara |
-| `conversation_memory` | Key moments to reference later |
-| `inside_jokes` | Shared references that build over time |
-| `decision_patterns` | Go/no-go decision history |
-
-### Intelligence
-| Table | Purpose |
-|-------|---------|
-| `competitor_intel` | Stored intel on competitors |
-| `seen_awards` | Tracks reported awards (deduplication) |
-| `far_sections` | FAR text with vector embeddings |
-
-### Company Knowledge Base
-| Table | Purpose |
-|-------|---------|
-| `company_profile` | Core company info, capabilities, certifications, NAICS |
-| `past_performance` | Contract history with CPAR ratings, key accomplishments |
-| `contacts` | Agency and industry contacts with relationship strength |
-| `teaming_partners` | Partner companies, capabilities, relationship status |
-| `labor_rates` | Labor categories and pricing by contract vehicle |
-| `case_studies` | Detailed project case studies with outcomes |
-| `key_personnel` | Team members, qualifications, availability |
-| `proposal_content` | Reusable proposal language with win rates |
-| `lessons_learned` | Bid and project lessons by type |
-| `documents` | Embedded documents for semantic search (pgvector) |
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                              SECURITY LAYERS                                             │
+│                                                                                          │
+│   ┌─────────────────────────────────────────────────────────────────────────────────┐  │
+│   │  Authentication                                                                  │  │
+│   │  ├── 7 separate Slack bot tokens                                                │  │
+│   │  ├── 7 separate Slack app tokens                                                │  │
+│   │  ├── Supabase service role key (server-side only)                               │  │
+│   │  └── All API keys in environment variables                                      │  │
+│   └─────────────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                          │
+│   ┌─────────────────────────────────────────────────────────────────────────────────┐  │
+│   │  Row-Level Security (RLS)                                                        │  │
+│   │  ├── All 30+ tables have RLS enabled                                            │  │
+│   │  ├── service_role only access (no anon key)                                     │  │
+│   │  ├── Views use security_invoker = true                                          │  │
+│   │  └── Functions have search_path = public                                        │  │
+│   └─────────────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                          │
+│   ┌─────────────────────────────────────────────────────────────────────────────────┐  │
+│   │  Data Protection                                                                 │  │
+│   │  ├── No PII stored beyond user names                                            │  │
+│   │  ├── Research cache auto-expires (2-24 hours)                                   │  │
+│   │  ├── Message claims cleaned weekly                                              │  │
+│   │  └── Competitor intel marked stale after 180 days                               │  │
+│   └─────────────────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## API Integration Summary
-
-| Service | Auth | Used By | Purpose |
-|---------|------|---------|---------|
-| SAM.gov | API Key | Maya, Rosa | Opportunities, entity verification |
-| FPDS | None | David, James | Contract history, incumbents |
-| USASpending | None | David | Agency budgets |
-| SerpAPI | API Key | Maya, David | News search (GovCon sources) |
-| FAR (Supabase) | API Key | David, James | Regulation citations |
-| GitHub | Personal Access Token | Marcus | Repo analysis, tech stack detection |
-| Anthropic | API Key | All | Response generation |
-
----
-
-## Monitoring & Scheduling
-
-### Award Monitor
-Polls FPDS for new contract awards:
-- Agencies: VA, HHS, DOL, DHS, GSA
-- Minimum value: $50K
-- Filters out government-to-government transfers
-- Saves to `seen_awards` to prevent duplicates
-- Maya posts new awards to Slack
-
-### Scheduled Jobs
-| Script | Schedule | Purpose |
-|--------|----------|---------|
-| `maya-scanner.ts` | 8am Mon-Fri | Scan SAM.gov for opportunities |
-| `maya-scanner.ts` | 8:30am Monday | Weekly opportunity summary |
-| `patricia-checkin.ts` | 9am Mon-Fri | Morning team check-in |
-| `patricia-checkin.ts` | 2pm Mon-Fri | Nudge for pending items |
-| `award-scheduler.ts` | Mon/Thu 9am | Check for new awards |
-| `sync-scheduler.ts` | Every 6 hours | Sync Notion data |
-
----
-
-## Deployment
-
-### Production (Railway)
-The system runs 24/7 on Railway with automatic deployments.
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                         RAILWAY                              │
-│                                                              │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │              Node.js Application                     │   │
-│  │                                                      │   │
-│  │  ┌──────────────┐  ┌──────────────────────────┐    │   │
-│  │  │ Live Agents  │  │   Scheduled Jobs          │    │   │
-│  │  │ (Socket Mode)│  │   (node-cron)            │    │   │
-│  │  │              │  │                           │    │   │
-│  │  │ Maya         │  │ 8am:  Maya scan          │    │   │
-│  │  │ David        │  │ 9am:  Patricia check-in  │    │   │
-│  │  │ Rosa         │  │ 2pm:  Patricia nudge     │    │   │
-│  │  │ James        │  │ 6hr:  Notion sync        │    │   │
-│  │  │ Patricia     │  │                           │    │   │
-│  │  │ Jodie        │  │                           │    │   │
-│  │  │ Marcus       │  │                           │    │   │
-│  │  └──────────────┘  └──────────────────────────┘    │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                              │
-│  Config: railway.json, nixpacks.toml                        │
-│  Auto-deploy on push to main branch                         │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Configuration Files
-- `railway.json` - Railway service configuration
-- `nixpacks.toml` - Build settings (Node.js 20, npm ci)
-
-### Repository
-- **GitHub**: `friends-innovation-lab/ai-bd-team`
-- **Branch**: `main`
-- **Auto-deploy**: Yes (push triggers deploy)
-
----
-
-## Company Data Pipeline
-
-The company knowledge base is populated from multiple sources and stays in sync automatically.
-
-### Data Sources
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           DATA SOURCES                                       │
-│                                                                              │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐            │
-│  │  FFTC Website   │  │  Notion DBs     │  │  Manual Entry   │            │
-│  │  (scrape)       │  │  (API sync)     │  │  (onboarding)   │            │
-│  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘            │
-│           │                    │                    │                       │
-│           ▼                    ▼                    ▼                       │
-│  ┌─────────────────────────────────────────────────────────────────────┐  │
-│  │                     SUPABASE (PostgreSQL)                            │  │
-│  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐                 │  │
-│  │  │company_profile│ │past_perform. │ │teaming_partn.│                 │  │
-│  │  └──────────────┘ └──────────────┘ └──────────────┘                 │  │
-│  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐                 │  │
-│  │  │key_personnel │ │ case_studies │ │ labor_rates  │                 │  │
-│  │  └──────────────┘ └──────────────┘ └──────────────┘                 │  │
-│  └─────────────────────────────────────────────────────────────────────┘  │
-│                                    │                                        │
-│                                    ▼                                        │
-│  ┌─────────────────────────────────────────────────────────────────────┐  │
-│  │                    company-context.ts                                │  │
-│  │         Loads & formats context for each agent's prompt              │  │
-│  └─────────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Source → Table Mapping
-
-| Source | Script | Tables Populated |
-|--------|--------|------------------|
-| FFTC Website | `scrape-company.ts` | `company_profile`, `key_personnel`, `case_studies`, `proposal_content` |
-| Notion: Contracts Overview | `import-notion.ts` | `past_performance` |
-| Notion: CRM | `import-notion.ts` | `teaming_partners` |
-| Notion: GSA MAS Rates | `import-notion.ts` | `labor_rates` |
-| Interactive CLI | `onboard-company.ts` | `company_profile` (fills gaps) |
-
-### Sync Flow
-
-```
-Website Scrape (manual or scheduled)
-        │
-        ▼
-npm run scrape-company
-  - Fetches /work, /about/team, /services
-  - Extracts case studies, team members, capabilities
-  - Saves to Supabase
-        │
-        ▼
-Notion Sync (every 6 hours)
-        │
-        ▼
-npm run sync (or sync:schedule)
-  - Fetches Contracts Overview database
-  - Fetches CRM database
-  - Fetches GSA MAS Rates database
-  - Maps fields to our schema
-  - Upserts to Supabase (no duplicates)
-  - Logs to sync_log table
-        │
-        ▼
-Agent Request
-        │
-        ▼
-company-context.ts loads from Supabase
-  - Caches for 30 minutes
-  - Formats per agent role:
-    - Maya: NAICS, set-asides, capabilities
-    - David: past performance, agency experience
-    - Rosa: teaming partners, relationships
-    - James: no-bid criteria, differentiators
-    - Patricia: key personnel, availability
-    - Jodie: proposal content, case studies
-    - Marcus: technical capabilities, certifications
-        │
-        ▼
-Included in agent's Claude prompt
-```
-
-### Notion Database IDs
-
-| Database | ID | Fields Used |
-|----------|-----|-------------|
-| Contracts Overview | `1b807a79...` | Contract Name, Prime Contract Number, Value, Dates, Status, Vehicle, Set-Aside, NAICS |
-| CRM | `1bc07a79...` | Company, Core Capabilities, SBA Designations, Strengths, Weaknesses, POC |
-| GSA MAS Rates | `1e607a79...` | Labor Category, Year 1-5 Rates, SIN |
-
-### Data Refresh Commands
-
-```bash
-# One-time full refresh
-npm run scrape-company    # Website data
-npm run import-notion     # Notion data (full import)
-npm run sync              # Notion data (incremental)
-
-# Scheduled continuous sync
-npm run sync:schedule     # Runs every 6 hours
-
-# Interactive profile completion
-npm run onboard           # Patricia guides through gaps
-```
+*Architecture last updated: February 2026*
