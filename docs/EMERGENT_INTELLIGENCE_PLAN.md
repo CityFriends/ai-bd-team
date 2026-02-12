@@ -371,3 +371,12 @@ After implementation:
 ```
 
 Now all commits with TypeScript files run full type checking before committing.
+
+### 2026-02-12: Railway CLI Installed
+
+Installed Railway CLI for deployment management:
+- `railway logs` - view logs
+- `railway up` - redeploy
+- `railway status` - check status
+
+Project linked: `illustrious-grace` (production environment)
