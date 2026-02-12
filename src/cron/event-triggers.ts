@@ -31,24 +31,26 @@ export async function triggerPipelineHealthCheck(): Promise<void> {
 
   try {
     // Gather pipeline data
-    const [foundOpps, researchingOpps, assessingOpps, pursuingOpps, needsActionOpps] =
+    const [foundOpps, researchingOpps, strategyOpps, pursuingOpps, needsActionOpps] =
       await Promise.all([
         getWorkflowsByStage('found'),
         getWorkflowsByStage('researching'),
-        getWorkflowsByStage('assessing'),
+        getWorkflowsByStage('strategy'),
         getWorkflowsByStage('pursuing'),
         getWorkflowsNeedingAction(),
       ]);
 
     const totalOpportunities =
-      foundOpps.length + researchingOpps.length + assessingOpps.length + pursuingOpps.length;
+      foundOpps.length + researchingOpps.length + strategyOpps.length + pursuingOpps.length;
 
     // Build stuck opportunities list
     const stuckOpportunities: PipelineHealthCheckPayload['stuckOpportunities'] = [];
     const now = new Date();
 
-    for (const workflow of [...foundOpps, ...researchingOpps, ...assessingOpps]) {
-      const stageEnteredAt = new Date(workflow.stage_entered_at || workflow.created_at);
+    for (const workflow of [...foundOpps, ...researchingOpps, ...strategyOpps]) {
+      const stageEnteredAt = new Date(
+        workflow.stage_entered_at || workflow.created_at || now.toISOString()
+      );
       const daysInStage = Math.floor(
         (now.getTime() - stageEnteredAt.getTime()) / (1000 * 60 * 60 * 24)
       );
@@ -60,30 +62,16 @@ export async function triggerPipelineHealthCheck(): Promise<void> {
           title: workflow.title || 'Unknown',
           stage: workflow.stage,
           daysInStage,
-          lastActivity: workflow.updated_at || workflow.created_at,
+          lastActivity: workflow.updated_at || workflow.created_at || now.toISOString(),
         });
       }
     }
 
     // Build upcoming deadlines
+    // Note: Currently OpportunityWorkflow doesn't have response_deadline
+    // This would need to be added to the workflow table or fetched from opportunities
     const upcomingDeadlines: PipelineHealthCheckPayload['upcomingDeadlines'] = [];
-    for (const workflow of pursuingOpps) {
-      if (workflow.response_deadline) {
-        const deadline = new Date(workflow.response_deadline);
-        const daysRemaining = Math.floor(
-          (deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-        );
-
-        if (daysRemaining <= 7 && daysRemaining > 0) {
-          upcomingDeadlines.push({
-            noticeId: workflow.notice_id,
-            title: workflow.title || 'Unknown',
-            deadline: workflow.response_deadline,
-            daysRemaining,
-          });
-        }
-      }
-    }
+    // TODO: Fetch deadlines from opportunity data when available
 
     // Calculate health score
     let healthScore = 100;
@@ -113,7 +101,7 @@ export async function triggerPipelineHealthCheck(): Promise<void> {
       byStage: {
         found: foundOpps.length,
         researching: researchingOpps.length,
-        assessing: assessingOpps.length,
+        strategy: strategyOpps.length,
         pursuing: pursuingOpps.length,
       },
       stuckOpportunities,
@@ -150,58 +138,11 @@ export async function triggerDeadlineCheck(): Promise<void> {
   console.log('[EventTrigger] Running deadline check...');
 
   try {
-    const pursuingOpps = await getWorkflowsByStage('pursuing');
-    const now = new Date();
-    let warningsPublished = 0;
-
-    for (const workflow of pursuingOpps) {
-      if (!workflow.response_deadline) continue;
-
-      const deadline = new Date(workflow.response_deadline);
-      const hoursRemaining = Math.floor((deadline.getTime() - now.getTime()) / (1000 * 60 * 60));
-
-      // Warn at 24 hours, 12 hours, 6 hours, and 2 hours
-      const warningThresholds = [24, 12, 6, 2];
-      const shouldWarn = warningThresholds.some(
-        (threshold) =>
-          hoursRemaining > 0 && hoursRemaining <= threshold && hoursRemaining > threshold - 1
-      );
-
-      if (shouldWarn) {
-        const payload: DeadlineWarningPayload = {
-          noticeId: workflow.notice_id,
-          title: workflow.title || 'Unknown',
-          deadline: workflow.response_deadline,
-          hoursRemaining,
-          currentStage: workflow.stage,
-          blockers: [], // Would need to query for blockers
-          urgentActions:
-            hoursRemaining <= 6
-              ? [
-                  'Finalize submission immediately',
-                  'Verify all compliance requirements',
-                  'Get final approvals',
-                ]
-              : ['Review submission status', 'Confirm team is on track'],
-        };
-
-        const result = await publishEvent({
-          eventType: EventTypes.DEADLINE_WARNING,
-          sourceAgent: 'system',
-          payload: payload as unknown as Record<string, unknown>,
-          priority: hoursRemaining <= 6 ? 1 : 2, // Higher priority for imminent deadlines
-        });
-
-        if (result.success) {
-          warningsPublished++;
-          console.log(
-            `[EventTrigger] Deadline warning for "${workflow.title}" (${hoursRemaining}h remaining)`
-          );
-        }
-      }
-    }
-
-    console.log(`[EventTrigger] Deadline check complete (${warningsPublished} warnings published)`);
+    // Note: Currently OpportunityWorkflow doesn't have response_deadline field
+    // This function is a placeholder until deadline tracking is added to workflows
+    // For now, just log that no deadline checking is available
+    console.log('[EventTrigger] Deadline check: No deadline field available in workflow schema');
+    console.log('[EventTrigger] Deadline check complete (0 warnings published)');
   } catch (err) {
     console.error('[EventTrigger] Deadline check failed:', err);
     throw err;

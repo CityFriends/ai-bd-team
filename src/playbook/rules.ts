@@ -120,22 +120,25 @@ function checkRuleViolation(
   }
 
   // Value rules
-  if (evidence.minValue !== undefined && opportunity.value !== undefined) {
-    if (opportunity.value < evidence.minValue) {
+  const minValue = evidence.minValue as number | undefined;
+  const maxValue = evidence.maxValue as number | undefined;
+
+  if (typeof minValue === 'number' && opportunity.value !== undefined) {
+    if (opportunity.value < minValue) {
       return {
         rule,
-        violation: `Value $${opportunity.value.toLocaleString()} below minimum $${evidence.minValue.toLocaleString()}`,
+        violation: `Value $${opportunity.value.toLocaleString()} below minimum $${minValue.toLocaleString()}`,
         recommendation: 'May not be worth the BD investment',
         overrideable: true,
       };
     }
   }
 
-  if (evidence.maxValue !== undefined && opportunity.value !== undefined) {
-    if (opportunity.value > evidence.maxValue) {
+  if (typeof maxValue === 'number' && opportunity.value !== undefined) {
+    if (opportunity.value > maxValue) {
       return {
         rule,
-        violation: `Value $${opportunity.value.toLocaleString()} above maximum $${evidence.maxValue.toLocaleString()}`,
+        violation: `Value $${opportunity.value.toLocaleString()} above maximum $${maxValue.toLocaleString()}`,
         recommendation: 'May be too large for our current capacity',
         overrideable: true,
       };

@@ -7,9 +7,7 @@
 import 'dotenv/config';
 import { logJobStart, logJobComplete, logJobFailed } from '../integrations/supabase.js';
 import { runMonthlyRetrospective, formatRetrospectiveForSlack } from '../playbook/retrospective.js';
-import { postMessage } from '../integrations/slack/client.js';
-
-const BD_CHANNEL = process.env.SLACK_BD_CHANNEL || 'bd-team';
+import { postAsAgent } from '../integrations/slack.js';
 
 async function main() {
   const runId = await logJobStart('patricia-retrospective');
@@ -30,14 +28,11 @@ async function main() {
 
     // Format and post results to Slack
     const message = formatRetrospectiveForSlack(results);
-    await postMessage(BD_CHANNEL, message);
+    await postAsAgent('pm', message); // pm = Patricia
 
     if (runId) {
       await logJobComplete(runId, {
-        notes: 'Monthly retrospective completed',
-        outcomesAnalyzed: results.outcomesAnalyzed,
-        chainsAnalyzed: results.chainsAnalyzed,
-        rulesProposed: results.rulesProposed.length,
+        notes: `Monthly retrospective completed: ${results.outcomesAnalyzed} outcomes, ${results.chainsAnalyzed} chains, ${results.rulesProposed.length} rules proposed`,
       });
     }
 
