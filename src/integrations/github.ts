@@ -19,6 +19,21 @@ export interface RepoFile {
   size?: number;
 }
 
+export interface RepoIssue {
+  number: number;
+  title: string;
+  state: string;
+  createdAt: string;
+  labels: string[];
+}
+
+export interface ForkInfo {
+  isFork: boolean;
+  parentOwner?: string;
+  parentRepo?: string;
+  parentDescription?: string;
+}
+
 export interface RepoAnalysis {
   owner: string;
   repo: string;
@@ -28,6 +43,7 @@ export interface RepoAnalysis {
   stars: number;
   forks: number;
   openIssues: number;
+  recentIssues: RepoIssue[];
   lastCommit: string | null;
   defaultBranch: string;
   license: string | null;
@@ -35,6 +51,7 @@ export interface RepoAnalysis {
   structure: RepoFile[];
   readme: string | null;
   packageJson: PackageInfo | null;
+  subPackages: { path: string; packageJson: PackageInfo }[];
   requirementsTxt: string | null;
   hasTests: boolean;
   hasDocs: boolean;
@@ -42,6 +59,7 @@ export interface RepoAnalysis {
   techStack: string[];
   architectureNotes: string[];
   complianceConcerns: string[];
+  forkInfo: ForkInfo;
   source: string;
 }
 
@@ -121,7 +139,7 @@ export async function getFileContent(
       return Buffer.from(data.content, 'base64').toString('utf-8');
     }
     return null;
-  } catch (error) {
+  } catch {
     // File not found or other error - this is expected for optional files
     return null;
   }
@@ -131,6 +149,7 @@ export async function getFileContent(
 function identifyTechStack(
   structure: RepoFile[],
   packageJson: PackageInfo | null,
+  subPackages: { path: string; packageJson: PackageInfo }[],
   requirementsTxt: string | null,
   languages: Record<string, number>
 ): string[] {
@@ -143,10 +162,17 @@ function identifyTechStack(
     .map(([lang]) => lang);
   stack.push(...topLanguages);
 
-  // From package.json dependencies
+  // Collect all dependencies from root and sub-packages
+  const allDeps: Record<string, string> = {};
   if (packageJson) {
-    const allDeps = { ...packageJson.dependencies, ...packageJson.devDependencies };
+    Object.assign(allDeps, packageJson.dependencies, packageJson.devDependencies);
+  }
+  for (const sub of subPackages) {
+    Object.assign(allDeps, sub.packageJson.dependencies, sub.packageJson.devDependencies);
+  }
 
+  // From package.json dependencies (root + sub-packages)
+  if (Object.keys(allDeps).length > 0) {
     // Frontend frameworks
     if (allDeps['react'] || allDeps['@types/react']) stack.push('React');
     if (allDeps['vue']) stack.push('Vue.js');
@@ -216,37 +242,48 @@ function identifyTechStack(
 function identifyComplianceConcerns(
   structure: RepoFile[],
   readme: string | null,
-  packageJson: PackageInfo | null
+  packageJson: PackageInfo | null,
+  subPackages: { path: string; packageJson: PackageInfo }[]
 ): string[] {
   const concerns: string[] = [];
   const fileNames = structure.map((f) => f.name.toLowerCase());
   const readmeLower = (readme || '').toLowerCase();
 
+  // Collect all dependencies from root and sub-packages
+  const allDeps: Record<string, string> = {};
+  const allDevDeps: Record<string, string> = {};
+  if (packageJson) {
+    Object.assign(allDeps, packageJson.dependencies);
+    Object.assign(allDevDeps, packageJson.devDependencies);
+  }
+  for (const sub of subPackages) {
+    Object.assign(allDeps, sub.packageJson.dependencies);
+    Object.assign(allDevDeps, sub.packageJson.devDependencies);
+  }
+
   // Check for accessibility (Section 508)
   const hasA11yDeps =
-    packageJson?.dependencies &&
-    (packageJson.dependencies['axe-core'] ||
-      packageJson.dependencies['jest-axe'] ||
-      packageJson.dependencies['@axe-core/react'] ||
-      packageJson.dependencies['pa11y']);
+    allDeps['axe-core'] ||
+    allDeps['jest-axe'] ||
+    allDeps['@axe-core/react'] ||
+    allDeps['pa11y'] ||
+    allDevDeps['axe-core'] ||
+    allDevDeps['jest-axe'] ||
+    allDevDeps['@axe-core/react'] ||
+    allDevDeps['pa11y'];
   if (!hasA11yDeps && !readmeLower.includes('accessibility') && !readmeLower.includes('508')) {
     concerns.push('No accessibility (Section 508) tooling detected');
   }
 
   // Check for security scanning
   const hasSecurityDeps =
-    packageJson?.devDependencies &&
-    (packageJson.devDependencies['eslint-plugin-security'] ||
-      packageJson.devDependencies['snyk'] ||
-      packageJson.devDependencies['npm-audit']);
+    allDevDeps['eslint-plugin-security'] || allDevDeps['snyk'] || allDevDeps['npm-audit'];
   if (!hasSecurityDeps && !fileNames.includes('.snyk') && !fileNames.includes('security.md')) {
     concerns.push('No security scanning tooling detected');
   }
 
   // Check for USWDS (gov design system)
-  const hasUSWDS =
-    packageJson?.dependencies &&
-    (packageJson.dependencies['@uswds/uswds'] || packageJson.dependencies['uswds']);
+  const hasUSWDS = allDeps['@uswds/uswds'] || allDeps['uswds'];
   if (!hasUSWDS && !readmeLower.includes('uswds') && !readmeLower.includes('design system')) {
     concerns.push('Not using USWDS (US Web Design System)');
   }
@@ -376,6 +413,23 @@ function generateArchitectureNotes(
   return notes;
 }
 
+// Helper to parse package.json content
+function parsePackageJson(content: string): PackageInfo | null {
+  try {
+    const parsed = JSON.parse(content);
+    return {
+      name: parsed.name || '',
+      version: parsed.version || '',
+      description: parsed.description,
+      dependencies: parsed.dependencies || {},
+      devDependencies: parsed.devDependencies || {},
+      scripts: parsed.scripts || {},
+    };
+  } catch {
+    return null;
+  }
+}
+
 // Main function to analyze a repository
 export async function analyzeRepository(repoUrl: string): Promise<RepoAnalysis | null> {
   const parsed = parseGitHubUrl(repoUrl);
@@ -395,19 +449,48 @@ export async function analyzeRepository(repoUrl: string): Promise<RepoAnalysis |
       getRepoStructure(owner, repo),
     ]);
 
-    // Get latest commit date
+    // Extract fork info
+    const forkInfo: ForkInfo = {
+      isFork: repoInfo.data.fork,
+      parentOwner: repoInfo.data.parent?.owner?.login,
+      parentRepo: repoInfo.data.parent?.name,
+      parentDescription: repoInfo.data.parent?.description || undefined,
+    };
+
+    // Get latest commit date and recent issues in parallel
     let lastCommit: string | null = null;
+    let recentIssues: RepoIssue[] = [];
+
     try {
-      const commits = await octokit.repos.listCommits({
-        owner,
-        repo,
-        per_page: 1,
-      });
-      if (commits.data.length > 0) {
-        lastCommit = commits.data[0].commit.author?.date || null;
+      const [commitsResult, issuesResult] = await Promise.all([
+        octokit.repos.listCommits({ owner, repo, per_page: 1 }),
+        octokit.issues.listForRepo({
+          owner,
+          repo,
+          state: 'open',
+          per_page: 10,
+          sort: 'updated',
+          direction: 'desc',
+        }),
+      ]);
+
+      if (commitsResult.data.length > 0) {
+        lastCommit = commitsResult.data[0].commit.author?.date || null;
       }
+
+      recentIssues = issuesResult.data
+        .filter((issue) => !issue.pull_request) // Exclude PRs
+        .map((issue) => ({
+          number: issue.number,
+          title: issue.title,
+          state: issue.state,
+          createdAt: issue.created_at,
+          labels: issue.labels
+            .map((l) => (typeof l === 'string' ? l : l.name || ''))
+            .filter(Boolean),
+        }));
     } catch {
-      // Commits might not be accessible
+      // Commits or issues might not be accessible
     }
 
     // Fetch key files in parallel
@@ -417,22 +500,33 @@ export async function analyzeRepository(repoUrl: string): Promise<RepoAnalysis |
       getFileContent(owner, repo, 'requirements.txt'),
     ]);
 
-    // Parse package.json if present
-    let packageJson: PackageInfo | null = null;
-    if (packageJsonContent) {
-      try {
-        const parsed = JSON.parse(packageJsonContent);
-        packageJson = {
-          name: parsed.name || '',
-          version: parsed.version || '',
-          description: parsed.description,
-          dependencies: parsed.dependencies || {},
-          devDependencies: parsed.devDependencies || {},
-          scripts: parsed.scripts || {},
-        };
-      } catch {
-        // Invalid JSON
-      }
+    // Parse root package.json if present
+    const packageJson = packageJsonContent ? parsePackageJson(packageJsonContent) : null;
+
+    // Detect monorepo and fetch sub-package.json files
+    const subPackages: { path: string; packageJson: PackageInfo }[] = [];
+    const monorepoIndicators = ['packages', 'apps', 'sites', 'api', 'services', 'shared'];
+    const potentialSubDirs = structure
+      .filter((f) => f.type === 'dir' && monorepoIndicators.includes(f.name.toLowerCase()))
+      .map((f) => f.name);
+
+    // Fetch sub-package.json files in parallel
+    if (potentialSubDirs.length > 0) {
+      const subPackagePromises = potentialSubDirs.map(async (dir) => {
+        const content = await getFileContent(owner, repo, `${dir}/package.json`);
+        if (content) {
+          const pkg = parsePackageJson(content);
+          if (pkg) {
+            return { path: dir, packageJson: pkg };
+          }
+        }
+        return null;
+      });
+
+      const results = await Promise.all(subPackagePromises);
+      subPackages.push(
+        ...results.filter((r): r is { path: string; packageJson: PackageInfo } => r !== null)
+      );
     }
 
     const languages = languagesResult.data as Record<string, number>;
@@ -448,14 +542,25 @@ export async function analyzeRepository(repoUrl: string): Promise<RepoAnalysis |
       fileNames.includes('.circleci') ||
       fileNames.includes('.gitlab-ci.yml');
 
-    // Identify tech stack
-    const techStack = identifyTechStack(structure, packageJson, requirementsTxt, languages);
+    // Identify tech stack (now includes sub-packages)
+    const techStack = identifyTechStack(
+      structure,
+      packageJson,
+      subPackages,
+      requirementsTxt,
+      languages
+    );
 
     // Generate architecture notes
     const architectureNotes = generateArchitectureNotes(structure, techStack, readme, packageJson);
 
-    // Identify compliance concerns
-    const complianceConcerns = identifyComplianceConcerns(structure, readme, packageJson);
+    // Identify compliance concerns (now includes sub-packages)
+    const complianceConcerns = identifyComplianceConcerns(
+      structure,
+      readme,
+      packageJson,
+      subPackages
+    );
 
     return {
       owner,
@@ -466,6 +571,7 @@ export async function analyzeRepository(repoUrl: string): Promise<RepoAnalysis |
       stars: repoInfo.data.stargazers_count,
       forks: repoInfo.data.forks_count,
       openIssues: repoInfo.data.open_issues_count,
+      recentIssues,
       lastCommit,
       defaultBranch: repoInfo.data.default_branch,
       license: repoInfo.data.license?.name || null,
@@ -473,6 +579,7 @@ export async function analyzeRepository(repoUrl: string): Promise<RepoAnalysis |
       structure,
       readme: readme ? readme.slice(0, 3000) : null, // Truncate for context
       packageJson,
+      subPackages,
       requirementsTxt: requirementsTxt ? requirementsTxt.slice(0, 1000) : null,
       hasTests,
       hasDocs,
@@ -480,12 +587,14 @@ export async function analyzeRepository(repoUrl: string): Promise<RepoAnalysis |
       techStack,
       architectureNotes,
       complianceConcerns,
+      forkInfo,
       source: `GitHub (${owner}/${repo})`,
     };
-  } catch (error: any) {
-    if (error.status === 404) {
+  } catch (error: unknown) {
+    const status = (error as { status?: number }).status;
+    if (status === 404) {
       console.warn(`GitHub: Repository not found: ${owner}/${repo}`);
-    } else if (error.status === 403) {
+    } else if (status === 403) {
       console.warn(`GitHub: Rate limited or private repo: ${owner}/${repo}`);
     } else {
       console.warn(`GitHub: Error analyzing ${owner}/${repo}:`, error);
@@ -499,6 +608,14 @@ export function formatRepoAnalysisForAgent(analysis: RepoAnalysis): string {
   const parts: string[] = [];
 
   parts.push(`\n📦 REPOSITORY ANALYSIS: ${analysis.owner}/${analysis.repo}`);
+
+  // Show fork info prominently if this is a fork
+  if (analysis.forkInfo.isFork && analysis.forkInfo.parentOwner) {
+    parts.push(`⚠️ FORK of ${analysis.forkInfo.parentOwner}/${analysis.forkInfo.parentRepo}`);
+    if (analysis.forkInfo.parentDescription) {
+      parts.push(`   Parent: ${analysis.forkInfo.parentDescription}`);
+    }
+  }
 
   if (analysis.description) {
     parts.push(`Description: ${analysis.description}`);
@@ -521,6 +638,18 @@ export function formatRepoAnalysisForAgent(analysis: RepoAnalysis): string {
   parts.push(`\n*Tech Stack:*`);
   parts.push(`• ${analysis.techStack.join(', ') || 'Could not determine'}`);
 
+  // Show monorepo sub-packages if detected
+  if (analysis.subPackages.length > 0) {
+    parts.push(`\n*Monorepo Packages Detected:*`);
+    analysis.subPackages.forEach((sub) => {
+      const deps = Object.keys(sub.packageJson.dependencies || {}).slice(0, 5);
+      parts.push(`• ${sub.path}/: ${sub.packageJson.name || 'unnamed'}`);
+      if (deps.length > 0) {
+        parts.push(`  Key deps: ${deps.join(', ')}`);
+      }
+    });
+  }
+
   parts.push(`\n*Code Quality Indicators:*`);
   parts.push(`• Tests: ${analysis.hasTests ? '✓ Present' : '✗ Not detected'}`);
   parts.push(`• Documentation: ${analysis.hasDocs ? '✓ Present' : '✗ Limited'}`);
@@ -538,6 +667,19 @@ export function formatRepoAnalysisForAgent(analysis: RepoAnalysis): string {
     analysis.complianceConcerns.forEach((concern) => {
       parts.push(`• ⚠️ ${concern}`);
     });
+  }
+
+  // Show recent issues - this is valuable context for bid assessment
+  if (analysis.recentIssues.length > 0) {
+    parts.push(`\n*Recent Open Issues (${analysis.openIssues} total):*`);
+    analysis.recentIssues.slice(0, 5).forEach((issue) => {
+      const labels = issue.labels.length > 0 ? ` [${issue.labels.join(', ')}]` : '';
+      const age = getIssueAge(issue.createdAt);
+      parts.push(`• #${issue.number}: ${issue.title}${labels} (${age})`);
+    });
+    if (analysis.openIssues > 5) {
+      parts.push(`  ... and ${analysis.openIssues - 5} more open issues`);
+    }
   }
 
   parts.push(`\n*Repository Structure (top-level):*`);
@@ -558,4 +700,14 @@ export function formatRepoAnalysisForAgent(analysis: RepoAnalysis): string {
   parts.push(`\nSource: ${analysis.source}`);
 
   return parts.join('\n');
+}
+
+// Helper to format issue age
+function getIssueAge(createdAt: string): string {
+  const days = Math.floor((Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24));
+  if (days < 1) return 'today';
+  if (days === 1) return '1 day old';
+  if (days < 30) return `${days} days old`;
+  if (days < 365) return `${Math.floor(days / 30)} months old`;
+  return `${Math.floor(days / 365)} years old`;
 }
