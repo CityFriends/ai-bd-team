@@ -305,6 +305,13 @@ export const OPPORTUNITY_FILTERS = {
     'mainframe',
     'cobol',
     'legacy mainframe',
+
+    // Industry-specific systems not in our wheelhouse
+    'airline',
+    'aviation scheduling',
+    'flight scheduling',
+    'crew scheduling',
+    'air traffic',
   ],
 
   // SOFT EXCLUDE - Reduce score but don't auto-skip

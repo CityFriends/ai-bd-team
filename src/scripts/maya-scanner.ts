@@ -13,23 +13,49 @@ import 'dotenv/config';
 import * as fs from 'fs';
 import cron from 'node-cron';
 import { App } from '@slack/bolt';
-import { searchOpportunities, getSAMOpportunityURL, extractAgencyAbbreviation } from '../integrations/sam-gov.js';
+import {
+  searchOpportunities,
+  getSAMOpportunityURL,
+  extractAgencyAbbreviation,
+} from '../integrations/sam-gov.js';
 import { getAnthropic } from '../integrations/claude.js';
 import { getSupabase } from '../integrations/supabase.js';
 import { loadCompanyContext, formatCompanyContextForPrompt } from '../context/company-context.js';
 import { matchForecastToSAM, linkForecastToSAM } from '../integrations/agency-forecasts.js';
-import { getRelevantForecasts, formatFCOForAgent, type FCOForecast } from '../integrations/acquisition-gateway.js';
-import { bold, bullets, link as slackLink, buildPost, type SlackPost } from '../utils/slack-format.js';
+import {
+  getRelevantForecasts,
+  formatFCOForAgent,
+  type FCOForecast,
+} from '../integrations/acquisition-gateway.js';
+import {
+  bold,
+  bullets,
+  link as slackLink,
+  buildPost,
+  type SlackPost,
+} from '../utils/slack-format.js';
 import { buildOpportunityBlocks, type OpportunityBlocks } from '../utils/slack-blocks.js';
-import { addOpportunityToNotion, logActivityToNotion, NotionHubIds } from '../integrations/notion-hub.js';
+import {
+  addOpportunityToNotion,
+  logActivityToNotion,
+  NotionHubIds,
+} from '../integrations/notion-hub.js';
 import {
   OPPORTUNITY_FILTERS,
   scoreOpportunity,
   shouldPostOpportunity,
 } from '../config/opportunity-filters.js';
 import { createOpportunityWorkflow } from '../integrations/supabase.js';
-import { queueNotification, flushNotifications, getPendingCount } from '../coordination/notification-batcher.js';
-import { scanEBuyEmails, scoreEBuyOpportunity, type EBuyOpportunity } from '../integrations/gsa-ebuy.js';
+import {
+  queueNotification,
+  flushNotifications,
+  getPendingCount,
+} from '../coordination/notification-batcher.js';
+import {
+  scanEBuyEmails,
+  scoreEBuyOpportunity,
+  type EBuyOpportunity,
+} from '../integrations/gsa-ebuy.js';
 import type { SAMOpportunity } from '../types/index.js';
 
 // Load Notion hub IDs if available
@@ -142,7 +168,9 @@ async function scanOpportunities(): Promise<ScoredOpportunity[]> {
 
         // Log why low-scoring opportunities are being skipped
         if (score < 60) {
-          console.log(`    [LOW SCORE: ${score}] ${opp.title?.slice(0, 50)}... - ${redFlags.join(', ') || 'No core keywords matched'}`);
+          console.log(
+            `    [LOW SCORE: ${score}] ${opp.title?.slice(0, 50)}... - ${redFlags.join(', ') || 'No core keywords matched'}`
+          );
         }
 
         const posting = shouldPostOpportunity(score);
@@ -166,7 +194,7 @@ async function scanOpportunities(): Promise<ScoredOpportunity[]> {
     }
 
     // Rate limit
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise((r) => setTimeout(r, 1000));
   }
 
   // Sort by score descending
@@ -174,7 +202,7 @@ async function scanOpportunities(): Promise<ScoredOpportunity[]> {
 
   // Deduplicate by noticeId (not title - title can be similar)
   const seen = new Set<string>();
-  const unique = allOpportunities.filter(o => {
+  const unique = allOpportunities.filter((o) => {
     const key = o.opportunity.noticeId;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -188,25 +216,28 @@ async function scanOpportunities(): Promise<ScoredOpportunity[]> {
 
 // Professional openers based on score
 const OPENERS_BY_SCORE = {
-  hot: [ // 90+
+  hot: [
+    // 90+
     "This one's strong - exactly our wheelhouse.",
-    "Found a solid match. HCD focus, good timeline.",
-    "Worth prioritizing - this checks all the boxes.",
+    'Found a solid match. HCD focus, good timeline.',
+    'Worth prioritizing - this checks all the boxes.',
     "This looks promising. Here's what caught my attention.",
-    "Good find today. This aligns well with our capabilities.",
+    'Good find today. This aligns well with our capabilities.',
   ],
-  interested: [ // 70-89
-    "Found something worth looking at.",
-    "This could be a fit. Flagging for review.",
-    "Interesting opportunity - here are the details.",
-    "Spotted this and wanted to share.",
-    "Worth a look - matches some of our criteria.",
+  interested: [
+    // 70-89
+    'Found something worth looking at.',
+    'This could be a fit. Flagging for review.',
+    'Interesting opportunity - here are the details.',
+    'Spotted this and wanted to share.',
+    'Worth a look - matches some of our criteria.',
   ],
-  lukewarm: [ // 60-69
+  lukewarm: [
+    // 60-69
     "Flagging this, though it's not a perfect fit.",
-    "Marginal match, but wanted to surface it.",
-    "This is adjacent to our work - might be worth a look.",
-    "Not ideal, but including for awareness.",
+    'Marginal match, but wanted to surface it.',
+    'This is adjacent to our work - might be worth a look.',
+    'Not ideal, but including for awareness.',
   ],
 };
 
@@ -216,10 +247,7 @@ function getRandomOpener(score: number): string {
   return openers[Math.floor(Math.random() * openers.length)];
 }
 
-async function generateMayaPost(
-  opp: ScoredOpportunity,
-  companyContext: string
-): Promise<string> {
+async function generateMayaPost(opp: ScoredOpportunity, companyContext: string): Promise<string> {
   // CRITICAL: Refuse to post if we don't have a real SAM.gov URL
   if (!opp.samUrl || !opp.opportunity.noticeId) {
     console.error(`[HALLUCINATION BLOCKED] Cannot post - missing SAM.gov URL or noticeId`);
@@ -229,9 +257,14 @@ async function generateMayaPost(
   const client = getAnthropic();
 
   // Enthusiasm varies by score
-  const enthusiasm = opp.score >= 90 ? 'Genuinely excited - this is a hot one' :
-                     opp.score >= 70 ? 'Interested - worth a look' :
-                     opp.score >= 60 ? 'Lukewarm - flagging but not hyped' : 'Minimal';
+  const enthusiasm =
+    opp.score >= 90
+      ? 'Genuinely excited - this is a hot one'
+      : opp.score >= 70
+        ? 'Interested - worth a look'
+        : opp.score >= 60
+          ? 'Lukewarm - flagging but not hyped'
+          : 'Minimal';
 
   // Don't post if score is below 60
   if (opp.score < 60) {
@@ -321,7 +354,7 @@ REQUIREMENTS:
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const textBlock = response.content.find(b => b.type === 'text');
+  const textBlock = response.content.find((b) => b.type === 'text');
   let post = textBlock?.type === 'text' ? textBlock.text : '';
 
   // VALIDATION: Make sure the post includes the real SAM.gov link
@@ -341,9 +374,9 @@ REQUIREMENTS:
 // Quiet morning messages - professional
 const QUIET_MORNING_MESSAGES = [
   "Morning scan complete - nothing matching our criteria today. I'll keep watching.",
-  "Scanned SAM this morning. A few opportunities but nothing in our software dev or design space.",
-  "Nothing to flag today. The opportunities I saw were either outside our NAICS, hit exclusion keywords (COTS, system integration, infrastructure), or lacked software/design focus.",
-  "Quiet day on SAM.gov for our space. Will continue monitoring.",
+  'Scanned SAM this morning. A few opportunities but nothing in our software dev or design space.',
+  'Nothing to flag today. The opportunities I saw were either outside our NAICS, hit exclusion keywords (COTS, system integration, infrastructure), or lacked software/design focus.',
+  'Quiet day on SAM.gov for our space. Will continue monitoring.',
 ];
 
 // Track last quiet message to prevent duplicates
@@ -353,12 +386,10 @@ async function generateQuietMorning(): Promise<string> {
   return QUIET_MORNING_MESSAGES[Math.floor(Math.random() * QUIET_MORNING_MESSAGES.length)];
 }
 
-async function generateWeeklySummary(
-  opportunities: ScoredOpportunity[]
-): Promise<string> {
-  const posted = opportunities.filter(o => o.posting.shouldPost && o.score >= 60);
-  const skipped = opportunities.filter(o => !o.posting.shouldPost || o.score < 60);
-  const hot = opportunities.filter(o => o.score >= 80);
+async function generateWeeklySummary(opportunities: ScoredOpportunity[]): Promise<string> {
+  const posted = opportunities.filter((o) => o.posting.shouldPost && o.score >= 60);
+  const skipped = opportunities.filter((o) => !o.posting.shouldPost || o.score < 60);
+  const hot = opportunities.filter((o) => o.score >= 80);
 
   let summary = `📊 *Weekly SAM.gov Summary*
 
@@ -386,7 +417,11 @@ Last 7 days:
   return summary;
 }
 
-async function postToSlack(app: App | null, message: string, threadTs?: string): Promise<string | undefined> {
+async function postToSlack(
+  app: App | null,
+  message: string,
+  threadTs?: string
+): Promise<string | undefined> {
   if (app) {
     const result = await app.client.chat.postMessage({
       channel: CHANNEL_ID,
@@ -452,42 +487,70 @@ async function postOpportunityWithBlocks(
 }
 
 /**
- * Get notice IDs we've already seen or decided to pass on
+ * Normalize a title for fuzzy matching.
+ * Handles common SAM.gov variations: & vs and, punctuation, extra spaces, etc.
  */
-async function getSeenAndPassedNoticeIds(): Promise<Set<string>> {
-  const seen = new Set<string>();
+function normalizeTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .trim()
+    .replace(/&/g, 'and') // & → and
+    .replace(/[^\w\s]/g, '') // Remove punctuation
+    .replace(/\s+/g, ' ') // Collapse multiple spaces
+    .trim();
+}
+
+/**
+ * Get notice IDs AND titles we've already seen or decided to pass on.
+ * We track both because SAM.gov amendments can have different notice IDs
+ * for the same opportunity (e.g., -A1, -A2 suffixes).
+ */
+async function getSeenAndPassedOpportunities(): Promise<{
+  noticeIds: Set<string>;
+  titles: Set<string>;
+}> {
+  const noticeIds = new Set<string>();
+  const titles = new Set<string>();
+
   try {
     const supabase = getSupabase();
 
     // Get all seen opportunities (already posted)
     const { data: seenData } = await supabase
       .from('seen_opportunities')
-      .select('notice_id, decision');
+      .select('notice_id, title, decision');
 
     if (seenData) {
       for (const row of seenData) {
-        // Skip if already posted OR if decision is pass/no_go
-        seen.add(row.notice_id);
+        noticeIds.add(row.notice_id);
+        // Normalize title for fuzzy matching
+        if (row.title) {
+          titles.add(normalizeTitle(row.title));
+        }
       }
     }
 
     // Also check opportunity_workflow for passed opportunities
     const { data: workflowData } = await supabase
       .from('opportunity_workflow')
-      .select('notice_id, decision')
+      .select('notice_id, title, decision')
       .in('decision', ['pass', 'no_go', 'passed']);
 
     if (workflowData) {
       for (const row of workflowData) {
-        seen.add(row.notice_id);
+        noticeIds.add(row.notice_id);
+        if (row.title) {
+          titles.add(normalizeTitle(row.title));
+        }
       }
     }
 
-    console.log(`[DEDUP] Found ${seen.size} already-seen or passed opportunities`);
+    console.log(`[DEDUP] Found ${noticeIds.size} seen notice IDs and ${titles.size} seen titles`);
   } catch (err) {
     console.warn('[DEDUP] Could not check seen opportunities:', err);
   }
-  return seen;
+
+  return { noticeIds, titles };
 }
 
 export async function runDailyScan() {
@@ -499,38 +562,57 @@ export async function runDailyScan() {
   const companyData = await loadCompanyContext();
   const companyContext = formatCompanyContextForPrompt(companyData, 'Maya');
 
-  // Get opportunities we've already posted or passed on
-  const seenNoticeIds = await getSeenAndPassedNoticeIds();
+  // Get opportunities we've already posted or passed on (by notice ID AND title)
+  const { noticeIds: seenNoticeIds, titles: seenTitles } = await getSeenAndPassedOpportunities();
 
   const opportunities = await scanOpportunities();
 
   console.log(`\nScanned ${opportunities.length} unique opportunities`);
 
   // Find opportunities to post
-  const toPost = opportunities.filter(o => o.posting.shouldPost);
-  const immediate = opportunities.filter(o => o.posting.urgency === 'immediate');
+  const toPost = opportunities.filter((o) => o.posting.shouldPost);
+  const immediate = opportunities.filter((o) => o.posting.urgency === 'immediate');
 
   console.log(`  ${toPost.length} worth posting`);
   console.log(`  ${immediate.length} hot (immediate post)`);
 
   // Filter to only opportunities with valid SAM URLs and score >= 60
-  let validToPost = toPost.filter(o => o.samUrl && o.opportunity.noticeId && o.score >= 60);
+  let validToPost = toPost.filter((o) => o.samUrl && o.opportunity.noticeId && o.score >= 60);
 
   // CRITICAL: Filter out already-seen or passed opportunities
+  // Check BOTH notice_id AND title because SAM.gov amendments have different notice IDs
   const beforeDedup = validToPost.length;
-  validToPost = validToPost.filter(o => {
+  validToPost = validToPost.filter((o) => {
+    const normalized = normalizeTitle(o.opportunity.title || '');
+
+    // Check by notice ID
     if (seenNoticeIds.has(o.opportunity.noticeId)) {
-      console.log(`[SKIP DUPLICATE] Already posted or passed: ${o.opportunity.title?.slice(0, 50)}...`);
+      console.log(
+        `[SKIP DUPLICATE] Already posted (notice ID match): ${o.opportunity.title?.slice(0, 50)}...`
+      );
       return false;
     }
+
+    // Check by normalized title (catches amendments with different notice IDs and minor variations)
+    if (normalized && seenTitles.has(normalized)) {
+      console.log(
+        `[SKIP DUPLICATE] Already posted (title match): ${o.opportunity.title?.slice(0, 50)}...`
+      );
+      return false;
+    }
+
     return true;
   });
 
   if (beforeDedup !== validToPost.length) {
-    console.log(`[DEDUP] Filtered out ${beforeDedup - validToPost.length} already-seen opportunities`);
+    console.log(
+      `[DEDUP] Filtered out ${beforeDedup - validToPost.length} already-seen opportunities`
+    );
   }
 
-  console.log(`\nValidation: ${validToPost.length} of ${toPost.length} opportunities have valid SAM.gov data`);
+  console.log(
+    `\nValidation: ${validToPost.length} of ${toPost.length} opportunities have valid SAM.gov data`
+  );
 
   if (validToPost.length === 0) {
     // Quiet morning - but only post once per day to avoid duplicates
@@ -550,7 +632,10 @@ export async function runDailyScan() {
       let forecastNote = '';
 
       // Check if this matches a forecast we previously flagged
-      const agencyAbbrev = extractAgencyAbbreviation(opp.opportunity.department, opp.opportunity.office);
+      const agencyAbbrev = extractAgencyAbbreviation(
+        opp.opportunity.department,
+        opp.opportunity.office
+      );
       if (agencyAbbrev) {
         try {
           const match = await matchForecastToSAM(opp.opportunity.title, agencyAbbrev);
@@ -577,7 +662,9 @@ export async function runDailyScan() {
         title: opp.opportunity.title,
         message: `${fullOpener}\n\nScore: ${opp.score}/100\n${opp.samUrl}`,
         metadata: {
-          agency: extractAgencyAbbreviation(opp.opportunity.department, opp.opportunity.office) || undefined,
+          agency:
+            extractAgencyAbbreviation(opp.opportunity.department, opp.opportunity.office) ||
+            undefined,
           noticeId: opp.opportunity.noticeId,
           score: opp.score,
           dueDate: opp.opportunity.responseDeadLine,
@@ -597,7 +684,8 @@ export async function runDailyScan() {
               name: opp.opportunity.title,
               status: 'New',
               fitScore: opp.score,
-              strategicFit: opp.score >= 70 && opp.reasons.some(r => r.toLowerCase().includes('strategic')),
+              strategicFit:
+                opp.score >= 70 && opp.reasons.some((r) => r.toLowerCase().includes('strategic')),
               agency: mapAgencyForNotion(opp.opportunity.department, opp.opportunity.office),
               subAgency: opp.opportunity.office,
               dueDate: opp.opportunity.responseDeadLine?.split('T')[0],
@@ -624,7 +712,10 @@ export async function runDailyScan() {
         }
 
         // Record in seen_opportunities
-        const agencyAbbrev = extractAgencyAbbreviation(opp.opportunity.department, opp.opportunity.office);
+        const agencyAbbrev = extractAgencyAbbreviation(
+          opp.opportunity.department,
+          opp.opportunity.office
+        );
         await supabase.from('seen_opportunities').insert({
           notice_id: opp.opportunity.noticeId,
           title: opp.opportunity.title,
@@ -639,7 +730,9 @@ export async function runDailyScan() {
         // CREATE WORKFLOW for high-score opportunities (70+)
         // This triggers the autonomous agent pipeline
         if (opp.score >= 70) {
-          console.log(`[WORKFLOW] Creating workflow for ${opp.opportunity.noticeId} (score: ${opp.score})`);
+          console.log(
+            `[WORKFLOW] Creating workflow for ${opp.opportunity.noticeId} (score: ${opp.score})`
+          );
 
           const workflow = await createOpportunityWorkflow({
             notice_id: opp.opportunity.noticeId,
@@ -658,14 +751,16 @@ export async function runDailyScan() {
           });
 
           if (workflow) {
-            console.log(`[WORKFLOW] Created workflow ${workflow.id} - David will auto-research in 30 min`);
+            console.log(
+              `[WORKFLOW] Created workflow ${workflow.id} - David will auto-research in 30 min`
+            );
           }
         }
       } catch {
         // Ignore if table doesn't exist
       }
 
-      await new Promise(r => setTimeout(r, 2000)); // Delay between posts
+      await new Promise((r) => setTimeout(r, 2000)); // Delay between posts
     }
   }
 
@@ -709,7 +804,8 @@ async function scanAndPostEBuyOpportunities(app: App | null): Promise<void> {
       const { score, reasons } = scoreEBuyOpportunity(opp);
 
       // Build message for eBuy opportunity
-      const statusEmoji = opp.status === 'NEW REQUEST' ? '🆕' : opp.status === 'AMENDED' ? '📝' : '📋';
+      const statusEmoji =
+        opp.status === 'NEW REQUEST' ? '🆕' : opp.status === 'AMENDED' ? '📝' : '📋';
       const message = `${statusEmoji} *GSA eBuy Opportunity*
 
 *${opp.title}*
@@ -736,9 +832,8 @@ Login to eBuy to view details and respond.`;
         // Ignore
       }
 
-      await new Promise(r => setTimeout(r, 1500)); // Delay between posts
+      await new Promise((r) => setTimeout(r, 1500)); // Delay between posts
     }
-
   } catch (err) {
     console.warn('[eBuy] Error scanning eBuy emails:', err);
   }
@@ -807,7 +902,6 @@ async function main() {
     });
 
     console.log('Scheduler running...');
-
   } else {
     // One-time scan
     await runDailyScan();
