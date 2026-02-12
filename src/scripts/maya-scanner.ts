@@ -56,6 +56,7 @@ import {
   scoreEBuyOpportunity,
   type EBuyOpportunity,
 } from '../integrations/gsa-ebuy.js';
+import { publishEvent, EventTypes, type NewOpportunityPayload } from '../events/index.js';
 import type { SAMOpportunity } from '../types/index.js';
 
 // Load Notion hub IDs if available
@@ -754,6 +755,55 @@ export async function runDailyScan() {
             console.log(
               `[WORKFLOW] Created workflow ${workflow.id} - David will auto-research in 30 min`
             );
+          }
+
+          // PUBLISH NEW_OPPORTUNITY EVENT
+          // This triggers the event-driven chain reaction:
+          // Maya finds → David researches → Marcus/Rosa assess → James decides → Patricia schedules
+          const eventPayload: NewOpportunityPayload = {
+            noticeId: opp.opportunity.noticeId,
+            title: opp.opportunity.title,
+            agency: agencyAbbrev || opp.opportunity.department,
+            value: undefined, // SAM API doesn't always provide this
+            deadline: opp.opportunity.responseDeadLine,
+            naics: opp.opportunity.naicsCode,
+            setAside: opp.opportunity.setAsideDescription || opp.opportunity.setAside,
+            url: opp.samUrl,
+            score: opp.score,
+            scoreBreakdown: {
+              keywordMatch:
+                opp.reasons.filter((r) => r.includes('keyword') || r.includes('match')).length > 0
+                  ? 20
+                  : 0,
+              agencyFit:
+                opp.reasons.filter((r) => r.includes('agency') || r.includes('customer')).length > 0
+                  ? 20
+                  : 0,
+              setAsideFit:
+                opp.reasons.filter((r) => r.includes('set-aside') || r.includes('8(a)')).length > 0
+                  ? 20
+                  : 0,
+              valueFit: 10, // Default
+            },
+            source: 'sam_gov',
+            postedMessage: messageTs,
+          };
+
+          const eventResult = await publishEvent({
+            eventType: EventTypes.NEW_OPPORTUNITY,
+            sourceAgent: 'maya',
+            payload: eventPayload as unknown as Record<string, unknown>,
+            priority: opp.score >= 80 ? 2 : 3, // Higher priority for hot opportunities
+            channelId: CHANNEL_ID,
+            threadTs: messageTs,
+          });
+
+          if (eventResult.success) {
+            console.log(
+              `[EVENT] Published NEW_OPPORTUNITY event ${eventResult.eventId} - chain reaction initiated`
+            );
+          } else {
+            console.warn(`[EVENT] Failed to publish NEW_OPPORTUNITY: ${eventResult.error}`);
           }
         }
       } catch {

@@ -1,0 +1,289 @@
+// Marcus Event Handlers
+// Marcus listens for: RESEARCH_COMPLETE, GO_NO_GO_DECISION
+// Marcus publishes: TECH_ASSESSMENT_COMPLETE
+
+import {
+  EventType,
+  EventTypes,
+  ResearchCompletePayload,
+  GoNoGoDecisionPayload,
+  TechAssessmentCompletePayload,
+} from '../eventTypes.js';
+import { EventHandler, EventHandlerContext, EventHandlerResult } from '../eventProcessor.js';
+import { getAnthropic } from '../../integrations/claude.js';
+
+// ============================================================
+// RESEARCH_COMPLETE Handler
+// Perform technical assessment after research
+// ============================================================
+const handleResearchComplete: EventHandler = async (
+  context: EventHandlerContext
+): Promise<EventHandlerResult> => {
+  const { event, publishChainEvent } = context;
+  const payload = event.payload as ResearchCompletePayload;
+
+  console.log(`[Marcus:Handler] Performing tech assessment for "${payload.title}"`);
+  console.log(`  Notice ID: ${payload.noticeId}`);
+  console.log(`  Research confidence: ${payload.confidence}`);
+
+  try {
+    // Perform technical assessment
+    const assessment = await performTechAssessment(payload);
+
+    // Build the TECH_ASSESSMENT_COMPLETE payload
+    const techPayload: TechAssessmentCompletePayload = {
+      noticeId: payload.noticeId,
+      title: payload.title,
+      techStack: assessment.techStack,
+      compliance: assessment.compliance,
+      concerns: assessment.concerns,
+      strengths: assessment.strengths,
+      recommendation: assessment.recommendation,
+      confidence: assessment.confidence,
+      summary: assessment.summary,
+    };
+
+    // Publish chain event
+    const chainResult = await publishChainEvent(
+      EventTypes.TECH_ASSESSMENT_COMPLETE,
+      techPayload as unknown as Record<string, unknown>
+    );
+
+    if (!chainResult.success) {
+      console.error(
+        `[Marcus:Handler] Failed to publish TECH_ASSESSMENT_COMPLETE: ${chainResult.error}`
+      );
+    }
+
+    return {
+      success: true,
+      result: {
+        noticeId: payload.noticeId,
+        recommendation: assessment.recommendation,
+        concernsCount: assessment.concerns.length,
+        strengthsCount: assessment.strengths.length,
+      },
+    };
+  } catch (err) {
+    console.error(`[Marcus:Handler] Tech assessment failed:`, err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Tech assessment failed',
+    };
+  }
+};
+
+// ============================================================
+// GO_NO_GO_DECISION Handler
+// Draft solution architecture on GO decision
+// ============================================================
+const handleGoNoGoDecision: EventHandler = async (
+  context: EventHandlerContext
+): Promise<EventHandlerResult> => {
+  const { event } = context;
+  const payload = event.payload as GoNoGoDecisionPayload;
+
+  console.log(`[Marcus:Handler] Received go/no-go decision for "${payload.title}"`);
+  console.log(`  Decision: ${payload.decision}`);
+  console.log(`  Win probability: ${payload.winProbability}%`);
+
+  // Only act on GO or CONDITIONAL_GO
+  if (payload.decision !== 'GO' && payload.decision !== 'CONDITIONAL_GO') {
+    console.log(`[Marcus:Handler] Decision is ${payload.decision}, no architecture needed`);
+    return {
+      success: true,
+      result: {
+        noticeId: payload.noticeId,
+        action: 'skipped',
+        reason: `Decision was ${payload.decision}`,
+      },
+    };
+  }
+
+  // Draft solution architecture (in production, this would create a document)
+  console.log(`[Marcus:Handler] Drafting solution architecture for "${payload.title}"`);
+
+  // TODO: Generate architecture document
+  // For now, just log that we would do this
+  const architectureOutline = {
+    noticeId: payload.noticeId,
+    title: payload.title,
+    sections: [
+      'Technical Approach Overview',
+      'System Architecture',
+      'Technology Stack',
+      'Security & Compliance',
+      'Integration Strategy',
+      'DevOps & Infrastructure',
+      'Risk Mitigation',
+    ],
+    status: 'draft_initiated',
+  };
+
+  return {
+    success: true,
+    result: {
+      noticeId: payload.noticeId,
+      action: 'architecture_drafted',
+      outline: architectureOutline,
+    },
+  };
+};
+
+// ============================================================
+// Tech Assessment Logic
+// ============================================================
+interface TechAssessmentResult {
+  techStack: {
+    required: string[];
+    preferred: string[];
+    compatibility: 'high' | 'medium' | 'low';
+  };
+  compliance: {
+    fedRampRequired: boolean;
+    fedRampLevel?: 'high' | 'moderate' | 'low' | 'not_required';
+    atoRequired: boolean;
+    section508: boolean;
+    otherCertifications: string[];
+  };
+  concerns: Array<{
+    area: string;
+    description: string;
+    severity: 'blocker' | 'major' | 'minor';
+  }>;
+  strengths: Array<{
+    area: string;
+    description: string;
+  }>;
+  recommendation: 'strong_fit' | 'good_fit' | 'possible_fit' | 'poor_fit' | 'no_fit';
+  confidence: 'high' | 'medium' | 'low';
+  summary: string;
+}
+
+async function performTechAssessment(
+  payload: ResearchCompletePayload
+): Promise<TechAssessmentResult> {
+  const client = getAnthropic();
+
+  const prompt = `You are Marcus, an engineering lead specializing in federal technology requirements. Assess the technical aspects of this opportunity.
+
+OPPORTUNITY:
+Title: ${payload.title}
+Notice ID: ${payload.noticeId}
+
+RESEARCH SUMMARY:
+${payload.summary}
+
+RED FLAGS:
+${payload.redFlags.map((f) => `- [${f.severity}] ${f.type}: ${f.description}`).join('\n') || 'None identified'}
+
+GREEN FLAGS:
+${payload.greenFlags.map((f) => `- ${f.type}: ${f.description}`).join('\n') || 'None identified'}
+
+Based on federal technology patterns and compliance requirements, provide:
+
+1. TECH STACK ANALYSIS:
+   - Required technologies
+   - Preferred technologies
+   - Compatibility with typical civic tech stack
+
+2. COMPLIANCE REQUIREMENTS:
+   - FedRAMP requirements
+   - ATO requirements
+   - Section 508 accessibility
+   - Other certifications
+
+3. TECHNICAL CONCERNS:
+   - Blockers, major issues, minor issues
+
+4. TECHNICAL STRENGTHS:
+   - Areas of advantage
+
+Respond in JSON format:
+{
+  "techStack": {
+    "required": ["list"],
+    "preferred": ["list"],
+    "compatibility": "high|medium|low"
+  },
+  "compliance": {
+    "fedRampRequired": boolean,
+    "fedRampLevel": "high|moderate|low|not_required",
+    "atoRequired": boolean,
+    "section508": boolean,
+    "otherCertifications": ["list"]
+  },
+  "concerns": [
+    {"area": "string", "description": "string", "severity": "blocker|major|minor"}
+  ],
+  "strengths": [
+    {"area": "string", "description": "string"}
+  ],
+  "recommendation": "strong_fit|good_fit|possible_fit|poor_fit|no_fit",
+  "confidence": "high|medium|low",
+  "summary": "2-3 sentence technical summary"
+}`;
+
+  try {
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1000,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const textBlock = response.content.find((b) => b.type === 'text');
+    if (!textBlock || textBlock.type !== 'text') {
+      throw new Error('No text response from Claude');
+    }
+
+    // Parse JSON from response
+    const jsonMatch = textBlock.text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('No JSON found in response');
+    }
+
+    const result = JSON.parse(jsonMatch[0]) as TechAssessmentResult;
+
+    // Ensure required fields have defaults
+    return {
+      techStack: result.techStack || { required: [], preferred: [], compatibility: 'medium' },
+      compliance: result.compliance || {
+        fedRampRequired: false,
+        atoRequired: false,
+        section508: true,
+        otherCertifications: [],
+      },
+      concerns: result.concerns || [],
+      strengths: result.strengths || [],
+      recommendation: result.recommendation || 'possible_fit',
+      confidence: result.confidence || 'low',
+      summary: result.summary || 'Technical assessment completed.',
+    };
+  } catch (err) {
+    console.error('[Marcus:Handler] Claude analysis failed:', err);
+
+    // Return minimal result on failure
+    return {
+      techStack: { required: [], preferred: [], compatibility: 'medium' },
+      compliance: {
+        fedRampRequired: false,
+        atoRequired: false,
+        section508: true,
+        otherCertifications: [],
+      },
+      concerns: [],
+      strengths: [],
+      recommendation: 'possible_fit',
+      confidence: 'low',
+      summary: 'Unable to complete full technical assessment. Manual review recommended.',
+    };
+  }
+}
+
+// ============================================================
+// Export Handler Map
+// ============================================================
+export const marcusHandlers: Map<EventType, EventHandler> = new Map([
+  [EventTypes.RESEARCH_COMPLETE, handleResearchComplete],
+  [EventTypes.GO_NO_GO_DECISION, handleGoNoGoDecision],
+]);

@@ -24,15 +24,40 @@ import {
 } from '../integrations/supabase.js';
 import { gatherResearchContext, formatResearchContext } from '../integrations/research-context.js';
 import { loadCompanyContext, formatCompanyContextForPrompt } from '../context/company-context.js';
-import { parseSlackFiles, formatFilesForContext, type SlackFile } from '../integrations/slack-files.js';
+import {
+  parseSlackFiles,
+  formatFilesForContext,
+  type SlackFile,
+} from '../integrations/slack-files.js';
 import { createMemoryManager, type MemoryManager } from '../integrations/memory-manager.js';
-import { buildHierarchicalContext, formatHierarchicalContext } from '../integrations/summarization.js';
+import {
+  buildHierarchicalContext,
+  formatHierarchicalContext,
+} from '../integrations/summarization.js';
 import { getCachedResearch } from '../integrations/semantic-cache.js';
 import { embed } from '../integrations/embeddings.js';
-import { trackAgentResponse, detectRephrasedQuestion, setupFeedbackListeners } from './feedback-listener.js';
-import { checkForHandoff, formatHandoffForPrompt, handoffToAgent, detectAgentTag } from './handoff.js';
+import {
+  trackAgentResponse,
+  detectRephrasedQuestion,
+  setupFeedbackListeners,
+} from './feedback-listener.js';
+import {
+  checkForHandoff,
+  formatHandoffForPrompt,
+  handoffToAgent,
+  detectAgentTag,
+} from './handoff.js';
 import { buildWarmupMessages, formatAgentMoodLine } from './warmups.js';
 import { parseActionFromResponse, createAction } from '../integrations/agent-actions.js';
+import {
+  EventProcessor,
+  createEventProcessor,
+  getHandlersForAgent,
+  publishEvent,
+  EventTypes,
+  type EventType,
+  type PublishResult,
+} from '../events/index.js';
 import type {
   LiveAgentName,
   LiveAgentConfig,
@@ -47,13 +72,13 @@ import type {
 
 // Agent Slack IDs for handoffs
 const AGENT_SLACK_IDS: Record<string, LiveAgentName> = {
-  'U0AC3RA4JVB': 'maya',
-  'U0AC0SVD3MH': 'david',
-  'U0ACASZ36BW': 'rosa',
-  'U0AC582GXBQ': 'james',
-  'U0AC79NTDAN': 'patricia',
-  'U0ACP8LKFB3': 'jodie',
-  'U0ADSL3DL95': 'marcus',
+  U0AC3RA4JVB: 'maya',
+  U0AC0SVD3MH: 'david',
+  U0ACASZ36BW: 'rosa',
+  U0AC582GXBQ: 'james',
+  U0AC79NTDAN: 'patricia',
+  U0ACP8LKFB3: 'jodie',
+  U0ADSL3DL95: 'marcus',
 };
 
 export abstract class LiveAgent {
@@ -73,6 +98,9 @@ export abstract class LiveAgent {
 
   // Memory manager for three-tier memory
   protected memoryManager: MemoryManager;
+
+  // Event processor for handling events from other agents
+  protected eventProcessor: EventProcessor | null = null;
 
   constructor() {
     this.channelId = process.env.SLACK_CHANNEL_ID || '';
@@ -130,8 +158,10 @@ export abstract class LiveAgent {
   private async restoreActiveThreads(): Promise<void> {
     try {
       const threads = await getAgentThreads(this.name, { hours: 72 });
-      threads.forEach(t => this.activeThreads.add(t.thread_ts));
-      console.log(`${this.displayName}: Restored ${this.activeThreads.size} active threads from database`);
+      threads.forEach((t) => this.activeThreads.add(t.thread_ts));
+      console.log(
+        `${this.displayName}: Restored ${this.activeThreads.size} active threads from database`
+      );
     } catch (err) {
       console.warn(`${this.displayName}: Could not restore active threads:`, err);
     }
@@ -217,14 +247,35 @@ export abstract class LiveAgent {
       if (isGeneralMessage) {
         // Patricia responds to general check-ins
         if (this.name === 'patricia') {
-          const checkInPhrases = ['what\'s happening', 'status', 'update', 'what\'s up', 'checking in', 'standup', 'quiet in here', 'anyone there', 'y\'all'];
-          shouldProactivelyRespond = checkInPhrases.some(phrase => text.includes(phrase));
+          const checkInPhrases = [
+            "what's happening",
+            'status',
+            'update',
+            "what's up",
+            'checking in',
+            'standup',
+            'quiet in here',
+            'anyone there',
+            "y'all",
+          ];
+          shouldProactivelyRespond = checkInPhrases.some((phrase) => text.includes(phrase));
         }
 
         // Gratitude responses - Patricia acknowledges thank yous as team coordinator
         if (!shouldProactivelyRespond && this.name === 'patricia') {
-          const gratitudePhrases = ['thank you', 'thanks', 'appreciate', 'grateful', 'you rock', 'great job', 'nice work', 'well done', 'awesome work', 'good job'];
-          const isGratitude = gratitudePhrases.some(phrase => text.includes(phrase));
+          const gratitudePhrases = [
+            'thank you',
+            'thanks',
+            'appreciate',
+            'grateful',
+            'you rock',
+            'great job',
+            'nice work',
+            'well done',
+            'awesome work',
+            'good job',
+          ];
+          const isGratitude = gratitudePhrases.some((phrase) => text.includes(phrase));
           if (isGratitude) {
             shouldProactivelyRespond = true;
           }
@@ -233,48 +284,191 @@ export abstract class LiveAgent {
         // Casual/social conversation - different agents respond to different topics
         if (!shouldProactivelyRespond) {
           const casualKeywords: Record<string, string[]> = {
-            maya: ['running', 'marathon', 'half marathon', 'atlanta', 'cat', 'sol', 'true crime', 'podcast', 'portugal', 'japan', 'travel', 'traveling', 'vacation', 'trip', 'korea', 'kbbq'],
-            david: ['beer', 'homebrew', 'brewing', 'denver', 'colorado', 'hiking', 'board game', 'game night', 'ramen', 'iceland', 'germany', 'dog', 'audit'],
-            rosa: ['miami', 'cuban', 'cooking', 'dinner party', 'salsa', 'dancing', 'cat', 'puerto rico', 'colombia', 'spain', 'plantain', 'wynwood'],
-            james: ['san diego', 'golf', 'golfing', 'kids', 'little league', 'baseball', 'commanders', 'nationals', 'bbq', 'grill', 'steak', 'navy', 'hawaii', 'scotland', 'dad joke'],
-            patricia: ['austin', 'yoga', 'spin', 'dog', 'deadline', 'meal prep', 'thailand', 'thai', 'costa rica', 'italy', 'bali', 'matcha'],
-            marcus: ['f1', 'formula 1', 'mclaren', 'lando', 'norris', 'chess', 'sci-fi', 'octavia butler', 'jemisin', 'bike', 'biking', 'columbia heights', 'haitian', 'griot', 'kernel'],
+            maya: [
+              'running',
+              'marathon',
+              'half marathon',
+              'atlanta',
+              'cat',
+              'sol',
+              'true crime',
+              'podcast',
+              'portugal',
+              'japan',
+              'travel',
+              'traveling',
+              'vacation',
+              'trip',
+              'korea',
+              'kbbq',
+            ],
+            david: [
+              'beer',
+              'homebrew',
+              'brewing',
+              'denver',
+              'colorado',
+              'hiking',
+              'board game',
+              'game night',
+              'ramen',
+              'iceland',
+              'germany',
+              'dog',
+              'audit',
+            ],
+            rosa: [
+              'miami',
+              'cuban',
+              'cooking',
+              'dinner party',
+              'salsa',
+              'dancing',
+              'cat',
+              'puerto rico',
+              'colombia',
+              'spain',
+              'plantain',
+              'wynwood',
+            ],
+            james: [
+              'san diego',
+              'golf',
+              'golfing',
+              'kids',
+              'little league',
+              'baseball',
+              'commanders',
+              'nationals',
+              'bbq',
+              'grill',
+              'steak',
+              'navy',
+              'hawaii',
+              'scotland',
+              'dad joke',
+            ],
+            patricia: [
+              'austin',
+              'yoga',
+              'spin',
+              'dog',
+              'deadline',
+              'meal prep',
+              'thailand',
+              'thai',
+              'costa rica',
+              'italy',
+              'bali',
+              'matcha',
+            ],
+            marcus: [
+              'f1',
+              'formula 1',
+              'mclaren',
+              'lando',
+              'norris',
+              'chess',
+              'sci-fi',
+              'octavia butler',
+              'jemisin',
+              'bike',
+              'biking',
+              'columbia heights',
+              'haitian',
+              'griot',
+              'kernel',
+            ],
           };
           const myCasualKeywords = casualKeywords[this.name] || [];
-          shouldProactivelyRespond = myCasualKeywords.some(kw => text.includes(kw));
+          shouldProactivelyRespond = myCasualKeywords.some((kw) => text.includes(kw));
         }
 
         // General social questions - rotate who answers (based on agent name hash with message)
         if (!shouldProactivelyRespond) {
           const socialPhrases = [
             // Greetings & check-ins
-            'weekend', 'plans', 'vacation', 'traveling', 'trip', 'how is everyone', 'how are you',
-            'good morning', 'good afternoon', 'happy friday', 'happy monday', 'tgif', 'how we feeling',
+            'weekend',
+            'plans',
+            'vacation',
+            'traveling',
+            'trip',
+            'how is everyone',
+            'how are you',
+            'good morning',
+            'good afternoon',
+            'happy friday',
+            'happy monday',
+            'tgif',
+            'how we feeling',
             // Pop culture & banter
-            'anyone else', 'y\'all', 'watching', 'netflix', 'show', 'movie', 'tiktok', 'twitter',
-            'succession', 'meme', 'funny', 'lol', 'lmao', 'dead', 'wild', 'crazy',
+            'anyone else',
+            "y'all",
+            'watching',
+            'netflix',
+            'show',
+            'movie',
+            'tiktok',
+            'twitter',
+            'succession',
+            'meme',
+            'funny',
+            'lol',
+            'lmao',
+            'dead',
+            'wild',
+            'crazy',
             // General chat
-            'feeling', 'mood', 'vibe', 'energy', 'tired', 'coffee', 'need a break', 'friday',
-            'monday', 'hump day', 'wednesday', 'thursday', 'end of', 'start of',
+            'feeling',
+            'mood',
+            'vibe',
+            'energy',
+            'tired',
+            'coffee',
+            'need a break',
+            'friday',
+            'monday',
+            'hump day',
+            'wednesday',
+            'thursday',
+            'end of',
+            'start of',
             // Food & life
-            'lunch', 'eating', 'hungry', 'dinner', 'drinks', 'happy hour',
+            'lunch',
+            'eating',
+            'hungry',
+            'dinner',
+            'drinks',
+            'happy hour',
             // Basic questions & help
-            'anybody', 'anyone', 'does anyone', 'can someone', 'help', 'question',
-            'what day', 'what time', 'what\'s today', 'today\'s date', 'calendar', 'schedule',
-            'reminder', 'forgot', 'remember'
+            'anybody',
+            'anyone',
+            'does anyone',
+            'can someone',
+            'help',
+            'question',
+            'what day',
+            'what time',
+            "what's today",
+            "today's date",
+            'calendar',
+            'schedule',
+            'reminder',
+            'forgot',
+            'remember',
           ];
-          const isSocialQuestion = socialPhrases.some(phrase => text.includes(phrase));
+          const isSocialQuestion = socialPhrases.some((phrase) => text.includes(phrase));
 
           if (isSocialQuestion) {
             // Different response chances per agent for social questions
             // Patricia is team coordinator, James waits for strategy
             const responseChances: Record<string, number> = {
-              patricia: 0.40,  // Team coordinator - responds often
+              patricia: 0.4, // Team coordinator - responds often
               maya: 0.35,
-              rosa: 0.30,
+              rosa: 0.3,
               david: 0.25,
-              marcus: 0.20,    // Engineering lead - mostly focused on technical
-              james: 0.15,     // Strategist - waits for strategic topics
+              marcus: 0.2, // Engineering lead - mostly focused on technical
+              james: 0.15, // Strategist - waits for strategic topics
             };
             const myChance = responseChances[this.name] || 0.25;
             shouldProactivelyRespond = Math.random() < myChance;
@@ -285,21 +479,55 @@ export abstract class LiveAgent {
         if (!shouldProactivelyRespond) {
           const expertiseKeywords: Record<string, string[]> = {
             maya: ['opportunity', 'sam.gov', 'rfp', 'rfi', 'solicitation', 'found', 'new opp'],
-            david: ['research', 'risk', 'incumbent', 'agency', 'red flag', 'due diligence', 'analyze'],
+            david: [
+              'research',
+              'risk',
+              'incumbent',
+              'agency',
+              'red flag',
+              'due diligence',
+              'analyze',
+            ],
             rosa: ['partner', 'team', 'teaming', 'subcontractor', 'relationship', 'intro'],
-            james: ['go/no-go', 'should we bid', 'win probability', 'capture strategy', 'final call', 'worth pursuing'],
+            james: [
+              'go/no-go',
+              'should we bid',
+              'win probability',
+              'capture strategy',
+              'final call',
+              'worth pursuing',
+            ],
             patricia: [], // Patricia handled above
-            marcus: ['github', 'repo', 'repository', 'codebase', 'architecture', 'tech stack', 'fedramp', 'ato', 'section 508', 'accessibility', 'cloud.gov', 'login.gov', 'uswds', 'technical review', 'code review', 'engineering'],
+            marcus: [
+              'github',
+              'repo',
+              'repository',
+              'codebase',
+              'architecture',
+              'tech stack',
+              'fedramp',
+              'ato',
+              'section 508',
+              'accessibility',
+              'cloud.gov',
+              'login.gov',
+              'uswds',
+              'technical review',
+              'code review',
+              'engineering',
+            ],
           };
           const myKeywords = expertiseKeywords[this.name] || [];
-          shouldProactivelyRespond = myKeywords.some(kw => text.includes(kw));
+          shouldProactivelyRespond = myKeywords.some((kw) => text.includes(kw));
         }
 
         // Catch-all: respond to any direct question or conversation starter
         // This ensures team members get responses even without specific keywords
         if (!shouldProactivelyRespond) {
           const isQuestion = text.includes('?');
-          const isGreeting = /^(hey|hi|hello|yo|sup|what's up|morning|afternoon)/i.test(text.trim());
+          const isGreeting = /^(hey|hi|hello|yo|sup|what's up|morning|afternoon)/i.test(
+            text.trim()
+          );
 
           if (isQuestion || isGreeting) {
             // For general questions/greetings, one agent should respond
@@ -317,9 +545,11 @@ export abstract class LiveAgent {
         this.processedMessages.add(messageId);
         setTimeout(() => this.processedMessages.delete(messageId), 5 * 60 * 1000);
 
-        const reason = isMentioned ? 'Mentioned by agent' :
-                       isInActiveThread ? 'Message in active thread' :
-                       'Proactive response to channel message';
+        const reason = isMentioned
+          ? 'Mentioned by agent'
+          : isInActiveThread
+            ? 'Message in active thread'
+            : 'Proactive response to channel message';
         console.log(`${this.displayName}: ${reason}`);
 
         const message = await this.parseIncomingMessage(event);
@@ -388,11 +618,11 @@ export abstract class LiveAgent {
   private checkIfOtherAgentMentioned(text: string): boolean {
     // Agent Slack IDs
     const agentSlackIds: Record<string, LiveAgentName> = {
-      'U0AC3RA4JVB': 'maya',
-      'U0AC0SVD3MH': 'david',
-      'U0ACASZ36BW': 'rosa',
-      'U0AC582GXBQ': 'james',
-      'U0AC79NTDAN': 'patricia',
+      U0AC3RA4JVB: 'maya',
+      U0AC0SVD3MH: 'david',
+      U0ACASZ36BW: 'rosa',
+      U0AC582GXBQ: 'james',
+      U0AC79NTDAN: 'patricia',
     };
 
     // Check for @mentions of other agents
@@ -411,10 +641,18 @@ export abstract class LiveAgent {
 
     // Check for @mentions by Slack user ID (would need to map these)
     // For now, check for name mentions
-    const agents: LiveAgentName[] = ['maya', 'david', 'rosa', 'james', 'patricia', 'jodie', 'marcus'];
+    const agents: LiveAgentName[] = [
+      'maya',
+      'david',
+      'rosa',
+      'james',
+      'patricia',
+      'jodie',
+      'marcus',
+    ];
 
     for (const agent of agents) {
-      if (lowerText.includes(`@${agent}`) || lowerText.includes(`<@`) && this.name === agent) {
+      if (lowerText.includes(`@${agent}`) || (lowerText.includes(`<@`) && this.name === agent)) {
         mentioned.push(agent);
       }
     }
@@ -439,9 +677,11 @@ export abstract class LiveAgent {
     // This prevents response chains where agents keep tagging each other back and forth
     if (message.isDirectMention && message.isFromBot && message.threadTs) {
       const recentResponses = await getRecentThreadResponses(message.threadTs, 60); // 60 second cooldown
-      const alreadyRespondedRecently = recentResponses.some(r => r.agent === this.name);
+      const alreadyRespondedRecently = recentResponses.some((r) => r.agent === this.name);
       if (alreadyRespondedRecently) {
-        console.log(`${this.displayName}: Already responded in this thread recently, skipping agent mention`);
+        console.log(
+          `${this.displayName}: Already responded in this thread recently, skipping agent mention`
+        );
         return;
       }
     }
@@ -458,7 +698,7 @@ export abstract class LiveAgent {
     // Check if another agent JUST responded in this thread (within last 20 seconds)
     if (message.threadTs && !message.isDirectMention) {
       const recentResponses = await getRecentThreadResponses(message.threadTs, 20);
-      const otherAgentJustResponded = recentResponses.some(r => r.agent !== this.name);
+      const otherAgentJustResponded = recentResponses.some((r) => r.agent !== this.name);
       if (otherAgentJustResponded) {
         console.log(`${this.displayName}: Another agent just responded in thread, skipping`);
         return;
@@ -511,7 +751,7 @@ export abstract class LiveAgent {
       // Double-check another agent didn't respond while we were waiting
       if (message.threadTs && !message.isDirectMention) {
         const recentResponses = await getRecentThreadResponses(message.threadTs, 15);
-        const otherAgentJustResponded = recentResponses.some(r => r.agent !== this.name);
+        const otherAgentJustResponded = recentResponses.some((r) => r.agent !== this.name);
         if (otherAgentJustResponded) {
           console.log(`${this.displayName}: Another agent responded while waiting, skipping`);
           return;
@@ -526,7 +766,10 @@ export abstract class LiveAgent {
       }
 
       // Post response
-      const postedMessage = await this.postMessage(responseText, message.threadTs || message.messageTs);
+      const postedMessage = await this.postMessage(
+        responseText,
+        message.threadTs || message.messageTs
+      );
 
       // Track response for feedback learning
       if (postedMessage?.ts) {
@@ -551,12 +794,12 @@ export abstract class LiveAgent {
 
       // Log team activity for coordination (async, non-blocking)
       // This enables other agents to see what this agent contributed
-      this.logTeamContribution(message, response).catch(err => {
+      this.logTeamContribution(message, response).catch((err) => {
         console.warn(`${this.displayName}: Team activity logging failed:`, err);
       });
 
       // Extract and store facts from the conversation (async, non-blocking)
-      this.extractAndStoreFacts(message.text, response.text, message.threadTs).catch(err => {
+      this.extractAndStoreFacts(message.text, response.text, message.threadTs).catch((err) => {
         console.warn(`${this.displayName}: Fact extraction failed:`, err);
       });
 
@@ -564,19 +807,28 @@ export abstract class LiveAgent {
       const taggedAgent = detectAgentTag(response.text, AGENT_SLACK_IDS);
       if (taggedAgent && taggedAgent !== this.name && message.threadTs) {
         const threadContext = await this.loadThreadContext(message.threadTs, message.channelId);
-        handoffToAgent(this.name, taggedAgent, message.threadTs, threadContext.messages).catch(err => {
-          console.warn(`${this.displayName}: Handoff creation failed:`, err);
-        });
+        handoffToAgent(this.name, taggedAgent, message.threadTs, threadContext.messages).catch(
+          (err) => {
+            console.warn(`${this.displayName}: Handoff creation failed:`, err);
+          }
+        );
       }
 
       // Check if agent committed to a future action (async, non-blocking)
-      this.parseAndSaveAction(response.text, message.text, message.channelId, message.threadTs || message.messageTs).catch(err => {
+      this.parseAndSaveAction(
+        response.text,
+        message.text,
+        message.channelId,
+        message.threadTs || message.messageTs
+      ).catch((err) => {
         console.warn(`${this.displayName}: Action parsing failed:`, err);
       });
 
       // Log sources to console for visibility
       if (response.sources.length > 0) {
-        console.log(`${this.displayName}: Sources: ${response.sources.join(', ')} (${response.confidenceLevel} confidence)`);
+        console.log(
+          `${this.displayName}: Sources: ${response.sources.join(', ')} (${response.confidenceLevel} confidence)`
+        );
       }
     }
   }
@@ -616,7 +868,7 @@ Only extract clear, specific facts. Don't infer or guess.`;
         messages: [{ role: 'user', content: prompt }],
       });
 
-      const textBlock = response.content.find(b => b.type === 'text');
+      const textBlock = response.content.find((b) => b.type === 'text');
       if (!textBlock || textBlock.type !== 'text') return;
 
       const jsonMatch = textBlock.text.match(/\{[\s\S]*\}/);
@@ -675,16 +927,20 @@ Only extract clear, specific facts. Don't infer or guess.`;
 
     if (action) {
       // Marcus can only commit to research/technical actions
-      if (this.name === 'marcus' &&
-          action.action_type !== 'research' &&
-          action.action_type !== 'follow_up' &&
-          action.action_type !== 'technical_review') {
+      if (
+        this.name === 'marcus' &&
+        action.action_type !== 'research' &&
+        action.action_type !== 'follow_up' &&
+        action.action_type !== 'technical_review'
+      ) {
         console.log(`${this.displayName}: Skipping non-technical action: ${action.action_type}`);
         return;
       }
 
       await createAction(action);
-      console.log(`${this.displayName}: Committed to action: ${action.action_type} - ${action.description}`);
+      console.log(
+        `${this.displayName}: Committed to action: ${action.action_type} - ${action.description}`
+      );
     }
   }
 
@@ -729,22 +985,42 @@ Only extract clear, specific facts. Don't infer or guess.`;
   private detectActionType(text: string): TeamActivity['action_type'] {
     const lower = text.toLowerCase();
 
-    if (lower.includes('recommend') || lower.includes('suggest') || lower.includes('my take') || lower.includes('i think we should')) {
+    if (
+      lower.includes('recommend') ||
+      lower.includes('suggest') ||
+      lower.includes('my take') ||
+      lower.includes('i think we should')
+    ) {
       return 'recommendation';
     }
     if (lower.includes('partner') || lower.includes('teaming') || lower.includes('subcontract')) {
       return 'partner_search';
     }
-    if (lower.includes('strategy') || lower.includes('capture') || lower.includes('win probability') || lower.includes('go/no-go')) {
+    if (
+      lower.includes('strategy') ||
+      lower.includes('capture') ||
+      lower.includes('win probability') ||
+      lower.includes('go/no-go')
+    ) {
       return 'strategy';
     }
     if (lower.includes('?') && !lower.includes('what if')) {
       return 'question';
     }
-    if (lower.includes('alert') || lower.includes('heads up') || lower.includes('warning') || lower.includes('red flag')) {
+    if (
+      lower.includes('alert') ||
+      lower.includes('heads up') ||
+      lower.includes('warning') ||
+      lower.includes('red flag')
+    ) {
       return 'alert';
     }
-    if (lower.includes('incumbent') || lower.includes('contract') || lower.includes('analysis') || lower.includes('data shows')) {
+    if (
+      lower.includes('incumbent') ||
+      lower.includes('contract') ||
+      lower.includes('analysis') ||
+      lower.includes('data shows')
+    ) {
       return 'analysis';
     }
     return 'research';
@@ -754,7 +1030,7 @@ Only extract clear, specific facts. Don't infer or guess.`;
   private async generateContributionSummary(text: string): Promise<string> {
     // For now, just take the first 1-2 sentences
     // Could be enhanced with AI summarization later
-    const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    const sentences = text.split(/[.!?]+/).filter((s) => s.trim().length > 0);
     const firstTwo = sentences.slice(0, 2).join('. ').trim();
     return firstTwo.length > 200 ? firstTwo.slice(0, 200) + '...' : firstTwo;
   }
@@ -810,16 +1086,34 @@ Only extract clear, specific facts. Don't infer or guess.`;
     const lower = text.toLowerCase();
 
     // Negative indicators
-    const negativeWords = ['red flag', 'concern', 'risk', 'warning', 'avoid', 'pass on', 'not a fit', 'wired', 'risky'];
-    const hasNegative = negativeWords.some(w => lower.includes(w));
+    const negativeWords = [
+      'red flag',
+      'concern',
+      'risk',
+      'warning',
+      'avoid',
+      'pass on',
+      'not a fit',
+      'wired',
+      'risky',
+    ];
+    const hasNegative = negativeWords.some((w) => lower.includes(w));
 
     // Positive indicators
-    const positiveWords = ['strong fit', 'good match', 'recommend', 'opportunity', 'promising', 'solid', 'great'];
-    const hasPositive = positiveWords.some(w => lower.includes(w));
+    const positiveWords = [
+      'strong fit',
+      'good match',
+      'recommend',
+      'opportunity',
+      'promising',
+      'solid',
+      'great',
+    ];
+    const hasPositive = positiveWords.some((w) => lower.includes(w));
 
     // Cautious indicators
     const cautiousWords = ['need more', 'should check', 'verify', 'unclear', 'maybe', 'depends'];
-    const hasCautious = cautiousWords.some(w => lower.includes(w));
+    const hasCautious = cautiousWords.some((w) => lower.includes(w));
 
     if (hasNegative && !hasPositive) return 'negative';
     if (hasPositive && !hasNegative) return 'positive';
@@ -841,17 +1135,17 @@ Only extract clear, specific facts. Don't infer or guess.`;
 
     // Topic detection by keywords
     const topicKeywords: Record<string, string[]> = {
-      'teaming': ['partner', 'team', 'subcontract', 'prime'],
-      'pricing': ['price', 'cost', 'budget', 'bid'],
-      'incumbent': ['incumbent', 'current contractor'],
-      'compliance': ['far', 'dfar', 'compliance', 'regulation'],
-      'proposal': ['proposal', 'rfp', 'response', 'submission'],
+      teaming: ['partner', 'team', 'subcontract', 'prime'],
+      pricing: ['price', 'cost', 'budget', 'bid'],
+      incumbent: ['incumbent', 'current contractor'],
+      compliance: ['far', 'dfar', 'compliance', 'regulation'],
+      proposal: ['proposal', 'rfp', 'response', 'submission'],
       'past performance': ['past performance', 'cpars', 'reference'],
-      'certifications': ['8a', 'wosb', 'sdvosb', 'hubzone', 'small business'],
+      certifications: ['8a', 'wosb', 'sdvosb', 'hubzone', 'small business'],
     };
 
     for (const [topic, keywords] of Object.entries(topicKeywords)) {
-      if (keywords.some(kw => lowerText.includes(kw))) {
+      if (keywords.some((kw) => lowerText.includes(kw))) {
         return topic;
       }
     }
@@ -931,7 +1225,10 @@ Respond as ${this.displayName}.`;
   }
 
   // Generate a response using Claude
-  async generateResponse(message: IncomingMessage, handoffContext: string = ''): Promise<AgentResponse> {
+  async generateResponse(
+    message: IncomingMessage,
+    handoffContext: string = ''
+  ): Promise<AgentResponse> {
     const client = getAnthropic();
 
     // Load thread context if in a thread (with hierarchical summarization for long threads)
@@ -944,16 +1241,14 @@ Respond as ${this.displayName}.`;
       if (context.messages.length > 0) {
         // Use hierarchical summarization for long threads
         try {
-          const hierarchical = await buildHierarchicalContext(
-            context.messages,
-            message.threadTs
-          );
+          const hierarchical = await buildHierarchicalContext(context.messages, message.threadTs);
           threadContext = '\n\n' + formatHierarchicalContext(hierarchical);
         } catch (err) {
           // Fallback to simple context
           console.warn(`${this.displayName}: Hierarchical context failed, using simple:`, err);
-          threadContext = '\n\nTHREAD CONTEXT (previous messages):\n' +
-            context.messages.map(m => `${m.author}: ${m.text}`).join('\n');
+          threadContext =
+            '\n\nTHREAD CONTEXT (previous messages):\n' +
+            context.messages.map((m) => `${m.author}: ${m.text}`).join('\n');
         }
       }
     }
@@ -961,11 +1256,9 @@ Respond as ${this.displayName}.`;
     // Load three-tier memory context (semantic search enabled)
     let memoryContext = '';
     try {
-      const memory = await this.memoryManager.buildMemoryContext(
-        message.text,
-        threadMessages,
-        { useSemanticSearch: true }
-      );
+      const memory = await this.memoryManager.buildMemoryContext(message.text, threadMessages, {
+        useSemanticSearch: true,
+      });
       memoryContext = this.memoryManager.formatForPrompt(memory);
     } catch (err) {
       // Fallback to legacy memory retrieval
@@ -1043,7 +1336,9 @@ Respond as ${this.displayName}.`;
         const activities = await getThreadActivity(message.threadTs);
         teamActivityContext = formatTeamActivityForAgent(activities, this.name);
         if (teamActivityContext) {
-          console.log(`${this.displayName}: Loaded team activity context (${activities.length} contributions)`);
+          console.log(
+            `${this.displayName}: Loaded team activity context (${activities.length} contributions)`
+          );
         }
       } catch (err) {
         // Don't block on team activity loading
@@ -1102,16 +1397,21 @@ Respond as ${this.displayName}.`;
       const response = await client.messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 800,
-        system: this.systemPrompt,  // Personality lives here now
-        messages: [
-          ...warmupMessages,
-          { role: 'user', content: operationalContext },
-        ],
+        system: this.systemPrompt, // Personality lives here now
+        messages: [...warmupMessages, { role: 'user', content: operationalContext }],
       });
 
-      const textBlock = response.content.find(b => b.type === 'text');
+      const textBlock = response.content.find((b) => b.type === 'text');
       if (!textBlock || textBlock.type !== 'text') {
-        return { text: '', shouldRespond: false, delayMs: 0, confidence: 0, sources: [], confidenceLevel: 'LOW' as const, reaction: null };
+        return {
+          text: '',
+          shouldRespond: false,
+          delayMs: 0,
+          confidence: 0,
+          sources: [],
+          confidenceLevel: 'LOW' as const,
+          reaction: null,
+        };
       }
 
       // Parse JSON response
@@ -1132,7 +1432,9 @@ Respond as ${this.displayName}.`;
 
       // Normalize confidence level
       const rawLevel = (parsed.confidenceLevel || 'LOW').toUpperCase();
-      const confidenceLevel = ['HIGH', 'MEDIUM', 'LOW'].includes(rawLevel) ? rawLevel as 'HIGH' | 'MEDIUM' | 'LOW' : 'LOW';
+      const confidenceLevel = ['HIGH', 'MEDIUM', 'LOW'].includes(rawLevel)
+        ? (rawLevel as 'HIGH' | 'MEDIUM' | 'LOW')
+        : 'LOW';
 
       return {
         text: parsed.response || '',
@@ -1145,7 +1447,15 @@ Respond as ${this.displayName}.`;
       };
     } catch (error) {
       console.error(`${this.displayName}: Error generating response:`, error);
-      return { text: '', shouldRespond: false, delayMs: 0, confidence: 0, sources: [], confidenceLevel: 'LOW' as const, reaction: null };
+      return {
+        text: '',
+        shouldRespond: false,
+        delayMs: 0,
+        confidence: 0,
+        sources: [],
+        confidenceLevel: 'LOW' as const,
+        reaction: null,
+      };
     }
   }
 
@@ -1233,15 +1543,102 @@ Respond as ${this.displayName}.`;
 
   // Disconnect
   async disconnect(): Promise<void> {
+    // Stop event processor first
+    this.stopEventProcessor();
+
     if (this.app) {
       await this.app.stop();
       console.log(`${this.displayName}: Disconnected`);
     }
   }
 
+  // ============================================================
+  // Event Processor Methods
+  // ============================================================
+
+  /**
+   * Start the event processor for this agent
+   * This enables the agent to react to events from other agents
+   */
+  async startEventProcessor(): Promise<void> {
+    if (this.eventProcessor) {
+      console.log(`${this.displayName}: Event processor already running`);
+      return;
+    }
+
+    const handlers = getHandlersForAgent(this.name);
+    if (handlers.size === 0) {
+      console.log(`${this.displayName}: No event handlers registered, skipping event processor`);
+      return;
+    }
+
+    this.eventProcessor = createEventProcessor(this.name, handlers, {
+      pollIntervalMs: 5000, // Poll every 5 seconds
+      claimLimit: 5,
+      onError: (error, event) => {
+        console.error(`${this.displayName}: Event processor error:`, error);
+        if (event) {
+          console.error(`  Event: ${event.event_type} from ${event.source_agent}`);
+        }
+      },
+      onEventProcessed: (event, result) => {
+        console.log(
+          `${this.displayName}: Processed event ${event.event_type} (success: ${result.success})`
+        );
+      },
+    });
+
+    this.eventProcessor.start();
+    console.log(
+      `${this.displayName}: Event processor started (handling: ${Array.from(handlers.keys()).join(', ')})`
+    );
+  }
+
+  /**
+   * Stop the event processor
+   */
+  stopEventProcessor(): void {
+    if (this.eventProcessor) {
+      this.eventProcessor.stop();
+      this.eventProcessor = null;
+      console.log(`${this.displayName}: Event processor stopped`);
+    }
+  }
+
+  /**
+   * Check if event processor is running
+   */
+  isEventProcessorActive(): boolean {
+    return this.eventProcessor?.isActive() ?? false;
+  }
+
+  /**
+   * Publish an event from this agent
+   */
+  protected async publishEvent(
+    eventType: EventType,
+    payload: Record<string, unknown>,
+    options?: {
+      targetAgent?: LiveAgentName;
+      priority?: number;
+      channelId?: string;
+      threadTs?: string;
+    }
+  ): Promise<PublishResult> {
+    return publishEvent({
+      eventType,
+      sourceAgent: this.name,
+      payload,
+      targetAgent: options?.targetAgent,
+      priority: options?.priority,
+      channelId: options?.channelId || this.channelId,
+      threadTs: options?.threadTs,
+    });
+  }
+
   // Sleep helper
   protected sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   // Detect mood from message style
@@ -1256,23 +1653,37 @@ Respond as ${this.displayName}.`;
     // Lots of questions = engaged
     const questionCount = (text.match(/\?/g) || []).length;
     if (questionCount >= 2) {
-      return { mood: 'engaged', guidance: 'They are curious and engaged. Go deeper, share details.' };
+      return {
+        mood: 'engaged',
+        guidance: 'They are curious and engaged. Go deeper, share details.',
+      };
     }
 
     // Lol, emoji, haha = relaxed
-    if (lowerText.includes('lol') || lowerText.includes('haha') || lowerText.includes('😂') || lowerText.includes('🤣')) {
+    if (
+      lowerText.includes('lol') ||
+      lowerText.includes('haha') ||
+      lowerText.includes('😂') ||
+      lowerText.includes('🤣')
+    ) {
       return { mood: 'relaxed', guidance: 'Casual vibe. Be playful, jokes are welcome.' };
     }
 
     // ALL CAPS = stressed or excited
     const capsRatio = (text.match(/[A-Z]/g) || []).length / text.length;
     if (capsRatio > 0.5 && text.length > 10) {
-      return { mood: 'stressed', guidance: 'They seem stressed or very excited. Be supportive, acknowledge the energy.' };
+      return {
+        mood: 'stressed',
+        guidance: 'They seem stressed or very excited. Be supportive, acknowledge the energy.',
+      };
     }
 
     // Ellipsis or "..." = uncertain or trailing off
     if (text.includes('...') || text.includes('idk') || lowerText.includes("i don't know")) {
-      return { mood: 'uncertain', guidance: 'They seem uncertain. Be supportive, help them think through it.' };
+      return {
+        mood: 'uncertain',
+        guidance: 'They seem uncertain. Be supportive, help them think through it.',
+      };
     }
 
     // Enthusiastic punctuation
@@ -1289,28 +1700,28 @@ Respond as ${this.displayName}.`;
 
     if (context.userContext.length > 0) {
       formatted += '\nTHINGS YOU KNOW ABOUT LAPEDRA/TAMARA:\n';
-      context.userContext.forEach(c => {
+      context.userContext.forEach((c) => {
         formatted += `- ${c.content} (${c.context_type})\n`;
       });
     }
 
     if (context.memories.length > 0) {
       formatted += '\nPAST CONVERSATIONS TO REFERENCE:\n';
-      context.memories.forEach(m => {
+      context.memories.forEach((m) => {
         formatted += `- ${m.summary}\n`;
       });
     }
 
     if (context.insideJokes.length > 0) {
       formatted += '\nINSIDE JOKES/REFERENCES (use sparingly):\n';
-      context.insideJokes.forEach(j => {
+      context.insideJokes.forEach((j) => {
         formatted += `- "${j.reference}" = ${j.full_context}\n`;
       });
     }
 
     if (context.decisionPatterns.length > 0) {
       formatted += '\nRECENT DECISION PATTERNS:\n';
-      context.decisionPatterns.forEach(d => {
+      context.decisionPatterns.forEach((d) => {
         formatted += `- ${d.decision.toUpperCase()}: ${d.reasoning || 'no reason given'}\n`;
       });
     }

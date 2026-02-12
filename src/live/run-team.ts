@@ -28,8 +28,8 @@ async function main() {
   console.log('');
 
   // Check which agents have tokens configured
-  const configuredAgents = agents.filter(a => process.env[a.tokenEnv]);
-  const missingAgents = agents.filter(a => !process.env[a.tokenEnv]);
+  const configuredAgents = agents.filter((a) => process.env[a.tokenEnv]);
+  const missingAgents = agents.filter((a) => !process.env[a.tokenEnv]);
 
   if (configuredAgents.length === 0) {
     console.error('ERROR: No agent tokens configured in .env');
@@ -80,14 +80,30 @@ async function main() {
       }
     }
 
+    // Start event processors for all agents
+    console.log('');
+    console.log('Starting event processors...');
+    for (const a of configuredAgents) {
+      try {
+        await a.agent.startEventProcessor();
+      } catch (err) {
+        console.warn(`⚠ ${a.name} event processor failed to start:`, err);
+        // Don't fail the whole startup - event processing is additive
+      }
+    }
+
     console.log('');
     console.log('═══════════════════════════════════════════════════════════');
-    console.log('  Team is live! Listening for messages...');
+    console.log('  Team is live! Listening for messages and events...');
     console.log('═══════════════════════════════════════════════════════════');
     console.log('');
     console.log('Try @mentioning an agent in #ai-bd-team:');
     console.log('  "@Maya is this opportunity worth looking at?"');
     console.log('  "@David what are the risks here?"');
+    console.log('');
+    console.log('Event-driven features:');
+    console.log("  - Agents react to each other's outputs automatically");
+    console.log('  - Chain reactions: Maya finds → David researches → James decides');
     console.log('');
     console.log('Press Ctrl+C to disconnect all agents.');
     console.log('');
@@ -95,11 +111,10 @@ async function main() {
     // Handle shutdown
     process.on('SIGINT', async () => {
       console.log('\nShutting down team...');
-      await Promise.all(configuredAgents.map(a => a.agent.disconnect()));
+      await Promise.all(configuredAgents.map((a) => a.agent.disconnect()));
       console.log('All agents disconnected.');
       process.exit(0);
     });
-
   } catch (error) {
     console.error('Failed to start team:', error);
     process.exit(1);
