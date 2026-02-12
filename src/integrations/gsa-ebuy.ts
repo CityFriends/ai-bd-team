@@ -25,58 +25,52 @@ export interface EBuyOpportunity {
 const EBUY_BASE_URL = 'https://www.ebuy.gsa.gov/ebuy/';
 
 /**
- * Parse GSA eBuy notification email content
+ * Parse GSA eBuy notification email content (HTML format)
+ * Email format is HTML with tables:
+ * <tr><td>RFI1795807</td><td>NEW REQUEST</td><td>date<br>buyer info</td><td>due date</td><td>title</td></tr>
  */
 export function parseEBuyEmail(emailBody: string): EBuyOpportunity[] {
   const opportunities: EBuyOpportunity[] = [];
 
-  // Find the Request Notices section
-  const requestSection = emailBody.match(
-    /Request Notices.*?Request ID\s+Status\s+Date\/Buyer\s+Quote\/Bid Due By\s+Request Title\s*([\s\S]*?)(?:Definition of Status:|Quote\/Bid Notices|$)/i
-  );
+  // Find the Request Notices table - look for rows after the header row
+  // The table has: Request ID, Status, Date/Buyer, Quote/Bid Due By, Request Title
+  const tableRowRegex =
+    /<tr><td>(RFQ?\d+|RFI\d+)<\/td><td>(NEW REQUEST|Q&A ADDED|AMENDED|CANCELED)<\/td><td>([^<]+)(?:<br>[^<]*)*<\/td><td>([^<]+)<\/td><td>([^<]+)<\/td><\/tr>/gi;
 
-  if (!requestSection || !requestSection[1]) {
-    console.log('[eBuy] No Request Notices section found');
-    return opportunities;
+  let match;
+  while ((match = tableRowRegex.exec(emailBody)) !== null) {
+    const [, requestId, status, datePosted, dueDate, title] = match;
+
+    opportunities.push({
+      requestId: requestId.toUpperCase(),
+      status: status.toUpperCase() as EBuyOpportunity['status'],
+      datePosted: datePosted.trim(),
+      dueDate: dueDate.trim(),
+      title: title.trim(),
+      ebuyUrl: `${EBUY_BASE_URL}?id=${requestId}`,
+    });
   }
 
-  const lines = requestSection[1].trim().split('\n');
+  // If HTML parsing didn't work, try plain text fallback
+  if (opportunities.length === 0) {
+    console.log('[eBuy] HTML parsing found nothing, trying plain text fallback...');
 
-  for (const line of lines) {
-    // Skip empty lines and header-like content
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('Definition') || trimmed.startsWith('Quote/Bid')) {
-      continue;
-    }
+    const lines = emailBody.split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      const textMatch = trimmed.match(
+        /^(RFQ?\d+|RFI\d+)\s+(NEW REQUEST|Q&A ADDED|AMENDED|CANCELED)\s+(\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}\s+[AP]M\s+[A-Z]+)\s+(\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}\s+[AP]M\s+[A-Z]+)\s+(.+)$/i
+      );
 
-    // Parse the tabular data
-    // Format: RFI1795215    AMENDED    02/09/2026 07:17 AM EST    02/11/2026 02:00 PM EST    NSF - Support Services
-    const match = trimmed.match(
-      /^(RFQ?\d+|RFI\d+)\s+(NEW REQUEST|Q&A ADDED|AMENDED|CANCELED)\s+(\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}\s+[AP]M\s+[A-Z]+)\s+(\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}\s+[AP]M\s+[A-Z]+)\s+(.+)$/i
-    );
-
-    if (match) {
-      const [, requestId, status, datePosted, dueDate, title] = match;
-
-      opportunities.push({
-        requestId: requestId.toUpperCase(),
-        status: status.toUpperCase() as EBuyOpportunity['status'],
-        datePosted,
-        dueDate,
-        title: title.trim(),
-        ebuyUrl: `${EBUY_BASE_URL}?id=${requestId}`,
-      });
-    } else {
-      // Try a more lenient parse for variations in spacing
-      const parts = trimmed.split(/\s{2,}/); // Split on 2+ spaces
-      if (parts.length >= 5 && /^(RFQ?|RFI)\d+$/i.test(parts[0])) {
+      if (textMatch) {
+        const [, requestId, status, datePosted, dueDate, title] = textMatch;
         opportunities.push({
-          requestId: parts[0].toUpperCase(),
-          status: parts[1].toUpperCase() as EBuyOpportunity['status'],
-          datePosted: parts[2],
-          dueDate: parts[3],
-          title: parts.slice(4).join(' ').trim(),
-          ebuyUrl: `${EBUY_BASE_URL}?id=${parts[0]}`,
+          requestId: requestId.toUpperCase(),
+          status: status.toUpperCase() as EBuyOpportunity['status'],
+          datePosted,
+          dueDate,
+          title: title.trim(),
+          ebuyUrl: `${EBUY_BASE_URL}?id=${requestId}`,
         });
       }
     }
@@ -96,7 +90,9 @@ export async function getGmailClient() {
   const refreshToken = process.env.GMAIL_REFRESH_TOKEN;
 
   if (!clientId || !clientSecret || !refreshToken) {
-    throw new Error('Gmail OAuth credentials not configured. Set GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN');
+    throw new Error(
+      'Gmail OAuth credentials not configured. Set GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN'
+    );
   }
 
   const oauth2Client = new google.auth.OAuth2(clientId, clientSecret);
@@ -112,7 +108,7 @@ export async function fetchEBuyEmails(maxResults = 10): Promise<{ id: string; bo
   const gmail = await getGmailClient();
 
   // Search for eBuy emails - from GSA eBuy, unread
-  const query = 'from:ebuy@gsa.gov OR from:notify@gsa.gov subject:eBuy is:unread';
+  const query = 'from:ebuy_admin@gsa.gov subject:eBuy is:unread';
 
   const response = await gmail.users.messages.list({
     userId: 'me',
@@ -142,7 +138,7 @@ export async function fetchEBuyEmails(maxResults = 10): Promise<{ id: string; bo
       body = Buffer.from(payload.body.data, 'base64').toString('utf-8');
     } else if (payload?.parts) {
       // Multipart email - find text/plain part
-      const textPart = payload.parts.find(p => p.mimeType === 'text/plain');
+      const textPart = payload.parts.find((p) => p.mimeType === 'text/plain');
       if (textPart?.body?.data) {
         body = Buffer.from(textPart.body.data, 'base64').toString('utf-8');
       }
@@ -214,7 +210,11 @@ export async function recordEBuyOpportunity(opp: EBuyOpportunity): Promise<void>
  * Filter eBuy opportunities for relevance
  * Uses similar logic to SAM.gov scoring but simpler
  */
-export function scoreEBuyOpportunity(opp: EBuyOpportunity): { score: number; dominated: boolean; reasons: string[] } {
+export function scoreEBuyOpportunity(opp: EBuyOpportunity): {
+  score: number;
+  dominated: boolean;
+  reasons: string[];
+} {
   const title = opp.title.toLowerCase();
   const reasons: string[] = [];
   let score = 50; // Start at baseline
@@ -226,15 +226,32 @@ export function scoreEBuyOpportunity(opp: EBuyOpportunity): { score: number; dom
 
   // Boost for relevant keywords
   const relevantKeywords = [
-    'software', 'development', 'web', 'application', 'app',
-    'design', 'ux', 'user experience', 'human-centered', 'hcd',
-    'digital', 'modernization', 'agile', 'cloud',
-    'ai', 'artificial intelligence', 'machine learning',
-    'portal', 'website', 'mobile',
-    'it services', 'technology', 'data',
+    'software',
+    'development',
+    'web',
+    'application',
+    'app',
+    'design',
+    'ux',
+    'user experience',
+    'human-centered',
+    'hcd',
+    'digital',
+    'modernization',
+    'agile',
+    'cloud',
+    'ai',
+    'artificial intelligence',
+    'machine learning',
+    'portal',
+    'website',
+    'mobile',
+    'it services',
+    'technology',
+    'data',
   ];
 
-  const matched = relevantKeywords.filter(kw => title.includes(kw));
+  const matched = relevantKeywords.filter((kw) => title.includes(kw));
   if (matched.length > 0) {
     score += matched.length * 10;
     reasons.push(`Keywords: ${matched.slice(0, 3).join(', ')}`);
@@ -242,12 +259,21 @@ export function scoreEBuyOpportunity(opp: EBuyOpportunity): { score: number; dom
 
   // Penalty for likely non-fits
   const excludeKeywords = [
-    'furniture', 'janitorial', 'construction', 'vehicle', 'fleet',
-    'security guard', 'moving services', 'office supplies',
-    'hvac', 'electrical', 'plumbing', 'landscaping',
+    'furniture',
+    'janitorial',
+    'construction',
+    'vehicle',
+    'fleet',
+    'security guard',
+    'moving services',
+    'office supplies',
+    'hvac',
+    'electrical',
+    'plumbing',
+    'landscaping',
   ];
 
-  const excluded = excludeKeywords.filter(kw => title.includes(kw));
+  const excluded = excludeKeywords.filter((kw) => title.includes(kw));
   if (excluded.length > 0) {
     score -= 40;
     reasons.push(`Not our space: ${excluded[0]}`);
@@ -295,7 +321,9 @@ export async function scanEBuyEmails(): Promise<EBuyOpportunity[]> {
         console.log(`[eBuy] Relevant (${score}): ${opp.requestId} - ${opp.title}`);
         allOpportunities.push(opp);
       } else {
-        console.log(`[eBuy] Low relevance (${score}): ${opp.requestId} - ${opp.title.slice(0, 40)}...`);
+        console.log(
+          `[eBuy] Low relevance (${score}): ${opp.requestId} - ${opp.title.slice(0, 40)}...`
+        );
       }
 
       // Record that we've seen it regardless of score
