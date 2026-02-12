@@ -1,5 +1,9 @@
 # Emergent Intelligence Layer Implementation Plan
 
+## What We're Building
+
+A multi-agent system where specialized agents collaborate through a shared scratchpad, develop institutional knowledge, and produce emergent workflows — not hardcoded by humans, but discovered by the team from their own data.
+
 ## Overview
 
 Transform the AI BD team from poll-based isolated workers to an event-driven interconnected system where agents react to each other's outputs in real-time.
