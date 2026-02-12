@@ -108,9 +108,16 @@ async function main() {
     }
   });
 
-  // NOTE: Patricia's standup and nudge are handled by Railway cron jobs
-  // (src/cron/patricia-standup.ts and src/cron/patricia-nudge.ts)
-  // to avoid duplicate posts
+  // Patricia: Daily standup at 11am CST (17:00 UTC) Mon-Fri
+  cron.schedule('0 17 * * 1-5', async () => {
+    console.log(`[${new Date().toLocaleString()}] Patricia: Running morning standup...`);
+    try {
+      await runWithLogging('patricia-standup', runPatriciaMorningCheckin);
+      console.log(`[${new Date().toLocaleString()}] Patricia: Morning standup complete`);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Patricia: Morning standup failed:`, err);
+    }
+  });
 
   // David: News digest MWF 10am CST (16:00 UTC)
   cron.schedule('0 16 * * 1,3,5', async () => {
@@ -142,10 +149,8 @@ async function main() {
   console.log('    - Action scheduler: Every 15 minutes');
   console.log('    - Maya scan: 8:00 AM CST Mon-Fri');
   console.log('    - Maya weekly: 8:30 AM CST Monday');
-  console.log('    - David news: 10:00 AM CST Mon/Wed/Fri');
-  console.log('  Railway Cron Jobs:');
   console.log('    - Patricia standup: 11:00 AM CST Mon-Fri');
-  console.log('    - Patricia nudge: 2:00 PM CST Mon-Fri');
+  console.log('    - David news: 10:00 AM CST Mon/Wed/Fri');
   console.log('='.repeat(60));
 
   // Keep process alive
@@ -160,7 +165,7 @@ async function main() {
   });
 }
 
-main().catch(err => {
+main().catch((err) => {
   console.error('Fatal error:', err);
   process.exit(1);
 });
