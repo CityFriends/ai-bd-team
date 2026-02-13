@@ -615,6 +615,9 @@ export async function runDailyScan() {
     `\nValidation: ${validToPost.length} of ${toPost.length} opportunities have valid SAM.gov data`
   );
 
+  // Track what we post THIS RUN to prevent double-posting within a single scan
+  const postedThisRun = new Set<string>();
+
   if (validToPost.length === 0) {
     // Quiet morning - but only post once per day to avoid duplicates
     const today = new Date().toISOString().split('T')[0];
@@ -628,54 +631,47 @@ export async function runDailyScan() {
   } else {
     // Post top opportunities (max 3) with interactive buttons
     for (const opp of validToPost.slice(0, 3)) {
-      // Generate opener for the block post
-      const opener = getRandomOpener(opp.score);
-      let forecastNote = '';
+      // CRITICAL: Check if we already posted this in THIS RUN (prevents double-posting from same scan)
+      const normalizedTitle = normalizeTitle(opp.opportunity.title || '');
+      if (postedThisRun.has(opp.opportunity.noticeId) || postedThisRun.has(normalizedTitle)) {
+        console.log(`[SKIP] Already posted this run: ${opp.opportunity.title?.slice(0, 50)}...`);
+        continue;
+      }
 
-      // Check if this matches a forecast we previously flagged
+      // IMMEDIATELY mark as posted to prevent race conditions
+      postedThisRun.add(opp.opportunity.noticeId);
+      postedThisRun.add(normalizedTitle);
+
+      // RECORD IN DATABASE FIRST - before posting to Slack
+      // This prevents duplicates if the scan runs twice or restarts mid-run
       const agencyAbbrev = extractAgencyAbbreviation(
         opp.opportunity.department,
         opp.opportunity.office
       );
-      if (agencyAbbrev) {
-        try {
-          const match = await matchForecastToSAM(opp.opportunity.title, agencyAbbrev);
-          if (match.matched && match.forecastId) {
-            forecastNote = `\n\n📅 *Heads up* - this matches a forecast I flagged earlier: "${match.forecastTitle}". It's live now!`;
-            await linkForecastToSAM(match.forecastId, opp.samUrl);
-            console.log(`[FORECAST] Matched to forecast: ${match.forecastTitle}`);
-          }
-        } catch (err) {
-          console.warn('[FORECAST] Match check failed:', err);
-        }
-      }
-
-      // Post with interactive Block Kit buttons
-      const fullOpener = forecastNote ? `${opener}${forecastNote}` : opener;
-      const messageTs = await postOpportunityWithBlocks(app, opp, fullOpener);
-
-      // Queue notification for batching/tracking (parallel to Block Kit post)
-      // This enables quiet hours, digests, and notification preferences
-      const priority = opp.score >= 80 ? 'high' : opp.score >= 70 ? 'medium' : 'low';
-      await queueNotification({
-        type: 'opportunity',
-        priority: priority as 'high' | 'medium' | 'low',
-        title: opp.opportunity.title,
-        message: `${fullOpener}\n\nScore: ${opp.score}/100\n${opp.samUrl}`,
-        metadata: {
-          agency:
-            extractAgencyAbbreviation(opp.opportunity.department, opp.opportunity.office) ||
-            undefined,
-          noticeId: opp.opportunity.noticeId,
-          score: opp.score,
-          dueDate: opp.opportunity.responseDeadLine,
-        },
-      });
-
-      // Record that we posted this
       let notionPageId: string | undefined;
+
       try {
         const supabase = getSupabase();
+
+        // Record in seen_opportunities FIRST (before Slack post)
+        const { error: insertError } = await supabase.from('seen_opportunities').upsert(
+          {
+            notice_id: opp.opportunity.noticeId,
+            title: opp.opportunity.title,
+            sam_url: opp.samUrl,
+            score: opp.score,
+            posted_at: new Date().toISOString(),
+            agency: agencyAbbrev,
+          },
+          { onConflict: 'notice_id' }
+        );
+
+        if (insertError) {
+          console.error(`[DB ERROR] Failed to record opportunity: ${insertError.message}`);
+          // Continue anyway - we don't want to skip posting just because DB failed
+        } else {
+          console.log(`[DB] Recorded ${opp.opportunity.noticeId} in seen_opportunities`);
+        }
 
         // Also sync to Notion if hub is configured
         const hubIds = loadHubIds();
@@ -711,26 +707,67 @@ export async function runDailyScan() {
             console.warn('[NOTION] Sync failed:', notionErr);
           }
         }
+      } catch (err) {
+        console.warn('[DB] Could not record opportunity:', err);
+      }
 
-        // Record in seen_opportunities
-        const agencyAbbrev = extractAgencyAbbreviation(
-          opp.opportunity.department,
-          opp.opportunity.office
-        );
-        await supabase.from('seen_opportunities').insert({
-          notice_id: opp.opportunity.noticeId,
-          title: opp.opportunity.title,
-          sam_url: opp.samUrl,
+      // NOW post to Slack (after database record)
+      // Generate opener for the block post
+      const opener = getRandomOpener(opp.score);
+      let forecastNote = '';
+
+      // Check if this matches a forecast we previously flagged
+      if (agencyAbbrev) {
+        try {
+          const match = await matchForecastToSAM(opp.opportunity.title, agencyAbbrev);
+          if (match.matched && match.forecastId) {
+            forecastNote = `\n\n📅 *Heads up* - this matches a forecast I flagged earlier: "${match.forecastTitle}". It's live now!`;
+            await linkForecastToSAM(match.forecastId, opp.samUrl);
+            console.log(`[FORECAST] Matched to forecast: ${match.forecastTitle}`);
+          }
+        } catch (err) {
+          console.warn('[FORECAST] Match check failed:', err);
+        }
+      }
+
+      // Post with interactive Block Kit buttons
+      const fullOpener = forecastNote ? `${opener}${forecastNote}` : opener;
+      const messageTs = await postOpportunityWithBlocks(app, opp, fullOpener);
+
+      // Queue notification for batching/tracking (parallel to Block Kit post)
+      // This enables quiet hours, digests, and notification preferences
+      const priority = opp.score >= 80 ? 'high' : opp.score >= 70 ? 'medium' : 'low';
+      await queueNotification({
+        type: 'opportunity',
+        priority: priority as 'high' | 'medium' | 'low',
+        title: opp.opportunity.title,
+        message: `${fullOpener}\n\nScore: ${opp.score}/100\n${opp.samUrl}`,
+        metadata: {
+          agency: agencyAbbrev || undefined,
+          noticeId: opp.opportunity.noticeId,
           score: opp.score,
-          posted_at: new Date().toISOString(),
-          notion_page_id: notionPageId,
-          thread_ts: messageTs, // For David to reply in thread
-          agency: agencyAbbrev,
-        });
+          dueDate: opp.opportunity.responseDeadLine,
+        },
+      });
 
-        // CREATE WORKFLOW for high-score opportunities (70+)
-        // This triggers the autonomous agent pipeline
-        if (opp.score >= 70) {
+      // Update seen_opportunities with thread_ts and notion_page_id
+      try {
+        const supabase = getSupabase();
+        await supabase
+          .from('seen_opportunities')
+          .update({
+            thread_ts: messageTs,
+            notion_page_id: notionPageId,
+          })
+          .eq('notice_id', opp.opportunity.noticeId);
+      } catch {
+        // Ignore update errors
+      }
+
+      // CREATE WORKFLOW for high-score opportunities (70+)
+      // This triggers the autonomous agent pipeline
+      if (opp.score >= 70) {
+        try {
           console.log(
             `[WORKFLOW] Creating workflow for ${opp.opportunity.noticeId} (score: ${opp.score})`
           );
@@ -805,9 +842,9 @@ export async function runDailyScan() {
           } else {
             console.warn(`[EVENT] Failed to publish NEW_OPPORTUNITY: ${eventResult.error}`);
           }
+        } catch (workflowErr) {
+          console.warn('[WORKFLOW] Could not create workflow:', workflowErr);
         }
-      } catch {
-        // Ignore if table doesn't exist
       }
 
       await new Promise((r) => setTimeout(r, 2000)); // Delay between posts
