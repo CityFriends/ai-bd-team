@@ -69,6 +69,12 @@ const AGENT_INFO: Record<
     icon_url:
       'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/Patricia.jpeg',
   },
+  engineer: {
+    username: 'Marcus',
+    displayName: 'Engineer',
+    icon_url:
+      'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/Marcus.jpeg',
+  },
 };
 
 interface ConversationContext {

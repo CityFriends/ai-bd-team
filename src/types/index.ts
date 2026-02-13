@@ -1,5 +1,5 @@
 // Agent types
-export type AgentName = 'scout' | 'analyst' | 'connector' | 'strategist' | 'pm';
+export type AgentName = 'scout' | 'analyst' | 'connector' | 'strategist' | 'pm' | 'engineer';
 
 export interface Agent {
   name: AgentName;
@@ -13,11 +13,19 @@ export const AGENTS: Record<AgentName, Agent> = {
   connector: { name: 'connector', displayName: 'Connector', emoji: '🤝' },
   strategist: { name: 'strategist', displayName: 'Strategist', emoji: '🎯' },
   pm: { name: 'pm', displayName: 'PM', emoji: '📋' },
+  engineer: { name: 'engineer', displayName: 'Engineer', emoji: '⚙️' },
 };
 
 // Opportunity types
 export type OpportunityType = 'RFI' | 'RFQ' | 'RFP' | 'Sources Sought' | 'Other';
-export type OpportunityStatus = 'new' | 'researching' | 'pursuing' | 'passed' | 'submitted' | 'won' | 'lost';
+export type OpportunityStatus =
+  | 'new'
+  | 'researching'
+  | 'pursuing'
+  | 'passed'
+  | 'submitted'
+  | 'won'
+  | 'lost';
 export type Decision = 'go' | 'no_go' | 'pending';
 
 export interface Opportunity {
@@ -91,7 +99,14 @@ export interface Company {
 }
 
 // Outreach types
-export type OutreachStatus = 'draft' | 'approved' | 'sent' | 'responded' | 'meeting' | 'declined' | 'agreed';
+export type OutreachStatus =
+  | 'draft'
+  | 'approved'
+  | 'sent'
+  | 'responded'
+  | 'meeting'
+  | 'declined'
+  | 'agreed';
 
 export interface Outreach {
   id: string;

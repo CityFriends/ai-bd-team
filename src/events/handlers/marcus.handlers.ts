@@ -11,6 +11,7 @@ import {
 } from '../eventTypes.js';
 import { EventHandler, EventHandlerContext, EventHandlerResult } from '../eventProcessor.js';
 import { getAnthropic } from '../../integrations/claude.js';
+import { replyInThread } from '../../integrations/slack.js';
 
 // ============================================================
 // RESEARCH_COMPLETE Handler
@@ -42,6 +43,17 @@ const handleResearchComplete: EventHandler = async (
       confidence: assessment.confidence,
       summary: assessment.summary,
     };
+
+    // POST TO SLACK - Make the collaboration visible
+    if (event.thread_ts) {
+      try {
+        const slackMessage = formatTechAssessmentForSlack(assessment);
+        await replyInThread('engineer', slackMessage, event.thread_ts);
+        console.log(`[Marcus:Handler] Posted tech assessment to thread ${event.thread_ts}`);
+      } catch (slackErr) {
+        console.warn(`[Marcus:Handler] Failed to post to Slack:`, slackErr);
+      }
+    }
 
     // Publish chain event
     const chainResult = await publishChainEvent(
@@ -278,6 +290,62 @@ Respond in JSON format:
       summary: 'Unable to complete full technical assessment. Manual review recommended.',
     };
   }
+}
+
+// ============================================================
+// Slack Formatting
+// ============================================================
+function formatTechAssessmentForSlack(assessment: TechAssessmentResult): string {
+  const recEmoji =
+    assessment.recommendation === 'strong_fit'
+      ? '🟢'
+      : assessment.recommendation === 'good_fit'
+        ? '🟢'
+        : assessment.recommendation === 'possible_fit'
+          ? '🟡'
+          : '🔴';
+
+  let message = `⚙️ *Tech Assessment Complete*\n\n`;
+  message += `${assessment.summary}\n\n`;
+  message += `*Recommendation:* ${recEmoji} ${assessment.recommendation.replace('_', ' ')}\n`;
+  message += `*Tech Compatibility:* ${assessment.techStack.compatibility}\n\n`;
+
+  // Compliance
+  const complianceItems: string[] = [];
+  if (assessment.compliance.fedRampRequired) {
+    complianceItems.push(`FedRAMP ${assessment.compliance.fedRampLevel || 'required'}`);
+  }
+  if (assessment.compliance.section508) {
+    complianceItems.push('Section 508');
+  }
+  if (assessment.compliance.atoRequired) {
+    complianceItems.push('ATO required');
+  }
+  if (complianceItems.length > 0) {
+    message += `*Compliance:* ${complianceItems.join(', ')}\n\n`;
+  }
+
+  // Concerns
+  const blockers = assessment.concerns.filter((c) => c.severity === 'blocker');
+  if (blockers.length > 0) {
+    message += `*🚨 Blockers (${blockers.length}):*\n`;
+    for (const concern of blockers) {
+      message += `• ${concern.area}: ${concern.description}\n`;
+    }
+    message += '\n';
+  }
+
+  // Strengths
+  if (assessment.strengths.length > 0) {
+    message += `*💪 Strengths (${assessment.strengths.length}):*\n`;
+    for (const strength of assessment.strengths.slice(0, 2)) {
+      message += `• ${strength.area}: ${strength.description}\n`;
+    }
+  }
+
+  message += `\n_Confidence: ${assessment.confidence}_`;
+
+  return message;
 }
 
 // ============================================================

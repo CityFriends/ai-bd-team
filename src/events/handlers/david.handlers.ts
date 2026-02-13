@@ -10,6 +10,7 @@ import {
 } from '../eventTypes.js';
 import { EventHandler, EventHandlerContext, EventHandlerResult } from '../eventProcessor.js';
 import { getAnthropic } from '../../integrations/claude.js';
+import { replyInThread } from '../../integrations/slack.js';
 
 // ============================================================
 // NEW_OPPORTUNITY Handler
@@ -30,10 +31,20 @@ const handleNewOpportunity: EventHandler = async (
     // Perform research using Claude
     const research = await performResearch(payload);
 
-    // Build the RESEARCH_COMPLETE payload
+    // Build the RESEARCH_COMPLETE payload with original opportunity context
     const researchPayload: ResearchCompletePayload = {
       noticeId: payload.noticeId,
       title: payload.title,
+      // Pass through original opportunity data for downstream handlers
+      originalOpportunity: {
+        agency: payload.agency,
+        value: payload.value,
+        deadline: payload.deadline,
+        naics: payload.naics,
+        setAside: payload.setAside,
+        url: payload.url,
+        score: payload.score,
+      },
       incumbent: research.incumbent,
       redFlags: research.redFlags,
       greenFlags: research.greenFlags,
@@ -42,6 +53,18 @@ const handleNewOpportunity: EventHandler = async (
       sources: research.sources,
       summary: research.summary,
     };
+
+    // POST TO SLACK - Make the collaboration visible
+    if (event.thread_ts) {
+      try {
+        const slackMessage = formatResearchForSlack(research, payload);
+        await replyInThread('analyst', slackMessage, event.thread_ts);
+        console.log(`[David:Handler] Posted research to thread ${event.thread_ts}`);
+      } catch (slackErr) {
+        console.warn(`[David:Handler] Failed to post to Slack:`, slackErr);
+        // Continue - don't fail the handler just because Slack failed
+      }
+    }
 
     // Publish chain event
     const chainResult = await publishChainEvent(
@@ -198,6 +221,49 @@ Respond in JSON format:
       summary: 'Unable to complete full analysis. Manual review recommended.',
     };
   }
+}
+
+// ============================================================
+// Slack Formatting
+// ============================================================
+function formatResearchForSlack(research: ResearchResult, payload: NewOpportunityPayload): string {
+  let message = `📋 *Research Complete*\n\n`;
+  message += `${research.summary}\n\n`;
+
+  // Incumbent
+  if (research.incumbent?.name) {
+    const advantage = research.incumbent.incumbentAdvantage || 'unknown';
+    message += `*Incumbent:* ${research.incumbent.name} (${advantage} advantage)\n\n`;
+  }
+
+  // Red flags
+  if (research.redFlags.length > 0) {
+    message += `*🚩 Red Flags (${research.redFlags.length}):*\n`;
+    for (const flag of research.redFlags.slice(0, 3)) {
+      const emoji = flag.severity === 'high' ? '🔴' : flag.severity === 'medium' ? '🟡' : '🟢';
+      message += `${emoji} ${flag.type}: ${flag.description}\n`;
+    }
+    if (research.redFlags.length > 3) {
+      message += `_...and ${research.redFlags.length - 3} more_\n`;
+    }
+    message += '\n';
+  }
+
+  // Green flags
+  if (research.greenFlags.length > 0) {
+    message += `*✅ Green Flags (${research.greenFlags.length}):*\n`;
+    for (const flag of research.greenFlags.slice(0, 3)) {
+      message += `• ${flag.type}: ${flag.description}\n`;
+    }
+    if (research.greenFlags.length > 3) {
+      message += `_...and ${research.greenFlags.length - 3} more_\n`;
+    }
+    message += '\n';
+  }
+
+  message += `_Confidence: ${research.confidence} | Handing off to Marcus and Rosa for assessments_`;
+
+  return message;
 }
 
 // ============================================================

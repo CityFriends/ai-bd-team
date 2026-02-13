@@ -14,12 +14,19 @@ import {
 import { EventHandler, EventHandlerContext, EventHandlerResult } from '../eventProcessor.js';
 import { getEventsByThread } from '../eventBus.js';
 import { getAnthropic } from '../../integrations/claude.js';
+import { replyInThread } from '../../integrations/slack.js';
 import {
   checkOpportunityAgainstRules,
   formatViolationsForPrompt,
   recordRulesApplied,
   type RuleCheckResult,
 } from '../../playbook/index.js';
+
+// Cache TTL: 2 hours (after which stale entries are cleaned up)
+const CACHE_TTL_MS = 2 * 60 * 60 * 1000;
+
+// Timeout for waiting for all inputs: 10 minutes
+const INPUT_WAIT_TIMEOUT_MS = 10 * 60 * 1000;
 
 // Cache for accumulating inputs before making decision
 // In production, this would be stored in the database
@@ -29,9 +36,24 @@ const decisionInputsCache: Map<
     research?: ResearchCompletePayload;
     techAssessment?: TechAssessmentCompletePayload;
     relationshipCheck?: RelationshipCheckCompletePayload;
+    firstInputAt: Date;
     lastUpdated: Date;
   }
 > = new Map();
+
+// Clean up stale cache entries periodically
+function cleanupStaleCache(): void {
+  const now = Date.now();
+  for (const [noticeId, cached] of decisionInputsCache.entries()) {
+    if (now - cached.lastUpdated.getTime() > CACHE_TTL_MS) {
+      console.log(`[James:Handler] Cleaning up stale cache entry for ${noticeId}`);
+      decisionInputsCache.delete(noticeId);
+    }
+  }
+}
+
+// Run cleanup every 15 minutes
+setInterval(cleanupStaleCache, 15 * 60 * 1000);
 
 // ============================================================
 // RESEARCH_COMPLETE Handler
@@ -47,9 +69,10 @@ const handleResearchComplete: EventHandler = async (
 
   // Store the research result
   const noticeId = payload.noticeId;
-  const cached = decisionInputsCache.get(noticeId) || { lastUpdated: new Date() };
+  const now = new Date();
+  const cached = decisionInputsCache.get(noticeId) || { firstInputAt: now, lastUpdated: now };
   cached.research = payload;
-  cached.lastUpdated = new Date();
+  cached.lastUpdated = now;
   decisionInputsCache.set(noticeId, cached);
 
   // Check if we have all inputs
@@ -85,9 +108,10 @@ const handleTechAssessmentComplete: EventHandler = async (
 
   // Store the tech assessment result
   const noticeId = payload.noticeId;
-  const cached = decisionInputsCache.get(noticeId) || { lastUpdated: new Date() };
+  const now = new Date();
+  const cached = decisionInputsCache.get(noticeId) || { firstInputAt: now, lastUpdated: now };
   cached.techAssessment = payload;
-  cached.lastUpdated = new Date();
+  cached.lastUpdated = now;
   decisionInputsCache.set(noticeId, cached);
 
   // Check if we have all inputs
@@ -123,9 +147,10 @@ const handleRelationshipCheckComplete: EventHandler = async (
 
   // Store the relationship check result
   const noticeId = payload.noticeId;
-  const cached = decisionInputsCache.get(noticeId) || { lastUpdated: new Date() };
+  const now = new Date();
+  const cached = decisionInputsCache.get(noticeId) || { firstInputAt: now, lastUpdated: now };
   cached.relationshipCheck = payload;
-  cached.lastUpdated = new Date();
+  cached.lastUpdated = now;
   decisionInputsCache.set(noticeId, cached);
 
   // Check if we have all inputs
@@ -158,11 +183,6 @@ async function checkReadyForDecision(noticeId: string, event: ClaimedEvent): Pro
   // We need at least research to make a decision
   if (!cached.research) return false;
 
-  // If we have all three inputs, definitely ready
-  if (cached.research && cached.techAssessment && cached.relationshipCheck) {
-    return true;
-  }
-
   // Check if other inputs have arrived via event chain
   if (event.thread_ts) {
     const chainEvents = await getEventsByThread(event.thread_ts);
@@ -183,8 +203,37 @@ async function checkReadyForDecision(noticeId: string, event: ClaimedEvent): Pro
     decisionInputsCache.set(noticeId, cached);
   }
 
-  // Ready if we have at least research + one other
-  return !!(cached.research && (cached.techAssessment || cached.relationshipCheck));
+  // If we have all three inputs, definitely ready
+  if (cached.research && cached.techAssessment && cached.relationshipCheck) {
+    console.log(`[James:Handler] All 3 inputs received for ${noticeId}, ready for decision`);
+    return true;
+  }
+
+  // Check if we've waited long enough (timeout after 10 minutes)
+  const waitTime = Date.now() - cached.firstInputAt.getTime();
+  if (waitTime >= INPUT_WAIT_TIMEOUT_MS) {
+    // Timeout: proceed with available inputs
+    const hasInputs = cached.techAssessment || cached.relationshipCheck;
+    if (hasInputs) {
+      console.log(
+        `[James:Handler] Timeout reached for ${noticeId}, proceeding with available inputs ` +
+          `(tech: ${!!cached.techAssessment}, relationship: ${!!cached.relationshipCheck})`
+      );
+      return true;
+    }
+  }
+
+  // Not ready yet - waiting for more inputs
+  const inputsStatus = [
+    `research: ✓`,
+    `tech: ${cached.techAssessment ? '✓' : '⏳'}`,
+    `relationship: ${cached.relationshipCheck ? '✓' : '⏳'}`,
+  ].join(', ');
+  console.log(
+    `[James:Handler] Waiting for inputs (${inputsStatus}) - ${Math.round(waitTime / 1000)}s elapsed`
+  );
+
+  return false;
 }
 
 async function makeDecision(
@@ -208,19 +257,16 @@ async function makeDecision(
     // Check this opportunity against the team's learned rules
     console.log(`[James:Handler] Consulting playbook for "${cached.research.title}"`);
 
-    // Build opportunity context from available data
-    // Research payload has limited fields, so we extract what's available
+    // Build opportunity context from original opportunity data (passed through research)
+    const original = cached.research.originalOpportunity;
     const opportunityContext = {
       noticeId,
       title: cached.research.title,
-      // Agency might be in agencyIntel or incumbent context
-      agency: cached.research.agencyIntel?.preferredVendors
-        ? cached.research.summary.match(/agency[:\s]+([A-Z]{2,10})/i)?.[1]
+      agency: original?.agency,
+      value: original?.value || cached.research.incumbent?.contractValue,
+      daysToRespond: original?.deadline
+        ? Math.ceil((new Date(original.deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
         : undefined,
-      // Value might be in incumbent's contract value as a proxy
-      value: cached.research.incumbent?.contractValue,
-      // Days to respond would need to come from original opportunity - not available here
-      daysToRespond: undefined,
     };
 
     const playbookCheck = await checkOpportunityAgainstRules(opportunityContext);
@@ -266,6 +312,17 @@ async function makeDecision(
       rationale: decision.rationale,
       confidence: decision.confidence,
     };
+
+    // POST TO SLACK - Make the decision visible
+    if (context.event.thread_ts) {
+      try {
+        const slackMessage = formatDecisionForSlack(decision, decisionPayload);
+        await replyInThread('strategist', slackMessage, context.event.thread_ts);
+        console.log(`[James:Handler] Posted decision to thread ${context.event.thread_ts}`);
+      } catch (slackErr) {
+        console.warn(`[James:Handler] Failed to post to Slack:`, slackErr);
+      }
+    }
 
     // Publish chain event
     const chainResult = await publishChainEvent(
@@ -481,6 +538,68 @@ Respond in JSON format:
       confidence: 'low',
     };
   }
+}
+
+// ============================================================
+// Slack Formatting
+// ============================================================
+function formatDecisionForSlack(decision: DecisionResult, payload: GoNoGoDecisionPayload): string {
+  const decisionEmoji =
+    decision.decision === 'GO'
+      ? '🟢'
+      : decision.decision === 'NO_GO'
+        ? '🔴'
+        : decision.decision === 'CONDITIONAL_GO'
+          ? '🟡'
+          : '❓';
+
+  let message = `🎯 *Go/No-Go Decision*\n\n`;
+  message += `*Decision:* ${decisionEmoji} *${decision.decision.replace('_', ' ')}*\n`;
+  message += `*Win Probability:* ${decision.winProbability}%\n`;
+  message += `*Confidence:* ${decision.confidence}\n\n`;
+
+  message += `*Rationale:*\n${decision.rationale}\n\n`;
+
+  // Key factors
+  const positiveFactors = decision.keyFactors.filter((f) => f.impact === 'positive');
+  const negativeFactors = decision.keyFactors.filter((f) => f.impact === 'negative');
+
+  if (positiveFactors.length > 0) {
+    message += `*✅ Positive Factors:*\n`;
+    for (const factor of positiveFactors.slice(0, 2)) {
+      message += `• ${factor.factor}\n`;
+    }
+  }
+
+  if (negativeFactors.length > 0) {
+    message += `*⚠️ Concerns:*\n`;
+    for (const factor of negativeFactors.slice(0, 2)) {
+      message += `• ${factor.factor}\n`;
+    }
+  }
+
+  // Conditions for conditional go
+  if (decision.decision === 'CONDITIONAL_GO' && decision.conditions?.length) {
+    message += `\n*Conditions:*\n`;
+    for (const condition of decision.conditions) {
+      message += `• ${condition}\n`;
+    }
+  }
+
+  // Inputs received
+  const inputs = payload.inputsReceived;
+  const inputsReceived = [
+    inputs.research ? 'David ✓' : 'David ⏳',
+    inputs.techAssessment ? 'Marcus ✓' : 'Marcus ⏳',
+    inputs.relationshipCheck ? 'Rosa ✓' : 'Rosa ⏳',
+  ].join(' | ');
+  message += `\n_Inputs: ${inputsReceived}_`;
+
+  if (decision.decision === 'GO' || decision.decision === 'CONDITIONAL_GO') {
+    message += `\n\n<@U0AC0SVD3MH> — Ready to pursue? Patricia will set up the schedule once you confirm.`;
+  }
+
+  return message;
 }
 
 // ============================================================

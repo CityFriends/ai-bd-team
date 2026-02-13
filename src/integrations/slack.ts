@@ -42,35 +42,49 @@ export function getChannelId(): string {
 
 // Agent display info with profile pictures
 // Using DiceBear avatars for consistent, professional-looking profiles
-const AGENT_INFO: Record<AgentName, {
-  username: string;
-  icon_url: string;
-  displayName: string;
-}> = {
+const AGENT_INFO: Record<
+  AgentName,
+  {
+    username: string;
+    icon_url: string;
+    displayName: string;
+  }
+> = {
   scout: {
     username: 'Maya',
     displayName: 'Scout',
-    icon_url: 'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/Maya.jpeg',
+    icon_url:
+      'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/Maya.jpeg',
   },
   analyst: {
     username: 'David',
     displayName: 'Analyst',
-    icon_url: 'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/David.jpeg',
+    icon_url:
+      'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/David.jpeg',
   },
   connector: {
     username: 'Rosa',
     displayName: 'Connector',
-    icon_url: 'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/Rosa.jpeg',
+    icon_url:
+      'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/Rosa.jpeg',
   },
   strategist: {
     username: 'James',
     displayName: 'Strategist',
-    icon_url: 'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/James.jpeg',
+    icon_url:
+      'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/James.jpeg',
   },
   pm: {
     username: 'Patricia',
     displayName: 'PM',
-    icon_url: 'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/Patricia.jpeg',
+    icon_url:
+      'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/Patricia.jpeg',
+  },
+  engineer: {
+    username: 'Marcus',
+    displayName: 'Engineer',
+    icon_url:
+      'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/Marcus.jpeg',
   },
 };
 
@@ -114,10 +128,7 @@ export async function postWithMentions(
   for (const mention of mentions) {
     const { displayName } = AGENT_INFO[mention];
     // Replace @AgentName with formatted version
-    formattedText = formattedText.replace(
-      new RegExp(`@${displayName}`, 'gi'),
-      `*@${displayName}*`
-    );
+    formattedText = formattedText.replace(new RegExp(`@${displayName}`, 'gi'), `*@${displayName}*`);
   }
 
   return postAsAgent(agent, formattedText, threadTs);

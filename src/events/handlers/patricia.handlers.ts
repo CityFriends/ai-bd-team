@@ -11,6 +11,7 @@ import {
   PursuitScheduledPayload,
 } from '../eventTypes.js';
 import { EventHandler, EventHandlerContext, EventHandlerResult } from '../eventProcessor.js';
+import { replyInThread } from '../../integrations/slack.js';
 
 // ============================================================
 // GO_NO_GO_DECISION Handler
@@ -47,6 +48,17 @@ const handleGoNoGoDecision: EventHandler = async (
 
     // Build the PURSUIT_SCHEDULED payload
     const pursuitPayload: PursuitScheduledPayload = pursuitSchedule;
+
+    // POST TO SLACK - Make the schedule visible
+    if (event.thread_ts) {
+      try {
+        const slackMessage = formatPursuitScheduleForSlack(pursuitSchedule);
+        await replyInThread('pm', slackMessage, event.thread_ts);
+        console.log(`[Patricia:Handler] Posted pursuit schedule to thread ${event.thread_ts}`);
+      } catch (slackErr) {
+        console.warn(`[Patricia:Handler] Failed to post to Slack:`, slackErr);
+      }
+    }
 
     // Publish chain event
     const chainResult = await publishChainEvent(
@@ -279,6 +291,49 @@ function addDays(date: Date, days: number): Date {
   const result = new Date(date);
   result.setDate(result.getDate() + days);
   return result;
+}
+
+// ============================================================
+// Slack Formatting
+// ============================================================
+function formatPursuitScheduleForSlack(schedule: PursuitScheduledPayload): string {
+  let message = `📋 *Pursuit Scheduled*\n\n`;
+  message += `I've set up the pursuit schedule. Here's the plan:\n\n`;
+
+  // Kickoff
+  if (schedule.kickoffScheduled && schedule.kickoffDate) {
+    const kickoffDate = new Date(schedule.kickoffDate).toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    });
+    message += `*🚀 Kickoff:* ${kickoffDate}\n\n`;
+  }
+
+  // Key milestones
+  message += `*Key Milestones:*\n`;
+  for (const milestone of schedule.milestones.slice(0, 4)) {
+    const dueDate = new Date(milestone.dueDate).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+    });
+    const owner = milestone.owner ? ` (${milestone.owner})` : '';
+    message += `• ${milestone.name}${owner} — ${dueDate}\n`;
+  }
+  if (schedule.milestones.length > 4) {
+    message += `_...and ${schedule.milestones.length - 4} more milestones_\n`;
+  }
+  message += '\n';
+
+  // Team assignments
+  message += `*Team Assignments:*\n`;
+  for (const assignment of schedule.teamAssignments.slice(0, 4)) {
+    message += `• *${assignment.agent}* — ${assignment.role}\n`;
+  }
+
+  message += `\n_I'll send reminders as deadlines approach. Let's win this!_ 🎯`;
+
+  return message;
 }
 
 // ============================================================

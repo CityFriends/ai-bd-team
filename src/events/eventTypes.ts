@@ -122,6 +122,19 @@ export const ResearchCompletePayloadSchema = z.object({
   noticeId: z.string(),
   title: z.string(),
 
+  // Original opportunity context (passed through from NEW_OPPORTUNITY)
+  originalOpportunity: z
+    .object({
+      agency: z.string().optional(),
+      value: z.number().optional(),
+      deadline: z.string().optional(),
+      naics: z.string().optional(),
+      setAside: z.string().optional(),
+      url: z.string().optional(),
+      score: z.number().optional(),
+    })
+    .optional(),
+
   // Incumbent analysis
   incumbent: z
     .object({

@@ -28,6 +28,9 @@ async function processTask(task: AgentQueueItem): Promise<void> {
 
     // Get the agent and execute the action
     const agent = getAgent(task.agent as AgentName);
+    if (!agent) {
+      throw new Error(`Agent '${task.agent}' not found in legacy agent registry`);
+    }
     await agent.handleAction(task.action, {
       ...task.payload,
       opportunity_id: task.opportunity_id,

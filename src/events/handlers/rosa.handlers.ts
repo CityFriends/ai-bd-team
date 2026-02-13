@@ -10,6 +10,7 @@ import {
 } from '../eventTypes.js';
 import { EventHandler, EventHandlerContext, EventHandlerResult } from '../eventProcessor.js';
 import { getAnthropic } from '../../integrations/claude.js';
+import { replyInThread } from '../../integrations/slack.js';
 
 // ============================================================
 // RESEARCH_COMPLETE Handler
@@ -40,6 +41,17 @@ const handleResearchComplete: EventHandler = async (
       confidence: relationshipCheck.confidence,
       summary: relationshipCheck.summary,
     };
+
+    // POST TO SLACK - Make the collaboration visible
+    if (event.thread_ts) {
+      try {
+        const slackMessage = formatRelationshipCheckForSlack(relationshipCheck);
+        await replyInThread('connector', slackMessage, event.thread_ts);
+        console.log(`[Rosa:Handler] Posted relationship check to thread ${event.thread_ts}`);
+      } catch (slackErr) {
+        console.warn(`[Rosa:Handler] Failed to post to Slack:`, slackErr);
+      }
+    }
 
     // Publish chain event
     const chainResult = await publishChainEvent(
@@ -201,6 +213,59 @@ Respond in JSON format:
       summary: 'Unable to complete full relationship analysis. Manual review recommended.',
     };
   }
+}
+
+// ============================================================
+// Slack Formatting
+// ============================================================
+function formatRelationshipCheckForSlack(check: RelationshipCheckResult): string {
+  const recEmoji =
+    check.teamingRecommendation === 'prime'
+      ? '👑'
+      : check.teamingRecommendation === 'sub'
+        ? '🤝'
+        : check.teamingRecommendation === 'joint_venture'
+          ? '🔗'
+          : check.teamingRecommendation === 'solo'
+            ? '🏃'
+            : '⏭️';
+
+  let message = `🤝 *Relationship Check Complete*\n\n`;
+  message += `${check.summary}\n\n`;
+  message += `*Teaming Recommendation:* ${recEmoji} ${check.teamingRecommendation.replace('_', ' ')}\n`;
+  message += `*Relationship Strength:* ${check.relationshipStrength}\n\n`;
+
+  // Potential partners
+  if (check.potentialPartners.length > 0) {
+    message += `*Potential Partners (${check.potentialPartners.length}):*\n`;
+    for (const partner of check.potentialPartners.slice(0, 3)) {
+      const relationshipIcon =
+        partner.relationship === 'existing'
+          ? '✅'
+          : partner.relationship === 'warm_intro'
+            ? '🟡'
+            : '❄️';
+      message += `${relationshipIcon} ${partner.name} (${partner.type})\n`;
+    }
+    if (check.potentialPartners.length > 3) {
+      message += `_...and ${check.potentialPartners.length - 3} more_\n`;
+    }
+    message += '\n';
+  }
+
+  // Certification gaps
+  const requiredGaps = check.certificationGaps.filter((g) => g.importance === 'required');
+  if (requiredGaps.length > 0) {
+    message += `*⚠️ Required Cert Gaps:*\n`;
+    for (const gap of requiredGaps) {
+      const canFill = gap.partnerCanFill ? '(partner can fill)' : '(need to address)';
+      message += `• ${gap.certification} ${canFill}\n`;
+    }
+  }
+
+  message += `\n_Confidence: ${check.confidence} | Handing off to James for go/no-go_`;
+
+  return message;
 }
 
 // ============================================================

@@ -14,7 +14,8 @@ import type { AgentName } from '../types/index.js';
 import type { BaseAgent } from './base-agent.js';
 
 // Agent registry for easy lookup
-export const agents: Record<AgentName, BaseAgent> = {
+// Note: 'engineer' (Marcus) uses live agent system, not legacy BaseAgent
+export const agents: Partial<Record<AgentName, BaseAgent>> = {
   scout,
   analyst,
   connector,
@@ -23,6 +24,6 @@ export const agents: Record<AgentName, BaseAgent> = {
 };
 
 // Get an agent by name
-export function getAgent(name: AgentName): BaseAgent {
+export function getAgent(name: AgentName): BaseAgent | undefined {
   return agents[name];
 }
