@@ -59,6 +59,31 @@ async function runActionScheduler() {
   await checkAndExecuteActions();
 }
 
+// Event system triggers
+async function runPipelineHealthCheck() {
+  const { cronPipelineHealthCheck } = await import('../cron/event-triggers.js');
+  await cronPipelineHealthCheck();
+}
+
+async function runStaleEventCleanup() {
+  const { cronStaleEventCleanup } = await import('../cron/event-triggers.js');
+  await cronStaleEventCleanup();
+}
+
+// Patricia's monthly retrospective
+async function runPatriciaRetrospective() {
+  const { runMonthlyRetrospective, formatRetrospectiveForSlack } =
+    await import('../playbook/retrospective.js');
+  const { postAsAgent } = await import('../integrations/slack.js');
+
+  const results = await runMonthlyRetrospective();
+  if (results) {
+    const message = formatRetrospectiveForSlack(results);
+    await postAsAgent('pm', message);
+    console.log(`[RETROSPECTIVE] Proposed ${results.rulesProposed.length} new rules`);
+  }
+}
+
 async function main() {
   console.log('='.repeat(60));
   console.log('  AI BD Team - Starting All Services');
@@ -140,6 +165,45 @@ async function main() {
     }
   });
 
+  // ============================================================
+  // Event System Triggers - Activate the emergent behavior layer
+  // ============================================================
+
+  // Pipeline health check: Every 2 hours during business hours (14-22 UTC = 9am-5pm CST)
+  cron.schedule('0 14,16,18,20,22 * * 1-5', async () => {
+    console.log(`[${new Date().toLocaleString()}] Events: Running pipeline health check...`);
+    try {
+      await runWithLogging('event-pipeline-health', runPipelineHealthCheck);
+      console.log(`[${new Date().toLocaleString()}] Events: Pipeline health check complete`);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Events: Pipeline health check failed:`, err);
+    }
+  });
+
+  // Stale event cleanup: Every 5 minutes
+  cron.schedule('*/5 * * * *', async () => {
+    try {
+      await runStaleEventCleanup();
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Events: Stale cleanup failed:`, err);
+    }
+  });
+
+  // Patricia's monthly retrospective: First Monday of each month at 9am CST (15:00 UTC)
+  // Note: '1-7' ensures it's in the first 7 days, combined with day-of-week 1 (Monday)
+  cron.schedule('0 15 1-7 * 1', async () => {
+    console.log(`[${new Date().toLocaleString()}] Patricia: Running monthly retrospective...`);
+    try {
+      await runWithLogging('patricia-retrospective', runPatriciaRetrospective);
+      console.log(`[${new Date().toLocaleString()}] Patricia: Monthly retrospective complete`);
+    } catch (err) {
+      console.error(
+        `[${new Date().toLocaleString()}] Patricia: Monthly retrospective failed:`,
+        err
+      );
+    }
+  });
+
   console.log('  ✓ Scheduled jobs configured\n');
 
   console.log('='.repeat(60));
@@ -147,10 +211,13 @@ async function main() {
   console.log('  Schedule (CST):');
   console.log('    - Live agents: Always listening');
   console.log('    - Action scheduler: Every 15 minutes');
+  console.log('    - Stale event cleanup: Every 5 minutes');
   console.log('    - Maya scan: 8:00 AM CST Mon-Fri');
   console.log('    - Maya weekly: 8:30 AM CST Monday');
   console.log('    - Patricia standup: 11:00 AM CST Mon-Fri');
   console.log('    - David news: 10:00 AM CST Mon/Wed/Fri');
+  console.log('    - Pipeline health: Every 2 hours 9am-5pm CST Mon-Fri');
+  console.log('    - Patricia retrospective: First Monday of month 9am CST');
   console.log('='.repeat(60));
 
   // Keep process alive
