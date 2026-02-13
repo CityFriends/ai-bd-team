@@ -39,10 +39,7 @@ async function runMayaWeeklySummary() {
   await runWeeklySummary();
 }
 
-async function runPatriciaMorningCheckin() {
-  const { runMorningCheckin } = await import('./patricia-checkin.js');
-  await runMorningCheckin();
-}
+// Patricia standup is handled by Railway cron (src/cron/patricia-standup.ts)
 
 async function runPatriciaNudgeCheck() {
   const { runNudgeCheck } = await import('./patricia-checkin.js');
@@ -133,16 +130,8 @@ async function main() {
     }
   });
 
-  // Patricia: Daily standup at 11am CST (17:00 UTC) Mon-Fri
-  cron.schedule('0 17 * * 1-5', async () => {
-    console.log(`[${new Date().toLocaleString()}] Patricia: Running morning standup...`);
-    try {
-      await runWithLogging('patricia-standup', runPatriciaMorningCheckin);
-      console.log(`[${new Date().toLocaleString()}] Patricia: Morning standup complete`);
-    } catch (err) {
-      console.error(`[${new Date().toLocaleString()}] Patricia: Morning standup failed:`, err);
-    }
-  });
+  // Patricia standup is handled by Railway cron (src/cron/patricia-standup.ts)
+  // to avoid duplicate posts - Railway cron is more reliable than in-process cron
 
   // David: News digest MWF 10am CST (16:00 UTC)
   cron.schedule('0 16 * * 1,3,5', async () => {
@@ -214,10 +203,11 @@ async function main() {
   console.log('    - Stale event cleanup: Every 5 minutes');
   console.log('    - Maya scan: 8:00 AM CST Mon-Fri');
   console.log('    - Maya weekly: 8:30 AM CST Monday');
-  console.log('    - Patricia standup: 11:00 AM CST Mon-Fri');
   console.log('    - David news: 10:00 AM CST Mon/Wed/Fri');
   console.log('    - Pipeline health: Every 2 hours 9am-5pm CST Mon-Fri');
   console.log('    - Patricia retrospective: First Monday of month 9am CST');
+  console.log('  Railway Cron (external):');
+  console.log('    - Patricia standup: 11:00 AM CST Mon-Fri');
   console.log('='.repeat(60));
 
   // Keep process alive
