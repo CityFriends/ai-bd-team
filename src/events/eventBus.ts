@@ -77,6 +77,10 @@ export async function publishEvent(options: PublishEventOptions): Promise<Publis
   try {
     const supabase = getSupabase();
 
+    // Default process_after to now (immediate processing) and expires_at to 24 hours from now
+    const now = new Date();
+    const defaultExpiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
     const { data, error } = await supabase.rpc('publish_event', {
       p_event_type: eventType,
       p_source_agent: sourceAgent,
@@ -86,8 +90,8 @@ export async function publishEvent(options: PublishEventOptions): Promise<Publis
       p_priority: priority,
       p_channel_id: channelId || null,
       p_thread_ts: threadTs || null,
-      p_process_after: processAfter?.toISOString() || null,
-      p_expires_at: expiresAt?.toISOString() || null,
+      p_process_after: (processAfter || now).toISOString(),
+      p_expires_at: (expiresAt || defaultExpiresAt).toISOString(),
     });
 
     if (error) {
