@@ -77,29 +77,81 @@ export async function publishEvent(options: PublishEventOptions): Promise<Publis
   try {
     const supabase = getSupabase();
 
-    // Default process_after to now (immediate processing) and expires_at to 24 hours from now
+    // Default process_after to now (immediate processing) and expires_at based on priority
     const now = new Date();
-    const defaultExpiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-
-    const { data, error } = await supabase.rpc('publish_event', {
-      p_event_type: eventType,
-      p_source_agent: sourceAgent,
-      p_payload: payload,
-      p_target_agent: targetAgent || null,
-      p_parent_event_id: parentEventId || null,
-      p_priority: priority,
-      p_channel_id: channelId || null,
-      p_thread_ts: threadTs || null,
-      p_process_after: (processAfter || now).toISOString(),
-      p_expires_at: (expiresAt || defaultExpiresAt).toISOString(),
-    });
-
-    if (error) {
-      console.error(`[EventBus] Failed to publish ${eventType}:`, error);
-      return { success: false, error: error.message };
+    let defaultExpiresAt: Date;
+    if (priority <= 2) {
+      defaultExpiresAt = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour
+    } else if (priority <= 5) {
+      defaultExpiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 hours
+    } else {
+      defaultExpiresAt = new Date(now.getTime() + 72 * 60 * 60 * 1000); // 72 hours
     }
 
-    const eventId = data as string;
+    // Calculate chain depth and root event
+    let rootEventId: string | null = null;
+    let chainDepth = 0;
+
+    if (parentEventId) {
+      // Get parent event info
+      const { data: parentData, error: parentError } = await supabase
+        .from('agent_events')
+        .select('root_event_id, chain_depth')
+        .eq('id', parentEventId)
+        .single();
+
+      if (parentError) {
+        console.error(`[EventBus] Failed to get parent event ${parentEventId}:`, parentError);
+        return { success: false, error: `Parent event not found: ${parentEventId}` };
+      }
+
+      // If parent doesn't have a root, it IS the root
+      rootEventId = parentData.root_event_id || parentEventId;
+      chainDepth = (parentData.chain_depth || 0) + 1;
+    }
+    // For root events, rootEventId stays null initially - we'll update it after insert
+
+    // Insert the event (root_event_id is NULL for root events initially)
+    const { data: insertData, error: insertError } = await supabase
+      .from('agent_events')
+      .insert({
+        event_type: eventType,
+        source_agent: sourceAgent,
+        target_agent: targetAgent || null,
+        payload: payload,
+        parent_event_id: parentEventId || null,
+        root_event_id: rootEventId, // NULL for root events, valid UUID for chain events
+        chain_depth: chainDepth,
+        priority: priority,
+        channel_id: channelId || null,
+        thread_ts: threadTs || null,
+        process_after: (processAfter || now).toISOString(),
+        expires_at: (expiresAt || defaultExpiresAt).toISOString(),
+        status: 'pending',
+      })
+      .select('id')
+      .single();
+
+    if (insertError) {
+      console.error(`[EventBus] Failed to insert ${eventType}:`, insertError);
+      return { success: false, error: insertError.message };
+    }
+
+    const eventId = insertData.id as string;
+
+    // Update root_event_id to self if this is a root event
+    if (!parentEventId) {
+      const { error: updateError } = await supabase
+        .from('agent_events')
+        .update({ root_event_id: eventId })
+        .eq('id', eventId);
+
+      if (updateError) {
+        console.error(`[EventBus] Failed to update root_event_id for ${eventId}:`, updateError);
+        // Don't fail the whole operation, the event was created
+      }
+    }
+
     console.log(`[EventBus] Published ${eventType} from ${sourceAgent} (id: ${eventId})`);
 
     return { success: true, eventId };
