@@ -25,7 +25,10 @@ const handlersByAgent: Record<LiveAgentName, AgentHandlerMap> = {
   rosa: rosaHandlers,
   james: jamesHandlers,
   patricia: patriciaHandlers,
-  jodie: new Map(), // Jodie doesn't have event handlers yet
+  // Jodie is the strategic advisor - she responds to direct questions in Slack
+  // rather than reacting to events. Event handlers are intentionally empty.
+  // If Jodie needs to react to events in the future, create jodie.handlers.ts
+  jodie: new Map(),
 };
 
 /**

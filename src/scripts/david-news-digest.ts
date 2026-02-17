@@ -12,7 +12,6 @@
  */
 
 import 'dotenv/config';
-import cron from 'node-cron';
 import { App } from '@slack/bolt';
 import { getNewRelevantNews, formatNewsDigest } from '../integrations/gov-news.js';
 import { scanCMSForecast, scoreCMSOpportunity } from '../integrations/cms-forecast.js';
@@ -71,8 +70,16 @@ async function getTeamApps(): Promise<Map<string, App>> {
 
   const agentConfigs = [
     { name: 'maya', botToken: process.env.MAYA_BOT_TOKEN, appToken: process.env.MAYA_APP_TOKEN },
-    { name: 'marcus', botToken: process.env.MARCUS_BOT_TOKEN, appToken: process.env.MARCUS_APP_TOKEN },
-    { name: 'patricia', botToken: process.env.PATRICIA_BOT_TOKEN, appToken: process.env.PATRICIA_APP_TOKEN },
+    {
+      name: 'marcus',
+      botToken: process.env.MARCUS_BOT_TOKEN,
+      appToken: process.env.MARCUS_APP_TOKEN,
+    },
+    {
+      name: 'patricia',
+      botToken: process.env.PATRICIA_BOT_TOKEN,
+      appToken: process.env.PATRICIA_APP_TOKEN,
+    },
   ];
 
   for (const config of agentConfigs) {
@@ -138,7 +145,7 @@ SLACK FORMATTING:
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const textBlock = response.content.find(b => b.type === 'text');
+  const textBlock = response.content.find((b) => b.type === 'text');
   return textBlock?.type === 'text' ? textBlock.text : '';
 }
 
@@ -162,13 +169,14 @@ export async function runNewsDigest(): Promise<void> {
   // Check CMS forecast (weekly or when updated)
   let cmsUpdate = '';
   const dayOfWeek = new Date().getDay();
-  if (dayOfWeek === 1) { // Monday - check CMS forecast
+  if (dayOfWeek === 1) {
+    // Monday - check CMS forecast
     console.log('[David] Checking CMS forecast (Monday scan)...');
     try {
       const cmsOpps = await scanCMSForecast();
       if (cmsOpps.length > 0) {
         const relevant = cmsOpps
-          .map(opp => ({ opp, ...scoreCMSOpportunity(opp) }))
+          .map((opp) => ({ opp, ...scoreCMSOpportunity(opp) }))
           .filter(({ score }) => score >= 60)
           .slice(0, 5);
 
@@ -205,12 +213,17 @@ export async function runNewsDigest(): Promise<void> {
     try {
       const teamApps = await getTeamApps();
       if (teamApps.size > 0) {
-        const postedReactions = await postTeamReactions(teamApps, CHANNEL_ID, threadTs, finalMessage);
+        const postedReactions = await postTeamReactions(
+          teamApps,
+          CHANNEL_ID,
+          threadTs,
+          finalMessage
+        );
 
         // David responds to wrap up the conversation
         if (postedReactions.length > 0) {
           console.log('[David] Generating follow-up response...');
-          await new Promise(r => setTimeout(r, 3000 + Math.random() * 4000));
+          await new Promise((r) => setTimeout(r, 3000 + Math.random() * 4000));
 
           const followUp = await getDavidFollowUp(finalMessage, postedReactions);
           if (followUp) {
@@ -248,26 +261,15 @@ async function main(): Promise<void> {
   const scheduleMode = args.includes('--schedule') || args.includes('-s');
 
   if (scheduleMode) {
+    // NOTE: --schedule mode is DEPRECATED
+    // Scheduling is now handled by Railway external cron to prevent duplicate posts
+    // See: src/cron/david-news.ts
     console.log('='.repeat(60));
-    console.log('  David News Digest - Scheduled Mode');
+    console.log('  WARNING: --schedule mode is deprecated');
+    console.log('  David scheduling is now handled by Railway cron');
+    console.log('  Running a single digest instead...');
     console.log('='.repeat(60));
-    console.log('\nSchedule:');
-    console.log('  - Monday, Wednesday, Friday at 10:00 AM CST (16:00 UTC)');
-    console.log('  - Press Ctrl+C to stop\n');
-
-    // Run immediately on start
     await runNewsDigest();
-
-    // MWF at 10am CST (16:00 UTC)
-    // CST is UTC-6, so 10am CST = 16:00 UTC
-    // 1 = Monday, 3 = Wednesday, 5 = Friday
-    cron.schedule('0 16 * * 1,3,5', async () => {
-      console.log('\n[Cron] Running scheduled news digest...');
-      await runNewsDigest();
-    });
-
-    console.log('[David] Scheduler running...');
-
   } else {
     // One-time run
     await runNewsDigest();

@@ -107,7 +107,6 @@ async function handlePursue(
 
     // Log the decision
     await logDecision(noticeId, 'pursue', userId);
-
   } catch (err) {
     console.error('[Action] Error handling pursue:', err);
   }
@@ -133,9 +132,11 @@ async function handlePass(
 
   try {
     const supabase = getSupabase();
+    let workflowUpdated = false;
+    let seenUpdated = false;
 
     // Update workflow stage
-    await supabase
+    const { error: workflowError, count: workflowCount } = await supabase
       .from('opportunity_workflow')
       .update({
         stage: 'passed',
@@ -146,8 +147,21 @@ async function handlePass(
       })
       .eq('notice_id', noticeId);
 
+    if (workflowError) {
+      console.error(
+        `[Action] Failed to update opportunity_workflow for ${noticeId}:`,
+        workflowError.message
+      );
+    } else {
+      workflowUpdated = true;
+      console.log(
+        `[Action] Updated opportunity_workflow for ${noticeId} (rows: ${workflowCount ?? 'unknown'})`
+      );
+    }
+
     // Also update seen_opportunities so Maya won't repost it
-    await supabase
+    // This is CRITICAL for preventing duplicate posts
+    const { error: seenError, count: seenCount } = await supabase
       .from('seen_opportunities')
       .update({
         decision: 'pass',
@@ -155,19 +169,58 @@ async function handlePass(
       })
       .eq('notice_id', noticeId);
 
-    // Confirm in thread
+    if (seenError) {
+      console.error(
+        `[Action] Failed to update seen_opportunities for ${noticeId}:`,
+        seenError.message
+      );
+    } else {
+      seenUpdated = true;
+      console.log(
+        `[Action] Updated seen_opportunities for ${noticeId} (rows: ${seenCount ?? 'unknown'})`
+      );
+    }
+
+    // Confirm in thread with appropriate message based on success/failure
     if (body.message?.ts && body.channel?.id) {
-      await client.chat.postMessage({
-        channel: body.channel.id,
-        thread_ts: body.message.ts,
-        text: `⏭️ <@${userId}> passed on this one. Removing from active pipeline.`,
-      });
+      if (workflowUpdated && seenUpdated) {
+        await client.chat.postMessage({
+          channel: body.channel.id,
+          thread_ts: body.message.ts,
+          text: `⏭️ <@${userId}> passed on this one. Removing from active pipeline.`,
+        });
+      } else if (!workflowUpdated && !seenUpdated) {
+        // Both updates failed - notify user
+        await client.chat.postMessage({
+          channel: body.channel.id,
+          thread_ts: body.message.ts,
+          text: `⚠️ <@${userId}> tried to pass on this, but the database update failed. Please try again or contact support.`,
+        });
+      } else {
+        // Partial success - still confirm but note the issue
+        await client.chat.postMessage({
+          channel: body.channel.id,
+          thread_ts: body.message.ts,
+          text: `⏭️ <@${userId}> passed on this one. (Note: partial database update - this may reappear if not fully recorded)`,
+        });
+      }
     }
 
     await logDecision(noticeId, 'pass', userId);
-
   } catch (err) {
     console.error('[Action] Error handling pass:', err);
+    // Notify user of failure
+    if (body.message?.ts && body.channel?.id) {
+      try {
+        await client.chat.postMessage({
+          channel: body.channel.id,
+          thread_ts: body.message.ts,
+          text: `⚠️ Error processing pass action. Please try again.`,
+        });
+      } catch {
+        // Ignore notification failure
+      }
+    }
   }
 }
 
@@ -211,7 +264,6 @@ async function handleResearch(
         text: `🔍 <@${userId}> requested research. <@U0AC0SVD3MH> (David), can you dig into this one?`,
       });
     }
-
   } catch (err) {
     console.error('[Action] Error handling research request:', err);
   }
@@ -284,7 +336,6 @@ async function handleAddToPipeline(
         text: `📋 Added to pipeline by <@${userId}>. I'll keep an eye on this one.`,
       });
     }
-
   } catch (err) {
     console.error('[Action] Error adding to pipeline:', err);
   }
@@ -332,7 +383,6 @@ async function handleDecisionGo(
     }
 
     await logDecision(noticeId, 'go', userId);
-
   } catch (err) {
     console.error('[Action] Error handling GO decision:', err);
   }
@@ -389,7 +439,6 @@ async function handleDecisionPass(
     }
 
     await logDecision(noticeId, 'pass', userId);
-
   } catch (err) {
     console.error('[Action] Error handling PASS decision:', err);
   }
@@ -434,7 +483,6 @@ async function handleDecisionNeedInfo(
         text: `🤔 <@${userId}> needs more info before deciding. <@U0AC0SVD3MH> (David), can you dig deeper?`,
       });
     }
-
   } catch (err) {
     console.error('[Action] Error handling need info:', err);
   }
@@ -443,10 +491,7 @@ async function handleDecisionNeedInfo(
 /**
  * Handle pipeline refresh button
  */
-async function handlePipelineRefresh(
-  body: BlockAction,
-  client: App['client']
-): Promise<void> {
+async function handlePipelineRefresh(body: BlockAction, client: App['client']): Promise<void> {
   // For now, just acknowledge - full implementation would regenerate pipeline view
   if (body.message?.ts && body.channel?.id) {
     await client.chat.postEphemeral({
@@ -460,10 +505,7 @@ async function handlePipelineRefresh(
 /**
  * Handle pipeline report button
  */
-async function handlePipelineReport(
-  body: BlockAction,
-  client: App['client']
-): Promise<void> {
+async function handlePipelineReport(body: BlockAction, client: App['client']): Promise<void> {
   if (body.message?.ts && body.channel?.id) {
     await client.chat.postEphemeral({
       channel: body.channel.id,

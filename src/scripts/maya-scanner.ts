@@ -11,7 +11,6 @@
  */
 import 'dotenv/config';
 import * as fs from 'fs';
-import cron from 'node-cron';
 import { App } from '@slack/bolt';
 import {
   searchOpportunities,
@@ -517,10 +516,15 @@ async function getSeenAndPassedOpportunities(): Promise<{
     const supabase = getSupabase();
 
     // Get all seen opportunities (already posted)
-    const { data: seenData } = await supabase
+    const { data: seenData, error: seenError } = await supabase
       .from('seen_opportunities')
       .select('notice_id, title, decision');
 
+    if (seenError) {
+      console.error('[DEDUP] Error querying seen_opportunities:', seenError.message);
+    }
+
+    let passedFromSeen = 0;
     if (seenData) {
       for (const row of seenData) {
         noticeIds.add(row.notice_id);
@@ -528,25 +532,38 @@ async function getSeenAndPassedOpportunities(): Promise<{
         if (row.title) {
           titles.add(normalizeTitle(row.title));
         }
+        // Count passed opportunities
+        if (row.decision === 'pass') {
+          passedFromSeen++;
+        }
       }
     }
 
     // Also check opportunity_workflow for passed opportunities
-    const { data: workflowData } = await supabase
+    const { data: workflowData, error: workflowError } = await supabase
       .from('opportunity_workflow')
       .select('notice_id, title, decision')
       .in('decision', ['pass', 'no_go', 'passed']);
 
+    if (workflowError) {
+      console.error('[DEDUP] Error querying opportunity_workflow:', workflowError.message);
+    }
+
+    let passedFromWorkflow = 0;
     if (workflowData) {
       for (const row of workflowData) {
         noticeIds.add(row.notice_id);
         if (row.title) {
           titles.add(normalizeTitle(row.title));
         }
+        passedFromWorkflow++;
       }
     }
 
     console.log(`[DEDUP] Found ${noticeIds.size} seen notice IDs and ${titles.size} seen titles`);
+    console.log(
+      `[DEDUP] Passed opportunities: ${passedFromSeen} from seen_opportunities, ${passedFromWorkflow} from workflow`
+    );
   } catch (err) {
     console.warn('[DEDUP] Could not check seen opportunities:', err);
   }
@@ -955,40 +972,15 @@ async function main() {
   }
 
   if (scheduleMode) {
+    // NOTE: --schedule mode is DEPRECATED
+    // Scheduling is now handled by Railway external cron to prevent duplicate posts
+    // See: src/cron/maya-daily.ts, src/cron/maya-weekly.ts
     console.log('='.repeat(60));
-    console.log('  Maya Opportunity Scanner - Scheduled Mode');
+    console.log('  WARNING: --schedule mode is deprecated');
+    console.log('  Maya scheduling is now handled by Railway cron');
+    console.log('  Running a single scan instead...');
     console.log('='.repeat(60));
-    console.log('\nSchedule (CST):');
-    console.log('  - Weekdays at 8:00 AM CST: Scan for new opportunities');
-    console.log('  - Monday at 8:30 AM CST: Weekly summary');
-    console.log('  - Press Ctrl+C to stop\n');
-
-    // Run immediately on start
     await runDailyScan();
-
-    // Weekdays at 8am CST (14:00 UTC)
-    cron.schedule('0 14 * * 1-5', async () => {
-      await runDailyScan();
-    });
-
-    // Weekly on Monday at 8:30am CST (14:30 UTC)
-    cron.schedule('30 14 * * 1', async () => {
-      await runWeeklySummary();
-    });
-
-    // Flush pending notifications every 5 minutes
-    cron.schedule('*/5 * * * *', async () => {
-      const pending = getPendingCount();
-      if (pending > 0) {
-        console.log(`[BATCHER] Flushing ${pending} pending notifications...`);
-        const mayaApp = await getMayaApp();
-        const sent = await flushNotifications(mayaApp || undefined);
-        console.log(`[BATCHER] Sent ${sent} notifications`);
-        if (mayaApp) await mayaApp.stop();
-      }
-    });
-
-    console.log('Scheduler running...');
   } else {
     // One-time scan
     await runDailyScan();
