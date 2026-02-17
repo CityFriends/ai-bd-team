@@ -13,15 +13,8 @@
 import 'dotenv/config';
 import { logJobStart, logJobComplete, logJobFailed } from '../integrations/supabase.js';
 import { publishEvent, expireStaleEvents, EventTypes } from '../events/index.js';
-import type {
-  PipelineHealthCheckPayload,
-  SystemHealthCheckPayload,
-  DeadlineWarningPayload,
-} from '../events/eventTypes.js';
-import {
-  getWorkflowsByStage,
-  getWorkflowsNeedingAction,
-} from '../integrations/database/workflow.js';
+import type { PipelineHealthCheckPayload, SystemHealthCheckPayload } from '../events/eventTypes.js';
+import { getWorkflowsByStage } from '../integrations/database/workflow.js';
 
 // ============================================================
 // Pipeline Health Check
@@ -31,14 +24,12 @@ export async function triggerPipelineHealthCheck(): Promise<void> {
 
   try {
     // Gather pipeline data
-    const [foundOpps, researchingOpps, strategyOpps, pursuingOpps, needsActionOpps] =
-      await Promise.all([
-        getWorkflowsByStage('found'),
-        getWorkflowsByStage('researching'),
-        getWorkflowsByStage('strategy'),
-        getWorkflowsByStage('pursuing'),
-        getWorkflowsNeedingAction(),
-      ]);
+    const [foundOpps, researchingOpps, strategyOpps, pursuingOpps] = await Promise.all([
+      getWorkflowsByStage('found'),
+      getWorkflowsByStage('researching'),
+      getWorkflowsByStage('strategy'),
+      getWorkflowsByStage('pursuing'),
+    ]);
 
     const totalOpportunities =
       foundOpps.length + researchingOpps.length + strategyOpps.length + pursuingOpps.length;

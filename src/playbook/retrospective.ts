@@ -7,8 +7,6 @@ import {
   retireRule,
   createRetrospectiveRun,
   completeRetrospectiveRun,
-  getPlaybookStats,
-  getRecentProposedRules,
 } from './database.js';
 import { RuleCategory, RuleType } from './types.js';
 import type { OutcomeData, ChainData, PlaybookRule } from './types.js';

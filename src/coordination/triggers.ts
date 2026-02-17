@@ -1,6 +1,11 @@
 import { getSlackApp, getChannelId } from '../integrations/slack.js';
-import { getThreadBySlackTs, createThread, queueAgentTask, setOpportunityDecision } from '../integrations/supabase.js';
-import { extractMentions, getAgent } from '../agents/index.js';
+import {
+  getThreadBySlackTs,
+  createThread,
+  queueAgentTask,
+  setOpportunityDecision,
+} from '../integrations/supabase.js';
+import { extractMentions } from '../agents/index.js';
 import type { AgentName } from '../types/index.js';
 
 // Type for reaction_added event
@@ -21,7 +26,7 @@ export function setupTriggers(): void {
   const channelId = getChannelId();
 
   // Handle messages in the BD channel
-  app.message(async ({ message, say }) => {
+  app.message(async ({ message }) => {
     // Only process messages in our channel
     if (message.channel !== channelId) return;
 
@@ -153,7 +158,10 @@ async function handleDecisionResponse(text: string, threadTs?: string): Promise<
 
     // Queue strategist to acknowledge
     const { AGENT_DELAYS } = await import('../types/index.js');
-    const delay = Math.floor(Math.random() * (AGENT_DELAYS.QUICK_RESPONSE[1] - AGENT_DELAYS.QUICK_RESPONSE[0] + 1)) + AGENT_DELAYS.QUICK_RESPONSE[0];
+    const delay =
+      Math.floor(
+        Math.random() * (AGENT_DELAYS.QUICK_RESPONSE[1] - AGENT_DELAYS.QUICK_RESPONSE[0] + 1)
+      ) + AGENT_DELAYS.QUICK_RESPONSE[0];
 
     await queueAgentTask(
       'strategist',
@@ -180,7 +188,10 @@ async function handleReaction(event: ReactionEvent): Promise<void> {
     const thread = await getThreadBySlackTs(item.ts);
     if (thread?.opportunity_id) {
       const { AGENT_DELAYS } = await import('../types/index.js');
-      const delay = Math.floor(Math.random() * (AGENT_DELAYS.PARTNER_SEARCH[1] - AGENT_DELAYS.PARTNER_SEARCH[0] + 1)) + AGENT_DELAYS.PARTNER_SEARCH[0];
+      const delay =
+        Math.floor(
+          Math.random() * (AGENT_DELAYS.PARTNER_SEARCH[1] - AGENT_DELAYS.PARTNER_SEARCH[0] + 1)
+        ) + AGENT_DELAYS.PARTNER_SEARCH[0];
 
       await queueAgentTask(
         'connector',
@@ -202,7 +213,10 @@ async function handleReaction(event: ReactionEvent): Promise<void> {
       // Check if this is approving outreach drafts
       // The connector would handle this
       const { AGENT_DELAYS } = await import('../types/index.js');
-      const delay = Math.floor(Math.random() * (AGENT_DELAYS.QUICK_RESPONSE[1] - AGENT_DELAYS.QUICK_RESPONSE[0] + 1)) + AGENT_DELAYS.QUICK_RESPONSE[0];
+      const delay =
+        Math.floor(
+          Math.random() * (AGENT_DELAYS.QUICK_RESPONSE[1] - AGENT_DELAYS.QUICK_RESPONSE[0] + 1)
+        ) + AGENT_DELAYS.QUICK_RESPONSE[0];
 
       await queueAgentTask(
         'connector',
@@ -226,7 +240,12 @@ export async function createTrackedThread(
     slack_thread_ts: slackThreadTs,
     slack_channel: getChannelId(),
     opportunity_id: opportunityId,
-    topic: topic as 'opportunity_review' | 'partner_search' | 'capture_planning' | 'standup' | undefined,
+    topic: topic as
+      | 'opportunity_review'
+      | 'partner_search'
+      | 'capture_planning'
+      | 'standup'
+      | undefined,
     status: 'active',
   });
 }

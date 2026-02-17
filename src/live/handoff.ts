@@ -6,10 +6,10 @@ import { getAnthropic } from '../integrations/claude.js';
 import type { AgentHandoff } from '../integrations/supabase.js';
 
 export interface HandoffContext {
-  summary: string;           // What we've discussed
-  userIntent: string;        // What user is trying to accomplish
-  relevantFacts: string[];   // Key info discovered
-  openQuestions: string[];   // What still needs answering
+  summary: string; // What we've discussed
+  userIntent: string; // What user is trying to accomplish
+  relevantFacts: string[]; // Key info discovered
+  openQuestions: string[]; // What still needs answering
   recommendedAction: string; // What the next agent should do
 }
 
@@ -29,9 +29,7 @@ export async function buildHandoffContext(
   const client = getAnthropic();
 
   // Format thread for analysis
-  const threadText = messages
-    .map(m => `${m.author}: ${m.text}`)
-    .join('\n');
+  const threadText = messages.map((m) => `${m.author}: ${m.text}`).join('\n');
 
   const prompt = `Analyze this conversation and extract a structured handoff context for the next agent.
 
@@ -63,7 +61,7 @@ Respond in JSON format:
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const textBlock = response.content.find(b => b.type === 'text');
+    const textBlock = response.content.find((b) => b.type === 'text');
     if (!textBlock || textBlock.type !== 'text') {
       throw new Error('No text response');
     }
@@ -89,9 +87,9 @@ Respond in JSON format:
     // Fallback: basic context
     const lastMessages = messages.slice(-5);
     return {
-      summary: `Discussion in thread with ${[...new Set(messages.map(m => m.author))].join(', ')}`,
+      summary: `Discussion in thread with ${[...new Set(messages.map((m) => m.author))].join(', ')}`,
       userIntent: 'Continue the conversation',
-      relevantFacts: lastMessages.map(m => `${m.author} said: "${m.text.slice(0, 100)}"`),
+      relevantFacts: lastMessages.map((m) => `${m.author} said: "${m.text.slice(0, 100)}"`),
       openQuestions: [],
       recommendedAction: 'Review recent messages and respond appropriately',
     };
@@ -174,14 +172,14 @@ export function formatHandoffForPrompt(handoff: AgentHandoff): string {
 
   if (handoff.relevant_facts && handoff.relevant_facts.length > 0) {
     parts.push('Key Facts:');
-    handoff.relevant_facts.forEach(fact => {
+    handoff.relevant_facts.forEach((fact) => {
       parts.push(`  • ${fact}`);
     });
   }
 
   if (handoff.open_questions && handoff.open_questions.length > 0) {
     parts.push('Open Questions:');
-    handoff.open_questions.forEach(q => {
+    handoff.open_questions.forEach((q) => {
       parts.push(`  • ${q}`);
     });
   }
@@ -205,10 +203,7 @@ export async function acknowledgeHandoffById(handoffId: string): Promise<void> {
 /**
  * Detect if an agent is being tagged in a message
  */
-export function detectAgentTag(
-  text: string,
-  agentSlackIds: Record<string, string>
-): string | null {
+export function detectAgentTag(text: string, agentSlackIds: Record<string, string>): string | null {
   for (const [slackId, agentName] of Object.entries(agentSlackIds)) {
     if (text.includes(`<@${slackId}>`)) {
       return agentName;
@@ -222,7 +217,7 @@ export function detectAgentTag(
  */
 export async function createHandoffOnTag(
   fromAgent: string,
-  taggedAgentId: string,
+  _taggedAgentId: string,
   taggedAgentName: string,
   threadTs: string,
   messages: ThreadMessage[]

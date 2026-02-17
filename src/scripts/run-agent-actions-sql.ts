@@ -8,10 +8,7 @@ async function createAgentActionsTable() {
   const supabase = getSupabase();
 
   // Check if table already exists
-  const { data, error: checkError } = await supabase
-    .from('agent_actions')
-    .select('id')
-    .limit(1);
+  const { error: checkError } = await supabase.from('agent_actions').select('id').limit(1);
 
   if (!checkError) {
     console.log('✓ agent_actions table already exists');

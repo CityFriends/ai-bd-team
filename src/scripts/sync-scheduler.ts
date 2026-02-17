@@ -13,7 +13,7 @@ import { getSupabase } from '../integrations/supabase.js';
 // ============================================
 // Configuration
 // ============================================
-const NOTION_API_KEY = process.env.NOTION_API_KEY || 'ntn_J20547711999qfDPwjgH9DA2Tx5VbTdbQrwtdlCITYa0Fh';
+const NOTION_API_KEY = process.env.NOTION_API_KEY || '';
 const CONTRACTS_DB = '1b807a7951ff80108f3cc323f59c654a';
 const CRM_DB = '1bc07a7951ff804c8426d0e3bdfc93a2';
 const RATES_DB = '1e607a7951ff805fb849f7e95052b4c9';
@@ -30,14 +30,14 @@ async function fetchNotionDatabase(databaseId: string): Promise<NotionPage[]> {
   const response = await fetch(`https://api.notion.com/v1/databases/${databaseId}/query`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${NOTION_API_KEY}`,
+      Authorization: `Bearer ${NOTION_API_KEY}`,
       'Notion-Version': '2022-06-28',
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({}),
   });
 
-  const data = await response.json() as { results?: any[] };
+  const data = (await response.json()) as { results?: any[] };
   return data.results || [];
 }
 
@@ -85,14 +85,19 @@ function getUrlProperty(prop: any): string | null {
 function inferAgency(contractName: string): string {
   const name = contractName.toLowerCase();
   if (name.includes('va ') || name.includes('veteran')) return 'Department of Veterans Affairs';
-  if (name.includes('cms ') || name.includes('qpp') || name.includes('payment program')) return 'Centers for Medicare & Medicaid Services';
-  if (name.includes('hhs ') || name.includes('acr-orr')) return 'Department of Health and Human Services';
+  if (name.includes('cms ') || name.includes('qpp') || name.includes('payment program'))
+    return 'Centers for Medicare & Medicaid Services';
+  if (name.includes('hhs ') || name.includes('acr-orr'))
+    return 'Department of Health and Human Services';
   if (name.includes('irs ') || name.includes('direct file')) return 'Internal Revenue Service';
-  if (name.includes('nys ') || name.includes('ny ') || name.includes('new york')) return 'New York State';
+  if (name.includes('nys ') || name.includes('ny ') || name.includes('new york'))
+    return 'New York State';
   if (name.includes('md ') || name.includes('maryland')) return 'Maryland';
   if (name.includes('nmaach') || name.includes('museum')) return 'Smithsonian Institution';
-  if (name.includes('abfm') || name.includes('family medicine')) return 'American Board of Family Medicine';
-  if (name.includes('icc') || name.includes('inclusive capital')) return 'Inclusive Capital Collective';
+  if (name.includes('abfm') || name.includes('family medicine'))
+    return 'American Board of Family Medicine';
+  if (name.includes('icc') || name.includes('inclusive capital'))
+    return 'Inclusive Capital Collective';
   return 'Unknown';
 }
 
@@ -117,18 +122,22 @@ async function syncContracts(): Promise<number> {
       contract_name: contractName,
       agency: inferAgency(contractName),
       contract_number: getTextProperty(props['Prime Contract Number']),
-      contract_vehicle: getSelectProperty(props['Vehicle']) !== 'None' ? getSelectProperty(props['Vehicle']) : null,
+      contract_vehicle:
+        getSelectProperty(props['Vehicle']) !== 'None' ? getSelectProperty(props['Vehicle']) : null,
       pop_start: getDateProperty(props['Base Start']),
       pop_end: getDateProperty(props['Contract End']),
       contract_value: getNumberProperty(props['Prime Contract Value']),
       our_role: 'Prime',
-      relevant_naics: getSelectProperty(props['NAICS Code']) !== 'N/A' ? [getSelectProperty(props['NAICS Code'])] : null,
+      relevant_naics:
+        getSelectProperty(props['NAICS Code']) !== 'N/A'
+          ? [getSelectProperty(props['NAICS Code'])]
+          : null,
       tags: [
         getSelectProperty(props['Set-Aside']),
         ...getMultiSelectProperty(props['Billable Type']),
         ...getMultiSelectProperty(props['Roles']),
         getSelectProperty(props['Vehicle']),
-      ].filter(t => t && t !== 'None'),
+      ].filter((t) => t && t !== 'None'),
       client_contact_name: getTextProperty(props['Project POC']),
       client_contact_email: getEmailProperty(props['POC Email']),
       referenceable: status === 'Active' || status === 'Complete',
@@ -175,7 +184,9 @@ async function syncTeamingPartners(): Promise<number> {
       website: getUrlProperty(props['Website URL']),
       capabilities: getMultiSelectProperty(props['Core Capabilities']),
       certifications: sbaDesignations.length > 0 ? sbaDesignations : null,
-      set_asides: sbaDesignations.filter(d => ['8(a)', 'SDVOSB', 'WOSB', 'EDWOSB', 'HUBZone', 'VOSB'].includes(d)),
+      set_asides: sbaDesignations.filter((d) =>
+        ['8(a)', 'SDVOSB', 'WOSB', 'EDWOSB', 'HUBZone', 'VOSB'].includes(d)
+      ),
       relationship_status: relationshipStatus,
       relationship_notes: getTextProperty(props['Notes']),
       contact_name: getTextProperty(props['Primary Point of Contact Name ']),
@@ -212,9 +223,10 @@ async function syncLaborRates(): Promise<number> {
     const category = getTextProperty(props['Labor Category']);
     if (!category) continue;
 
-    const currentRate = getNumberProperty(props['Year 3 Rate (Current)']) ||
-                        getNumberProperty(props['Year 2 Rate ']) ||
-                        getNumberProperty(props['Year 1 Rate ']);
+    const currentRate =
+      getNumberProperty(props['Year 3 Rate (Current)']) ||
+      getNumberProperty(props['Year 2 Rate ']) ||
+      getNumberProperty(props['Year 1 Rate ']);
     if (!currentRate) continue;
 
     const sin = getSelectProperty(props['SIN']);
@@ -246,7 +258,12 @@ async function syncLaborRates(): Promise<number> {
   return synced;
 }
 
-async function logSync(source: string, recordCount: number, status: 'success' | 'error', error?: string) {
+async function logSync(
+  source: string,
+  recordCount: number,
+  status: 'success' | 'error',
+  error?: string
+) {
   try {
     const supabase = getSupabase();
     await supabase.from('sync_log').insert({
@@ -267,7 +284,7 @@ async function logSync(source: string, recordCount: number, status: 'success' | 
 
 async function runSync() {
   const timestamp = new Date().toISOString();
-  console.log(`\n[${ timestamp }] Starting sync...`);
+  console.log(`\n[${timestamp}] Starting sync...`);
 
   try {
     // Sync Notion data
@@ -284,7 +301,6 @@ async function runSync() {
     await logSync('notion_rates', rates, 'success');
 
     console.log(`[${new Date().toISOString()}] Sync complete!`);
-
   } catch (error) {
     console.error(`[${new Date().toISOString()}] Sync failed:`, error);
     await logSync('sync', 0, 'error', String(error));
@@ -317,7 +333,6 @@ async function main() {
 
     // Keep process running
     console.log('Scheduler running. Waiting for next sync...');
-
   } else {
     // One-time sync
     console.log('Running one-time sync...');

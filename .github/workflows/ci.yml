@@ -32,7 +32,6 @@ jobs:
 
       - name: Lint
         run: npm run lint
-        continue-on-error: true  # Don't fail CI on lint errors initially
 
       - name: Run tests
         run: npm test
@@ -58,4 +57,3 @@ jobs:
 
       - name: Check formatting
         run: npm run format:check
-        continue-on-error: true  # Don't fail CI on format errors initially

@@ -25,9 +25,8 @@ export interface HierarchicalContext {
 }
 
 // Configuration
-const RECENT_MESSAGE_COUNT = 10;  // Keep last N messages verbatim
-const SUMMARY_THRESHOLD = 15;     // Only summarize if more than N messages
-const SUMMARY_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const RECENT_MESSAGE_COUNT = 10; // Keep last N messages verbatim
+const SUMMARY_THRESHOLD = 15; // Only summarize if more than N messages
 
 /**
  * Build hierarchical context for a thread
@@ -66,7 +65,11 @@ export async function buildHierarchicalContext(
       const lastSummarizedTs = cachedSummary.summarized_up_to_ts;
       const oldestRecentTs = recentMessages[0]?.ts;
 
-      if (lastSummarizedTs && oldestRecentTs && lastSummarizedTs >= olderMessages[olderMessages.length - 1]?.ts) {
+      if (
+        lastSummarizedTs &&
+        oldestRecentTs &&
+        lastSummarizedTs >= olderMessages[olderMessages.length - 1]?.ts
+      ) {
         // Cached summary is still valid
         return {
           olderSummary: cachedSummary.summary,
@@ -120,9 +123,7 @@ export async function summarizeMessages(messages: ThreadMessage[]): Promise<stri
   const client = getAnthropic();
 
   // Format messages for summarization
-  const messagesText = messages
-    .map(m => `${m.author}: ${m.text}`)
-    .join('\n');
+  const messagesText = messages.map((m) => `${m.author}: ${m.text}`).join('\n');
 
   const prompt = `Summarize this conversation thread concisely, capturing:
 1. The main topic(s) being discussed
@@ -145,7 +146,7 @@ SUMMARY:`;
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const textBlock = response.content.find(b => b.type === 'text');
+    const textBlock = response.content.find((b) => b.type === 'text');
     if (!textBlock || textBlock.type !== 'text') {
       return 'Could not summarize conversation.';
     }
@@ -166,7 +167,9 @@ export function formatHierarchicalContext(context: HierarchicalContext): string 
 
   // Add summary of older messages
   if (context.olderSummary) {
-    parts.push(`EARLIER IN THREAD (${context.totalMessages - context.recentMessages.length} messages summarized):`);
+    parts.push(
+      `EARLIER IN THREAD (${context.totalMessages - context.recentMessages.length} messages summarized):`
+    );
     parts.push(context.olderSummary);
     parts.push('');
   }
@@ -174,7 +177,7 @@ export function formatHierarchicalContext(context: HierarchicalContext): string 
   // Add recent messages verbatim
   if (context.recentMessages.length > 0) {
     parts.push('RECENT MESSAGES:');
-    context.recentMessages.forEach(m => {
+    context.recentMessages.forEach((m) => {
       parts.push(`${m.author}: ${m.text}`);
     });
   }
@@ -200,24 +203,27 @@ function extractParticipants(messages: ThreadMessage[]): string[] {
  */
 function extractKeyTopics(messages: ThreadMessage[]): string[] {
   const topics = new Set<string>();
-  const allText = messages.map(m => m.text).join(' ').toLowerCase();
+  const allText = messages
+    .map((m) => m.text)
+    .join(' ')
+    .toLowerCase();
 
   // Business development topics
   const topicKeywords: Record<string, string[]> = {
-    'Opportunity': ['opportunity', 'opp', 'rfp', 'rfi', 'solicitation'],
+    Opportunity: ['opportunity', 'opp', 'rfp', 'rfi', 'solicitation'],
     'SAM.gov': ['sam.gov', 'sam gov'],
-    'Incumbent': ['incumbent', 'current contractor'],
-    'Teaming': ['teaming', 'partner', 'subcontractor'],
+    Incumbent: ['incumbent', 'current contractor'],
+    Teaming: ['teaming', 'partner', 'subcontractor'],
     'Go/No-Go': ['go/no-go', 'go no go', 'should we pursue', 'bid decision'],
-    'Capture': ['capture', 'win strategy'],
-    'Proposal': ['proposal', 'response', 'submission'],
+    Capture: ['capture', 'win strategy'],
+    Proposal: ['proposal', 'response', 'submission'],
     'Agency Intel': ['agency', 'contract history', 'spending'],
-    'Risk': ['risk', 'red flag', 'concern'],
-    'Timeline': ['deadline', 'due date', 'timeline'],
+    Risk: ['risk', 'red flag', 'concern'],
+    Timeline: ['deadline', 'due date', 'timeline'],
   };
 
   for (const [topic, keywords] of Object.entries(topicKeywords)) {
-    if (keywords.some(kw => allText.includes(kw))) {
+    if (keywords.some((kw) => allText.includes(kw))) {
       topics.add(topic);
     }
   }
@@ -248,7 +254,7 @@ One-sentence summary:`;
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const textBlock = response.content.find(b => b.type === 'text');
+    const textBlock = response.content.find((b) => b.type === 'text');
     if (!textBlock || textBlock.type !== 'text') {
       return 'Brief exchange.';
     }

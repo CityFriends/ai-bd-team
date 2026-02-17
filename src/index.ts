@@ -11,7 +11,7 @@ import { startQueueProcessor, stopQueueProcessor } from './coordination/queue.js
 import { setupTriggers } from './coordination/triggers.js';
 
 // Validate environment variables at startup
-const env = validateEnv();
+validateEnv();
 
 // Graceful shutdown handling
 let isShuttingDown = false;

@@ -333,7 +333,7 @@ function identifyComplianceConcerns(
 function generateArchitectureNotes(
   structure: RepoFile[],
   techStack: string[],
-  readme: string | null,
+  _readme: string | null,
   packageJson: PackageInfo | null
 ): string[] {
   const notes: string[] = [];
@@ -577,7 +577,7 @@ export async function analyzeRepository(repoUrl: string): Promise<RepoAnalysis |
       license: repoInfo.data.license?.name || null,
       topics: repoInfo.data.topics || [],
       structure,
-      readme: readme ? readme.slice(0, 3000) : null, // Truncate for context
+      readme: null, // Truncate for context
       packageJson,
       subPackages,
       requirementsTxt: requirementsTxt ? requirementsTxt.slice(0, 1000) : null,

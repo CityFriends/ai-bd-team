@@ -1,9 +1,13 @@
 // Research Service
 // Orchestrates external APIs to provide comprehensive research for agents
 
-import { searchFPDS, findIncumbent, getVendorHistory, formatFPDSForAgent } from '../integrations/fpds.js';
-import { getAgencySpending, getAgencyTrend, searchContractorSpending, formatUSASpendingForAgent } from '../integrations/usaspending.js';
-import { verifyRegistration, checkCertification, findPartnersByNAICS, formatSAMEntityForAgent } from '../integrations/sam-entity.js';
+import { findIncumbent, getVendorHistory } from '../integrations/fpds.js';
+import {
+  getAgencySpending,
+  getAgencyTrend,
+  formatUSASpendingForAgent,
+} from '../integrations/usaspending.js';
+import { verifyRegistration, formatSAMEntityForAgent } from '../integrations/sam-entity.js';
 import { searchNews, getAgencyNews, formatNewsForAgent } from '../integrations/news-search.js';
 
 export interface OpportunityResearch {
@@ -100,9 +104,7 @@ export async function researchOpportunity(params: {
   // News summary
   const allNews = [...newsResult.recentNews, ...newsResult.leadershipChanges].slice(0, 2);
   if (allNews.length > 0) {
-    summaryParts.push(
-      `Recent news: ${allNews.map(n => n.title).join('; ')}`
-    );
+    summaryParts.push(`Recent news: ${allNews.map((n) => n.title).join('; ')}`);
   }
 
   return {
@@ -115,13 +117,14 @@ export async function researchOpportunity(params: {
     },
     agencyBudget: {
       totalSpending: budgetResult.spending?.totalObligations || null,
-      trend: trendResult.percentChange !== null
-        ? `${trendResult.percentChange >= 0 ? '+' : ''}${trendResult.percentChange}%`
-        : null,
+      trend:
+        trendResult.percentChange !== null
+          ? `${trendResult.percentChange >= 0 ? '+' : ''}${trendResult.percentChange}%`
+          : null,
       source: budgetResult.source,
     },
     news: {
-      articles: allNews.map(a => ({ title: a.title, summary: a.snippet })),
+      articles: allNews.map((a) => ({ title: a.title, summary: a.snippet })),
       source: newsResult.source,
     },
     summary: summaryParts.join('\n'),
@@ -143,9 +146,8 @@ export async function researchPartner(companyName: string): Promise<PartnerResea
 
   // SAM status
   if (samResult.isRegistered && samResult.entity) {
-    const certs = samResult.certifications.length > 0
-      ? ` (${samResult.certifications.join(', ')})`
-      : '';
+    const certs =
+      samResult.certifications.length > 0 ? ` (${samResult.certifications.join(', ')})` : '';
     summaryParts.push(
       `SAM.gov: ${samResult.entity.legalBusinessName} is actively registered${certs}`
     );
@@ -153,7 +155,9 @@ export async function researchPartner(companyName: string): Promise<PartnerResea
       summaryParts.push(`⚠️ ${samResult.expirationWarning}`);
     }
   } else {
-    summaryParts.push(`SAM.gov: Could not verify ${companyName} - may not be registered or different name`);
+    summaryParts.push(
+      `SAM.gov: Could not verify ${companyName} - may not be registered or different name`
+    );
   }
 
   // Contract history

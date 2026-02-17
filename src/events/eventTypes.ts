@@ -1,6 +1,5 @@
 // Event Types and Zod Schemas for the Agent Event System
 import { z } from 'zod';
-import type { LiveAgentName } from '../live/types.js';
 
 // ============================================================
 // Event Type Constants

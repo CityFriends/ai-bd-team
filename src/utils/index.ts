@@ -1,5 +1,3 @@
-import type { AGENT_DELAYS } from '../types/index.js';
-
 // Get a random delay within a range
 export function getRandomDelay(range: [number, number]): number {
   const [min, max] = range;
@@ -48,7 +46,7 @@ export function truncate(text: string, maxLength: number): string {
 
 // Sleep for a given number of milliseconds
 export function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // Parse a currency string to a number range
@@ -59,7 +57,9 @@ export function parseEstimatedValue(value: string): { min: number; max: number }
   const cleaned = value.replace(/[$,]/g, '');
 
   // Handle ranges like "5M-10M" or "5-10M"
-  const rangeMatch = cleaned.match(/(\d+(?:\.\d+)?)\s*[MmKk]?\s*[-–]\s*(\d+(?:\.\d+)?)\s*([MmKk])?/);
+  const rangeMatch = cleaned.match(
+    /(\d+(?:\.\d+)?)\s*[MmKk]?\s*[-–]\s*(\d+(?:\.\d+)?)\s*([MmKk])?/
+  );
   if (rangeMatch) {
     const multiplier = getMultiplier(rangeMatch[3] || rangeMatch[1].slice(-1));
     return {
@@ -110,10 +110,7 @@ export function isValidEmail(email: string): boolean {
 // Sanitize text for Slack markdown
 export function sanitizeForSlack(text: string): string {
   // Escape special characters that might interfere with Slack formatting
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // Generate a simple hash for deduplication
@@ -121,7 +118,7 @@ export function simpleHash(str: string): string {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
+    hash = (hash << 5) - hash + char;
     hash = hash & hash;
   }
   return Math.abs(hash).toString(36);

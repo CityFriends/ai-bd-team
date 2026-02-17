@@ -34,9 +34,8 @@ function parseRSSFeed(xml: string, limit: number): FPDSContract[] {
   while ((match = itemRegex.exec(xml)) !== null && contracts.length < limit) {
     const entry = match[1];
     const title = extractCDATA(entry, 'title') || '';
-    const link = extractXMLValue(entry, 'link') || '';
-    const description = extractCDATA(entry, 'description') || '';
     const pubDate = extractXMLValue(entry, 'pubDate') || '';
+    const link = extractXMLValue(entry, 'link') || '';
 
     // Parse vendor name
     let vendorName = 'Unknown Vendor';

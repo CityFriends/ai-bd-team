@@ -43,13 +43,13 @@ export default [
         argsIgnorePattern: '^_',
         varsIgnorePattern: '^_',
       }],
-      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-explicit-any': 'warn', // TODO: Fix existing any types, then change to 'error'
       '@typescript-eslint/explicit-function-return-type': 'off',
       '@typescript-eslint/explicit-module-boundary-types': 'off',
       '@typescript-eslint/no-non-null-assertion': 'warn',
 
       // General rules
-      'no-console': 'off', // Allow console for CLI tool
+      'no-console': 'warn', // TODO: Migrate to structured logger, then change to 'error'
       'no-unused-vars': 'off', // Use TypeScript rule instead
       'prefer-const': 'error',
       'no-var': 'error',

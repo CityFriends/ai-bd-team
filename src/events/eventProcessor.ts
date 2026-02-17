@@ -1,6 +1,6 @@
 // Event Processor - Polling processor for handling events
 import { claimEvents, completeEvent, publishChainEvent } from './eventBus.js';
-import { EventType, EventTypes, ClaimedEvent } from './eventTypes.js';
+import { EventType, ClaimedEvent } from './eventTypes.js';
 import type { LiveAgentName } from '../live/types.js';
 
 // ============================================================

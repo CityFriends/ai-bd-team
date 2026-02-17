@@ -1,7 +1,12 @@
 import { generateAgentResponse, type AgentContext } from '../integrations/claude.js';
-import { postAsAgent, postWithMentions, postDecisionRequest, replyInThread } from '../integrations/slack.js';
+import {
+  postAsAgent,
+  postWithMentions,
+  postDecisionRequest,
+  replyInThread,
+} from '../integrations/slack.js';
 import { queueAgentTask } from '../integrations/supabase.js';
-import type { AgentName, AGENT_DELAYS } from '../types/index.js';
+import type { AgentName } from '../types/index.js';
 
 export abstract class BaseAgent {
   abstract name: AgentName;
@@ -78,11 +83,11 @@ export function extractMentions(text: string): AgentName[] {
 
   // Also check for name mentions
   const nameToAgent: Record<string, AgentName> = {
-    'maya': 'scout',
-    'david': 'analyst',
-    'rosa': 'connector',
-    'james': 'strategist',
-    'patricia': 'pm',
+    maya: 'scout',
+    david: 'analyst',
+    rosa: 'connector',
+    james: 'strategist',
+    patricia: 'pm',
   };
 
   for (const agent of agentNames) {

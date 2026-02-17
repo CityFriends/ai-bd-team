@@ -12,7 +12,6 @@ import {
   addOpportunityToNotion,
   updateOpportunityInNotion,
   logActivityToNotion,
-  queryNotionDatabase,
   NotionHubIds,
 } from '../integrations/notion-hub.js';
 
@@ -27,7 +26,7 @@ function loadHubIds(): NotionHubIds | null {
 }
 
 async function sleep(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function main() {
@@ -57,7 +56,8 @@ async function main() {
     setAside: '8(a)',
     type: 'RFP',
     samLink: 'https://sam.gov/opp/test123/view',
-    mayasTake: 'This looks solid - HCD focus, reasonable timeline, and we have VA experience. Score: 85/100. Worth a deeper look.',
+    mayasTake:
+      'This looks solid - HCD focus, reasonable timeline, and we have VA experience. Score: 85/100. Worth a deeper look.',
   });
 
   await logActivityToNotion(hubIds.activityLogDbId, {
@@ -74,7 +74,8 @@ async function main() {
   console.log('\n2. David analyzes the opportunity...');
   await updateOpportunityInNotion(opportunityId, {
     status: 'Researching',
-    davidsAnalysis: 'Incumbent is Booz Allen on a $7M contract expiring this year. VA IT spending up 12% YoY. No protests on similar contracts. Risk assessment: MEDIUM - established incumbent but signs of customer dissatisfaction in recent award reviews.',
+    davidsAnalysis:
+      'Incumbent is Booz Allen on a $7M contract expiring this year. VA IT spending up 12% YoY. No protests on similar contracts. Risk assessment: MEDIUM - established incumbent but signs of customer dissatisfaction in recent award reviews.',
     incumbent: 'Booz Allen Hamilton',
     competitors: 'Deloitte, SAIC, possibly Fearless',
   });
@@ -92,7 +93,8 @@ async function main() {
   // Step 3: Rosa recommends partners
   console.log('\n3. Rosa recommends teaming partners...');
   await updateOpportunityInNotion(opportunityId, {
-    rosasPartners: 'Recommend teaming with CivicActions (strong VA past performance, Agile expertise) or Ad Hoc (USDS alumni, similar work). Both have warm relationships - I can make intros.',
+    rosasPartners:
+      'Recommend teaming with CivicActions (strong VA past performance, Agile expertise) or Ad Hoc (USDS alumni, similar work). Both have warm relationships - I can make intros.',
   });
 
   await logActivityToNotion(hubIds.activityLogDbId, {
@@ -108,7 +110,8 @@ async function main() {
   // Step 4: James makes recommendation
   console.log('\n4. James makes go/no-go recommendation...');
   await updateOpportunityInNotion(opportunityId, {
-    jamesRecommendation: 'RECOMMEND GO. Strong fit with our capabilities, good teaming options, and strategic value for VA past performance. Win probability: 35-40% as sub, 20-25% as prime. Suggest pursuing as sub to CivicActions initially.',
+    jamesRecommendation:
+      'RECOMMEND GO. Strong fit with our capabilities, good teaming options, and strategic value for VA past performance. Win probability: 35-40% as sub, 20-25% as prime. Suggest pursuing as sub to CivicActions initially.',
     decision: 'Pending',
   });
 

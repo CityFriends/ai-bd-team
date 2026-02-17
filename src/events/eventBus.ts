@@ -206,7 +206,7 @@ export async function completeEvent(options: CompleteEventOptions): Promise<bool
   try {
     const supabase = getSupabase();
 
-    const { data, error: rpcError } = await supabase.rpc('complete_event', {
+    const { error: rpcError } = await supabase.rpc('complete_event', {
       p_event_id: eventId,
       p_success: success,
       p_result: result || null,

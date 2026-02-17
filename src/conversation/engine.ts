@@ -3,7 +3,6 @@
 
 import { getSlackApp, getChannelId } from '../integrations/slack.js';
 import { getOpportunity, getAgency, getSupabase } from '../integrations/supabase.js';
-import { getAnthropic } from '../integrations/claude.js';
 import type { Opportunity, Agency, Company, AgentName } from '../types/index.js';
 import {
   analyzeOpportunity,
@@ -21,13 +20,8 @@ import {
   ROSA_OPENERS,
   JAMES_OPENERS,
   PATRICIA_OPENERS,
-  DAVID_CONCERNS,
-  DAVID_POSITIVES,
-  ROSA_PARTNER_PHRASES,
-  JAMES_RECOMMENDATION_PHRASES,
   REACTIONS,
   pick,
-  fill,
 } from './phrases.js';
 
 // Agent display info for posting (with profile pictures)
@@ -242,7 +236,7 @@ function buildMayaMessage(opp: Opportunity, analysis: OpportunityAnalysis): stri
 
 // Build David's message
 function buildDavidMessage(ctx: ConversationContext, isReplyToMaya: boolean): string {
-  const { oppAnalysis, dynamic } = ctx;
+  const { oppAnalysis } = ctx;
   const opener = getDavidOpener(oppAnalysis.davidSentiment);
 
   let message: string;
@@ -283,7 +277,7 @@ function buildDavidMessage(ctx: ConversationContext, isReplyToMaya: boolean): st
 
 // Build Rosa's message
 function buildRosaMessage(ctx: ConversationContext): string {
-  const { partnerAnalysis, oppAnalysis, dynamic } = ctx;
+  const { partnerAnalysis, oppAnalysis } = ctx;
   const opener = getRosaOpener(partnerAnalysis.partnerConfidence);
 
   let message: string;
@@ -334,7 +328,7 @@ function buildRosaMessage(ctx: ConversationContext): string {
 
 // Build James's message
 function buildJamesMessage(ctx: ConversationContext): string {
-  const { strategyAnalysis, oppAnalysis, partnerAnalysis, dynamic, opportunity } = ctx;
+  const { strategyAnalysis, oppAnalysis, partnerAnalysis } = ctx;
   const opener = getJamesOpener(strategyAnalysis.recommendation);
 
   let message = `${opener}\n\n`;
@@ -396,7 +390,7 @@ function buildJamesMessage(ctx: ConversationContext): string {
 
 // Build Patricia's summary message for main channel
 function buildPatriciaSummary(ctx: ConversationContext): string {
-  const { opportunity, strategyAnalysis, dynamic, partnerAnalysis, oppAnalysis } = ctx;
+  const { opportunity, strategyAnalysis, dynamic, oppAnalysis } = ctx;
 
   const urgent = oppAnalysis.daysUntilDue !== null && oppAnalysis.daysUntilDue < 30;
   const opener = getPatriciaOpener(dynamic.type, urgent);

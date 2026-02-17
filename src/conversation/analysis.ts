@@ -66,9 +66,6 @@ export interface ConversationDynamic {
 // Priority agencies for our company
 const PRIORITY_AGENCIES = ['VA', 'HHS', 'DOL', 'GSA', 'SBA', 'ED'];
 
-// Set-asides we can prime
-const CAN_PRIME_SETASIDES = ['Small Business', 'Total Small Business', null, ''];
-
 // Analyze opportunity from David's perspective
 export function analyzeOpportunity(opp: Opportunity, agency: Agency | null): OpportunityAnalysis {
   const concerns: string[] = [];
@@ -227,7 +224,7 @@ export function analyzePartners(
 
 // Strategic analysis from James's perspective
 export function analyzeStrategy(
-  opp: Opportunity,
+  _opp: Opportunity,
   oppAnalysis: OpportunityAnalysis,
   partnerAnalysis: PartnerAnalysis
 ): StrategicAnalysis {

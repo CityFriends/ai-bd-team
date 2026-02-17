@@ -13,10 +13,9 @@ import type { ActiveRule, RuleViolation } from '../types.js';
 // Mock the database module
 vi.mock('../database.js', () => ({
   getActiveRules: vi.fn(),
-  applyRule: vi.fn().mockResolvedValue(true),
 }));
 
-import { getActiveRules, applyRule } from '../database.js';
+import { getActiveRules } from '../database.js';
 
 const mockGetActiveRules = vi.mocked(getActiveRules);
 
@@ -231,7 +230,7 @@ describe('playbook rules', () => {
         return [];
       });
 
-      const result = await checkOpportunityAgainstRules(baseOpportunity, [RuleCategory.TIMELINE]);
+      await checkOpportunityAgainstRules(baseOpportunity, [RuleCategory.TIMELINE]);
 
       expect(mockGetActiveRules).toHaveBeenCalledWith(RuleCategory.TIMELINE);
     });

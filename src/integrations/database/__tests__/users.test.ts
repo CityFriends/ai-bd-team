@@ -27,7 +27,6 @@ import {
   trackUserInteraction,
   getUserTopics,
   formatUserProfileForAgent,
-  learnUserPreferences,
   saveUserContext,
   getUserContext,
 } from '../users.js';

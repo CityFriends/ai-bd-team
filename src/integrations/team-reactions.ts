@@ -57,7 +57,7 @@ Your response (either a brief honest reaction or NO_REACTION):`;
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const text = response.content.find(b => b.type === 'text');
+    const text = response.content.find((b) => b.type === 'text');
     const reaction = text?.type === 'text' ? text.text.trim() : '';
 
     if (reaction === 'NO_REACTION' || reaction.includes('NO_REACTION')) {
@@ -114,7 +114,7 @@ Your response (either a brief technical reaction or NO_REACTION):`;
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const text = response.content.find(b => b.type === 'text');
+    const text = response.content.find((b) => b.type === 'text');
     const reaction = text?.type === 'text' ? text.text.trim() : '';
 
     if (reaction === 'NO_REACTION' || reaction.includes('NO_REACTION')) {
@@ -170,7 +170,7 @@ Your response (either a brief honest reaction or NO_REACTION):`;
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const text = response.content.find(b => b.type === 'text');
+    const text = response.content.find((b) => b.type === 'text');
     const reaction = text?.type === 'text' ? text.text.trim() : '';
 
     if (reaction === 'NO_REACTION' || reaction.includes('NO_REACTION')) {
@@ -198,8 +198,9 @@ export async function getTeamReactions(newsContent: string): Promise<TeamReactio
     getPatriciaReaction(newsContent),
   ]);
 
-  const reactions = [mayaReaction, marcusReaction, patriciaReaction]
-    .filter(r => r.shouldReact && r.reaction);
+  const reactions = [mayaReaction, marcusReaction, patriciaReaction].filter(
+    (r) => r.shouldReact && r.reaction
+  );
 
   console.log(`[TeamReactions] ${reactions.length} agents want to respond`);
 
@@ -229,7 +230,7 @@ export async function postTeamReactions(
   const postedReactions: TeamReaction[] = [];
 
   // Small delay before first reaction (feels more natural)
-  await new Promise(r => setTimeout(r, 3000 + Math.random() * 5000));
+  await new Promise((r) => setTimeout(r, 3000 + Math.random() * 5000));
 
   for (const reaction of reactions) {
     const agentKey = reaction.agentName.toLowerCase();
@@ -260,18 +261,24 @@ export async function postTeamReactions(
 
       // Marcus can only commit to technical analysis actions, not outreach
       if (action) {
-        if (reaction.agentName.toLowerCase() === 'marcus' &&
-            action.action_type !== 'research' &&
-            action.action_type !== 'follow_up') {
-          console.log(`[TeamReactions] Skipping non-technical action for Marcus: ${action.action_type}`);
+        if (
+          reaction.agentName.toLowerCase() === 'marcus' &&
+          action.action_type !== 'research' &&
+          action.action_type !== 'follow_up'
+        ) {
+          console.log(
+            `[TeamReactions] Skipping non-technical action for Marcus: ${action.action_type}`
+          );
         } else {
           await createAction(action);
-          console.log(`[TeamReactions] ${reaction.agentName} committed to action: ${action.action_type}`);
+          console.log(
+            `[TeamReactions] ${reaction.agentName} committed to action: ${action.action_type}`
+          );
         }
       }
 
       // Delay between reactions (feels more natural)
-      await new Promise(r => setTimeout(r, 2000 + Math.random() * 3000));
+      await new Promise((r) => setTimeout(r, 2000 + Math.random() * 3000));
     } catch (err) {
       console.error(`[TeamReactions] Failed to post ${reaction.agentName}'s reaction:`, err);
     }
@@ -285,16 +292,14 @@ export async function postTeamReactions(
  * He wraps up the conversation naturally
  */
 export async function getDavidFollowUp(
-  newsContent: string,
+  _newsContent: string,
   teamReactions: TeamReaction[]
 ): Promise<string | null> {
   if (teamReactions.length === 0) return null;
 
   const client = getAnthropic();
 
-  const reactionsText = teamReactions
-    .map(r => `${r.agentName}: "${r.reaction}"`)
-    .join('\n');
+  const reactionsText = teamReactions.map((r) => `${r.agentName}: "${r.reaction}"`).join('\n');
 
   const prompt = `You are David, the senior research analyst for Friends From The City's BD team.
 
@@ -325,7 +330,7 @@ Your brief follow-up:`;
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const text = response.content.find(b => b.type === 'text');
+    const text = response.content.find((b) => b.type === 'text');
     return text?.type === 'text' ? text.text.trim() : null;
   } catch (err) {
     console.error('[TeamReactions] David follow-up error:', err);

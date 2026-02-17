@@ -17,7 +17,6 @@ import { App } from '@slack/bolt';
 import { getAnthropic } from '../integrations/claude.js';
 import { getSupabase } from '../integrations/supabase.js';
 import { loadCompanyContext, formatCompanyContextForPrompt } from '../context/company-context.js';
-import { bold, bullets, buildPost } from '../utils/slack-format.js';
 
 const CHANNEL_ID = process.env.SLACK_CHANNEL_ID || '';
 
@@ -57,19 +56,17 @@ interface PipelineOpportunity {
 }
 
 interface PipelineStatus {
-  hot: PipelineOpportunity[];      // Due within 7 days
-  active: PipelineOpportunity[];   // In active pursuit
+  hot: PipelineOpportunity[]; // Due within 7 days
+  active: PipelineOpportunity[]; // In active pursuit
   watching: PipelineOpportunity[]; // In backlog/monitoring
   needsDecision: PipelineOpportunity[]; // Awaiting leadership input
-  stale: PipelineOpportunity[];    // No activity in 7+ days
+  stale: PipelineOpportunity[]; // No activity in 7+ days
 }
 
 // Get current pipeline status from database
 async function getPipelineStatus(): Promise<PipelineStatus> {
   const supabase = getSupabase();
   const now = new Date();
-  const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
   const status: PipelineStatus = {
     hot: [],
@@ -89,9 +86,11 @@ async function getPipelineStatus(): Promise<PipelineStatus> {
     if (!wfError && workflows && workflows.length > 0) {
       for (const opp of workflows) {
         const dueDate = opp.due_date ? new Date(opp.due_date) : null;
-        const daysUntilDue = dueDate ? Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)) : null;
+        const daysUntilDue = dueDate
+          ? Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+          : null;
         const lastUpdated = new Date(opp.updated_at || opp.created_at);
-        const isStale = (now.getTime() - lastUpdated.getTime()) > 7 * 24 * 60 * 60 * 1000;
+        const isStale = now.getTime() - lastUpdated.getTime() > 7 * 24 * 60 * 60 * 1000;
 
         const opportunity: PipelineOpportunity = {
           id: opp.id,
@@ -175,19 +174,21 @@ async function getRecentOutcomes(): Promise<{ wins: number; losses: number; patt
       .gte('decided_at', new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString());
 
     if (outcomes && outcomes.length > 0) {
-      const wins = outcomes.filter(o => o.outcome === 'won').length;
-      const losses = outcomes.filter(o => o.outcome === 'lost').length;
+      const wins = outcomes.filter((o) => o.outcome === 'won').length;
+      const losses = outcomes.filter((o) => o.outcome === 'lost').length;
 
       // Analyze patterns
-      const goRecs = outcomes.filter(o => o.james_recommendation === 'GO');
-      const goWins = goRecs.filter(o => o.outcome === 'won').length;
+      const goRecs = outcomes.filter((o) => o.james_recommendation === 'GO');
+      const goWins = goRecs.filter((o) => o.outcome === 'won').length;
       if (goRecs.length >= 3) {
         const winRate = Math.round((goWins / goRecs.length) * 100);
         patterns.push(`GO recommendations: ${winRate}% win rate (${goWins}/${goRecs.length})`);
       }
 
-      const passRecs = outcomes.filter(o => o.james_recommendation === 'PASS');
-      const passCorrect = passRecs.filter(o => o.outcome === 'lost' || o.outcome === 'cancelled').length;
+      const passRecs = outcomes.filter((o) => o.james_recommendation === 'PASS');
+      const passCorrect = passRecs.filter(
+        (o) => o.outcome === 'lost' || o.outcome === 'cancelled'
+      ).length;
       if (passRecs.length >= 2) {
         patterns.push(`PASS recommendations: ${passCorrect}/${passRecs.length} were correct calls`);
       }
@@ -225,19 +226,24 @@ async function getStrategicObservations(): Promise<string[]> {
       // Find agencies with multiple opportunities
       for (const [agency, count] of Object.entries(agencyCounts)) {
         if (count >= 3 && agency !== 'Unknown') {
-          observations.push(`${agency} has released ${count} relevant opportunities in the last 30 days - they're active in our space`);
+          observations.push(
+            `${agency} has released ${count} relevant opportunities in the last 30 days - they're active in our space`
+          );
         }
       }
 
       // Look for patterns in titles
-      const hcdCount = recent.filter(o =>
-        o.title?.toLowerCase().includes('design') ||
-        o.title?.toLowerCase().includes('user') ||
-        o.title?.toLowerCase().includes('experience')
+      const hcdCount = recent.filter(
+        (o) =>
+          o.title?.toLowerCase().includes('design') ||
+          o.title?.toLowerCase().includes('user') ||
+          o.title?.toLowerCase().includes('experience')
       ).length;
 
       if (hcdCount >= 3) {
-        observations.push(`${hcdCount} HCD/UX-focused opportunities in the last month - the market is active`);
+        observations.push(
+          `${hcdCount} HCD/UX-focused opportunities in the last month - the market is active`
+        );
       }
     }
 
@@ -251,7 +257,9 @@ async function getStrategicObservations(): Promise<string[]> {
 
     if (competitorIntel && competitorIntel.length > 0) {
       for (const intel of competitorIntel.slice(0, 2)) {
-        observations.push(`${intel.company_name} recently won work${intel.agency_code ? ` at ${intel.agency_code}` : ''} - worth watching their positioning`);
+        observations.push(
+          `${intel.company_name} recently won work${intel.agency_code ? ` at ${intel.agency_code}` : ''} - worth watching their positioning`
+        );
       }
     }
   } catch {
@@ -276,21 +284,37 @@ async function generateStrategicDigest(
   const client = getAnthropic();
 
   // Format pipeline for prompt
-  const hotSection = pipeline.hot.length > 0
-    ? pipeline.hot.map(o => `- ${o.title.slice(0, 50)}... (${o.agency || 'Unknown'}) - Due in ${o.days_until_due} days`).join('\n')
-    : 'None due this week';
+  const hotSection =
+    pipeline.hot.length > 0
+      ? pipeline.hot
+          .map(
+            (o) =>
+              `- ${o.title.slice(0, 50)}... (${o.agency || 'Unknown'}) - Due in ${o.days_until_due} days`
+          )
+          .join('\n')
+      : 'None due this week';
 
-  const activeSection = pipeline.active.length > 0
-    ? pipeline.active.map(o => `- ${o.title.slice(0, 50)}... - Stage: ${o.stage}, Owner: ${o.agent_responsible || 'unassigned'}`).join('\n')
-    : 'No active pursuits';
+  const activeSection =
+    pipeline.active.length > 0
+      ? pipeline.active
+          .map(
+            (o) =>
+              `- ${o.title.slice(0, 50)}... - Stage: ${o.stage}, Owner: ${o.agent_responsible || 'unassigned'}`
+          )
+          .join('\n')
+      : 'No active pursuits';
 
-  const decisionsSection = pipeline.needsDecision.length > 0
-    ? pipeline.needsDecision.map(o => `- ${o.title.slice(0, 50)}... - ${o.james_recommendation || 'Needs review'}`).join('\n')
-    : 'No pending decisions';
+  const decisionsSection =
+    pipeline.needsDecision.length > 0
+      ? pipeline.needsDecision
+          .map((o) => `- ${o.title.slice(0, 50)}... - ${o.james_recommendation || 'Needs review'}`)
+          .join('\n')
+      : 'No pending decisions';
 
-  const staleSection = pipeline.stale.length > 0
-    ? `${pipeline.stale.length} opportunities have gone stale (no activity in 7+ days)`
-    : '';
+  const staleSection =
+    pipeline.stale.length > 0
+      ? `${pipeline.stale.length} opportunities have gone stale (no activity in 7+ days)`
+      : '';
 
   const prompt = `You are James, the strategist for Friends From The City. You're posting your morning strategic digest to #bd-team.
 
@@ -322,10 +346,10 @@ WATCHING: ${pipeline.watching.length} opportunities in backlog
 WIN/LOSS DATA (last 90 days):
 - Wins: ${outcomes.wins}
 - Losses: ${outcomes.losses}
-${outcomes.patterns.length > 0 ? outcomes.patterns.map(p => `- ${p}`).join('\n') : ''}
+${outcomes.patterns.length > 0 ? outcomes.patterns.map((p) => `- ${p}`).join('\n') : ''}
 
 STRATEGIC OBSERVATIONS:
-${observations.map(o => `- ${o}`).join('\n')}
+${observations.map((o) => `- ${o}`).join('\n')}
 
 Write a morning strategic digest for Slack.
 
@@ -363,7 +387,7 @@ Keep it under 350 words. Be strategic, not operational. This is the 30,000-foot 
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const textBlock = response.content.find(b => b.type === 'text');
+  const textBlock = response.content.find((b) => b.type === 'text');
   return textBlock?.type === 'text' ? textBlock.text : '';
 }
 
@@ -394,7 +418,9 @@ export async function runStrategicDigest() {
   // Gather data
   console.log('Gathering pipeline status...');
   const pipeline = await getPipelineStatus();
-  console.log(`  Hot: ${pipeline.hot.length}, Active: ${pipeline.active.length}, Watching: ${pipeline.watching.length}`);
+  console.log(
+    `  Hot: ${pipeline.hot.length}, Active: ${pipeline.active.length}, Watching: ${pipeline.watching.length}`
+  );
 
   console.log('Analyzing outcomes...');
   const outcomes = await getRecentOutcomes();

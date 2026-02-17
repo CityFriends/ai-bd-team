@@ -324,7 +324,7 @@ export async function scanEBuyEmails(): Promise<EBuyOpportunity[]> {
       }
 
       // Score for relevance
-      const { score, reasons, dominated } = scoreEBuyOpportunity(opp);
+      const { score, dominated } = scoreEBuyOpportunity(opp);
 
       if (dominated) {
         console.log(`[eBuy] Relevant (${score}): ${opp.requestId} - ${opp.title}`);

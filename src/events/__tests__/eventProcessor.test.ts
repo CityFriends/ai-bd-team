@@ -15,7 +15,6 @@ vi.mock('../eventBus.js', () => ({
 
 // Import after mocking
 import {
-  EventProcessor,
   createEventProcessor,
   createTransformHandler,
   createLogHandler,
@@ -23,7 +22,6 @@ import {
   withTimeout,
   withRetry,
   type EventHandler,
-  type EventHandlerResult,
 } from '../eventProcessor.js';
 
 describe('EventProcessor', () => {

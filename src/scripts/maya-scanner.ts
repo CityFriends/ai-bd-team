@@ -17,22 +17,9 @@ import {
   getSAMOpportunityURL,
   extractAgencyAbbreviation,
 } from '../integrations/sam-gov.js';
-import { getAnthropic } from '../integrations/claude.js';
 import { getSupabase } from '../integrations/supabase.js';
-import { loadCompanyContext, formatCompanyContextForPrompt } from '../context/company-context.js';
+import { loadCompanyContext } from '../context/company-context.js';
 import { matchForecastToSAM, linkForecastToSAM } from '../integrations/agency-forecasts.js';
-import {
-  getRelevantForecasts,
-  formatFCOForAgent,
-  type FCOForecast,
-} from '../integrations/acquisition-gateway.js';
-import {
-  bold,
-  bullets,
-  link as slackLink,
-  buildPost,
-  type SlackPost,
-} from '../utils/slack-format.js';
 import { buildOpportunityBlocks, type OpportunityBlocks } from '../utils/slack-blocks.js';
 import {
   addOpportunityToNotion,
@@ -45,16 +32,8 @@ import {
   shouldPostOpportunity,
 } from '../config/opportunity-filters.js';
 import { createOpportunityWorkflow } from '../integrations/supabase.js';
-import {
-  queueNotification,
-  flushNotifications,
-  getPendingCount,
-} from '../coordination/notification-batcher.js';
-import {
-  scanEBuyEmails,
-  scoreEBuyOpportunity,
-  type EBuyOpportunity,
-} from '../integrations/gsa-ebuy.js';
+import { queueNotification } from '../coordination/notification-batcher.js';
+import { scanEBuyEmails, scoreEBuyOpportunity } from '../integrations/gsa-ebuy.js';
 import { publishEvent, EventTypes, type NewOpportunityPayload } from '../events/index.js';
 import type { SAMOpportunity } from '../types/index.js';
 
@@ -245,130 +224,6 @@ function getRandomOpener(score: number): string {
   const category = score >= 90 ? 'hot' : score >= 70 ? 'interested' : 'lukewarm';
   const openers = OPENERS_BY_SCORE[category];
   return openers[Math.floor(Math.random() * openers.length)];
-}
-
-async function generateMayaPost(opp: ScoredOpportunity, companyContext: string): Promise<string> {
-  // CRITICAL: Refuse to post if we don't have a real SAM.gov URL
-  if (!opp.samUrl || !opp.opportunity.noticeId) {
-    console.error(`[HALLUCINATION BLOCKED] Cannot post - missing SAM.gov URL or noticeId`);
-    return '';
-  }
-
-  const client = getAnthropic();
-
-  // Enthusiasm varies by score
-  const enthusiasm =
-    opp.score >= 90
-      ? 'Genuinely excited - this is a hot one'
-      : opp.score >= 70
-        ? 'Interested - worth a look'
-        : opp.score >= 60
-          ? 'Lukewarm - flagging but not hyped'
-          : 'Minimal';
-
-  // Don't post if score is below 60
-  if (opp.score < 60) {
-    console.log(`[SKIP] Score ${opp.score} too low to post: ${opp.opportunity.title}`);
-    return '';
-  }
-
-  const randomOpener = getRandomOpener(opp.score);
-
-  const prompt = `You are Maya, the opportunity scout for Friends From The City.
-
-${companyContext}
-
-FFTC'S CORE CAPABILITIES (use this to assess fit):
-• Human-centered design (HCD) and service design
-• User experience (UX) research and usability testing
-• Digital services and custom application development
-• Content strategy and plain language
-• Accessibility (Section 508) compliance
-
-NOT OUR WORK (don't claim fit for these):
-• COTS implementation (Oracle, SAP, Salesforce, etc.)
-• System integration and middleware
-• IT infrastructure and operations
-• Help desk / call center support
-• Hardware procurement
-• Generic management consulting without HCD/UX component
-
-You found this REAL opportunity from SAM.gov and are posting to #bd-team.
-
-CRITICAL RULES:
-1. You MUST include the EXACT SAM.gov link provided below - do NOT make up links
-2. Use the EXACT notice ID and title - do NOT invent or modify them
-3. Only state facts from the data below - do NOT add details not provided
-
-VERIFIED OPPORTUNITY DATA (from SAM.gov API):
-- Notice ID: ${opp.opportunity.noticeId}
-- Title: ${opp.opportunity.title}
-- Agency: ${opp.opportunity.department || 'Unknown'} / ${opp.opportunity.office || ''}
-- NAICS: ${opp.opportunity.naicsCode || 'Not specified'}
-- Set-Aside: ${opp.opportunity.setAsideDescription || opp.opportunity.setAside || 'Full and Open'}
-- Posted: ${opp.opportunity.postedDate}
-- Due: ${opp.opportunity.responseDeadLine || 'Check solicitation'}
-- Type: ${opp.opportunity.type || 'Unknown'}
-- SAM.gov Link: ${opp.samUrl}
-
-FIT ANALYSIS:
-- Score: ${opp.score}/100
-- Why it fits: ${opp.reasons.join(', ') || 'General match'}
-${opp.redFlags.length > 0 ? `- Concerns: ${opp.redFlags.join(', ')}` : ''}
-
-Your enthusiasm level: ${enthusiasm}
-Suggested opener (vary from this): "${randomOpener}"
-
-Write a Slack post about this opportunity.
-
-SLACK FORMATTING (use these EXACTLY):
-- Bold: *text* (use for headers and key terms)
-- Italic: _text_ (use for emphasis)
-- Bullets: Start lines with • for lists
-- Link on its own line at the end
-
-STRUCTURE YOUR POST LIKE THIS:
-1. Opening line (your voice, match enthusiasm)
-2. *Opportunity title* (bold)
-3. Key details in a clean format:
-   • Agency: [name]
-   • NAICS: [code]
-   • Set-Aside: [type]
-   • Due: [date]
-4. Why it fits us (1-2 sentences)
-${opp.score >= 80 ? '5. Tag <@U0AC0SVD3MH> (David) to research since this is hot' : ''}
-6. Link on its own line
-
-REQUIREMENTS:
-- Use the formatting above for clean, readable posts
-- Professional but personable - you're a BD professional, not a social media influencer
-- Be direct: "This is a good fit because..." not "Okay so this is giving..."
-- Brief analysis of why it fits FFTC (1-2 sentences max)
-- End with the SAM.gov link on its own line`;
-
-  console.log(`[GENERATING] Maya post for ${opp.opportunity.noticeId} (score: ${opp.score})`);
-
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 400,
-    messages: [{ role: 'user', content: prompt }],
-  });
-
-  const textBlock = response.content.find((b) => b.type === 'text');
-  let post = textBlock?.type === 'text' ? textBlock.text : '';
-
-  // VALIDATION: Make sure the post includes the real SAM.gov link
-  if (post && !post.includes(opp.samUrl) && !post.includes('sam.gov/opp/')) {
-    console.warn(`[VALIDATION] Post missing SAM.gov link, appending...`);
-    post = `${post}\n\n${opp.samUrl}`;
-  }
-
-  // Log what we're about to post
-  console.log(`[POST PREVIEW] Notice ${opp.opportunity.noticeId}:`);
-  console.log(post);
-  console.log(`[/POST PREVIEW]`);
-
-  return post;
 }
 
 // Quiet morning messages - professional
@@ -577,8 +432,9 @@ export async function runDailyScan() {
   console.log('='.repeat(60) + '\n');
 
   const app = await getMayaApp();
-  const companyData = await loadCompanyContext();
-  const companyContext = formatCompanyContextForPrompt(companyData, 'Maya');
+  // Company context is loaded but currently unused as we use Block Kit format
+  // instead of generated text posts. Kept for potential future use.
+  await loadCompanyContext();
 
   // Get opportunities we've already posted or passed on (by notice ID AND title)
   const { noticeIds: seenNoticeIds, titles: seenTitles } = await getSeenAndPassedOpportunities();

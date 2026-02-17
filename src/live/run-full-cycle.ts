@@ -2,14 +2,10 @@
 // Full team cycle with real data and real sources
 import 'dotenv/config';
 import { WebClient } from '@slack/web-api';
-import {
-  searchOpportunities,
-  extractAgencyAbbreviation,
-  mapOpportunityType,
-} from '../integrations/sam-gov.js';
-import { findIncumbent, getVendorHistory, searchFPDS } from '../integrations/fpds.js';
+import { searchOpportunities, mapOpportunityType } from '../integrations/sam-gov.js';
+import { findIncumbent } from '../integrations/fpds.js';
 import { getAgencySpending, getAgencyTrend } from '../integrations/usaspending.js';
-import { searchNews, getAgencyNews } from '../integrations/news-search.js';
+import { getAgencyNews } from '../integrations/news-search.js';
 import { verifyRegistration } from '../integrations/sam-entity.js';
 import { getAnthropic } from '../integrations/claude.js';
 import type { SAMOpportunity } from '../types/index.js';
@@ -43,7 +39,7 @@ async function postMessage(
   return result.ts || '';
 }
 
-async function generateAgentResponse(agent: string, prompt: string): Promise<string> {
+async function generateAgentResponse(_agent: string, prompt: string): Promise<string> {
   const client = getAnthropic();
   const response = await client.messages.create({
     model: 'claude-sonnet-4-20250514',

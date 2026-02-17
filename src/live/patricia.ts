@@ -2,7 +2,7 @@
 
 import { LiveAgent } from './agent.js';
 import type { LiveAgentName, IncomingMessage } from './types.js';
-import { logFeedback, getFeedbackSummary, getUnresolvedFeedback } from '../integrations/supabase.js';
+import { logFeedback, getFeedbackSummary } from '../integrations/supabase.js';
 
 export class PatriciaAgent extends LiveAgent {
   name: LiveAgentName = 'patricia';
@@ -71,7 +71,13 @@ When someone says "Patricia, bug/feedback/great catch:" — acknowledge it, log 
       /patricia,?\s*suggestion[:\s]+(.+)/i,
     ];
 
-    let feedbackType: 'bug' | 'wrong_answer' | 'great_catch' | 'suggestion' | 'annoying' | 'missing_info' = 'suggestion';
+    let feedbackType:
+      | 'bug'
+      | 'wrong_answer'
+      | 'great_catch'
+      | 'suggestion'
+      | 'annoying'
+      | 'missing_info' = 'suggestion';
     let feedbackText = '';
 
     for (const pattern of feedbackPatterns) {
@@ -138,7 +144,8 @@ When someone says "Patricia, bug/feedback/great catch:" — acknowledge it, log 
 
     let response = `Last week's feedback: ${typeList}.\n`;
     if (agentList) response += `Most mentions: ${agentList}.\n`;
-    if (summary.unresolved > 0) response += `${summary.unresolved} item${summary.unresolved > 1 ? 's' : ''} still unresolved.`;
+    if (summary.unresolved > 0)
+      response += `${summary.unresolved} item${summary.unresolved > 1 ? 's' : ''} still unresolved.`;
 
     return response;
   }

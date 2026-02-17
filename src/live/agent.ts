@@ -7,12 +7,9 @@ import {
   claimMessage,
   getRecentThreadResponses,
   getConversationalContext,
-  saveUserContext,
-  saveConversationMemory,
   recordThreadParticipation,
   getAgentThreads,
   saveExtractedFact,
-  getPendingHandoffs,
   acknowledgeHandoff,
   getUserProfile,
   formatUserProfileForAgent,
@@ -34,7 +31,6 @@ import {
   buildHierarchicalContext,
   formatHierarchicalContext,
 } from '../integrations/summarization.js';
-import { getCachedResearch } from '../integrations/semantic-cache.js';
 import { embed } from '../integrations/embeddings.js';
 import {
   trackAgentResponse,
@@ -54,19 +50,15 @@ import {
   createEventProcessor,
   getHandlersForAgent,
   publishEvent,
-  EventTypes,
   type EventType,
   type PublishResult,
 } from '../events/index.js';
 import type {
   LiveAgentName,
-  LiveAgentConfig,
   IncomingMessage,
   ThreadContext,
   ThreadMessage,
   AgentResponse,
-  NAME_TO_AGENT,
-  AGENT_EXPERTISE,
   SlackFileAttachment,
 } from './types.js';
 
@@ -176,7 +168,7 @@ export abstract class LiveAgent {
     if (!this.app) return;
 
     // Handle @mentions
-    this.app.event('app_mention', async ({ event, say }) => {
+    this.app.event('app_mention', async ({ event }) => {
       const msg = event as any;
       const messageId = msg.ts;
 

@@ -34,7 +34,6 @@ import {
   getRecommendationAccuracy,
   recordDecisionOutcome,
   type OpportunityWorkflow,
-  type WorkflowStage,
 } from '../integrations/supabase.js';
 import { autoResearchOpportunity } from '../scripts/david-scanner.js';
 import { getAnthropic } from '../integrations/claude.js';
@@ -44,17 +43,17 @@ const CHANNEL_ID = process.env.SLACK_CHANNEL_ID || '';
 
 // Auto-action delays (in minutes)
 const STAGE_DELAYS = {
-  found: 30,           // Wait 30 min before David researches
-  researching: 15,     // Wait 15 min before Rosa checks teaming
-  partner_search: 15,  // Wait 15 min before James synthesizes
-  strategy: 120,       // 2 hour override window before auto-execute
+  found: 30, // Wait 30 min before David researches
+  researching: 15, // Wait 15 min before Rosa checks teaming
+  partner_search: 15, // Wait 15 min before James synthesizes
+  strategy: 120, // 2 hour override window before auto-execute
 };
 
 // Confidence thresholds for auto-execution
 const AUTO_EXECUTE_THRESHOLDS = {
-  GO_SCORE_MIN: 85,      // Must be 85+ to auto-execute GO
-  GO_RED_FLAGS_MAX: 1,   // Max red flags for auto-GO
-  PASS_SCORE_MAX: 55,    // Below 55 to auto-execute PASS
+  GO_SCORE_MIN: 85, // Must be 85+ to auto-execute GO
+  GO_RED_FLAGS_MAX: 1, // Max red flags for auto-GO
+  PASS_SCORE_MAX: 55, // Below 55 to auto-execute PASS
   PASS_RED_FLAGS_MIN: 2, // At least 2 red flags for auto-PASS
 };
 
@@ -97,17 +96,23 @@ async function getLearningContext(): Promise<string> {
 
   if (stats.goRecommendations.total > 0) {
     const winRate = Math.round((stats.goRecommendations.won / stats.goRecommendations.total) * 100);
-    lines.push(`GO recommendations: ${stats.goRecommendations.total} total, ${stats.goRecommendations.won} won (${winRate}% win rate)`);
+    lines.push(
+      `GO recommendations: ${stats.goRecommendations.total} total, ${stats.goRecommendations.won} won (${winRate}% win rate)`
+    );
 
     if (winRate < 40) {
-      lines.push('⚠️ Win rate is below 40% - consider being more selective with GO recommendations');
+      lines.push(
+        '⚠️ Win rate is below 40% - consider being more selective with GO recommendations'
+      );
     } else if (winRate > 60) {
       lines.push('✓ Strong win rate - current GO threshold is well-calibrated');
     }
   }
 
   if (stats.passRecommendations.total > 0) {
-    lines.push(`PASS recommendations: ${stats.passRecommendations.total} total, ${stats.passRecommendations.correct} aligned with human decision`);
+    lines.push(
+      `PASS recommendations: ${stats.passRecommendations.total} total, ${stats.passRecommendations.correct} aligned with human decision`
+    );
   }
 
   lines.push('Use this data to calibrate your confidence level.\n');
@@ -170,7 +175,13 @@ async function triggerDavidResearch(workflow: OpportunityWorkflow): Promise<void
     });
 
     if (workflow.id) {
-      await recordStageTransition(workflow.id, 'found', 'researching', 'auto', 'Auto-triggered after 30 min delay');
+      await recordStageTransition(
+        workflow.id,
+        'found',
+        'researching',
+        'auto',
+        'Auto-triggered after 30 min delay'
+      );
     }
 
     await logTeamActivity({
@@ -206,7 +217,13 @@ async function checkTeamingNeed(workflow: OpportunityWorkflow): Promise<void> {
     });
 
     if (workflow.id) {
-      await recordStageTransition(workflow.id, 'researching', 'partner_search', 'auto', 'Teaming not needed, proceeding to synthesis');
+      await recordStageTransition(
+        workflow.id,
+        'researching',
+        'partner_search',
+        'auto',
+        'Teaming not needed, proceeding to synthesis'
+      );
     }
   }
 }
@@ -216,10 +233,17 @@ function shouldRecommendTeaming(workflow: OpportunityWorkflow): boolean {
   const score = workflow.score || 0;
   const redFlags = workflow.red_flags || [];
 
-  const largeContractKeywords = ['enterprise', 'agencywide', 'department-wide', 'idiq', 'bpa', 'gwac'];
-  const isLarge = largeContractKeywords.some(kw => title.includes(kw));
-  const incumbentStrong = redFlags.some(f =>
-    f.toLowerCase().includes('incumbent') || f.toLowerCase().includes('wired')
+  const largeContractKeywords = [
+    'enterprise',
+    'agencywide',
+    'department-wide',
+    'idiq',
+    'bpa',
+    'gwac',
+  ];
+  const isLarge = largeContractKeywords.some((kw) => title.includes(kw));
+  const incumbentStrong = redFlags.some(
+    (f) => f.toLowerCase().includes('incumbent') || f.toLowerCase().includes('wired')
   );
   const isHighScore = score >= 80;
 
@@ -271,7 +295,7 @@ End with: "Let me know if you want me to identify specific companies to consider
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const textBlock = response.content.find(b => b.type === 'text');
+    const textBlock = response.content.find((b) => b.type === 'text');
     const message = textBlock?.type === 'text' ? textBlock.text : '';
 
     if (app && workflow.thread_ts) {
@@ -292,7 +316,13 @@ End with: "Let me know if you want me to identify specific companies to consider
     });
 
     if (workflow.id) {
-      await recordStageTransition(workflow.id, 'researching', 'partner_search', 'auto', 'Teaming recommended');
+      await recordStageTransition(
+        workflow.id,
+        'researching',
+        'partner_search',
+        'auto',
+        'Teaming recommended'
+      );
     }
 
     await logTeamActivity({
@@ -367,10 +397,14 @@ Provide your strategic recommendation:
 *Confidence Level*
 [HIGH / MEDIUM / LOW - based on data quality and learning history]
 
-${workflow.score && workflow.score >= 85 ? `
+${
+  workflow.score && workflow.score >= 85
+    ? `
 *If GO, Key Success Factors*
 [2-3 bullet points]
-` : ''}
+`
+    : ''
+}
 
 *Override Window*
 This recommendation will auto-execute in 2 hours unless someone reacts with ❌
@@ -383,17 +417,23 @@ Keep it under 250 words. Be decisive.`;
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const textBlock = response.content.find(b => b.type === 'text');
+    const textBlock = response.content.find((b) => b.type === 'text');
     const message = textBlock?.type === 'text' ? textBlock.text : '';
 
     // Determine recommendation from response
     let recommendation: 'GO' | 'PASS' | 'NEEDS_DISCUSSION' = 'NEEDS_DISCUSSION';
     const lowerMessage = message.toLowerCase();
-    if (lowerMessage.includes('**go**') || lowerMessage.includes('*go*') ||
-        (lowerMessage.includes('recommendation') && lowerMessage.includes('\ngo'))) {
+    if (
+      lowerMessage.includes('**go**') ||
+      lowerMessage.includes('*go*') ||
+      (lowerMessage.includes('recommendation') && lowerMessage.includes('\ngo'))
+    ) {
       recommendation = 'GO';
-    } else if (lowerMessage.includes('**pass**') || lowerMessage.includes('*pass*') ||
-               (lowerMessage.includes('recommendation') && lowerMessage.includes('\npass'))) {
+    } else if (
+      lowerMessage.includes('**pass**') ||
+      lowerMessage.includes('*pass*') ||
+      (lowerMessage.includes('recommendation') && lowerMessage.includes('\npass'))
+    ) {
       recommendation = 'PASS';
     }
 
@@ -435,7 +475,13 @@ Keep it under 250 words. Be decisive.`;
     });
 
     if (workflow.id) {
-      await recordStageTransition(workflow.id, workflow.stage, 'strategy', 'auto', `James recommends: ${recommendation}`);
+      await recordStageTransition(
+        workflow.id,
+        workflow.stage,
+        'strategy',
+        'auto',
+        `James recommends: ${recommendation}`
+      );
     }
 
     // Record for learning
@@ -459,7 +505,9 @@ Keep it under 250 words. Be decisive.`;
       recommendations: [recommendation],
     });
 
-    console.log(`  → James recommends ${recommendation}, override window ends at ${overrideWindowEnd.toLocaleTimeString()}`);
+    console.log(
+      `  → James recommends ${recommendation}, override window ends at ${overrideWindowEnd.toLocaleTimeString()}`
+    );
 
     if (app) await app.stop();
   } catch (err) {
@@ -481,15 +529,19 @@ async function checkOverrideWindow(workflow: OpportunityWorkflow): Promise<void>
 
   if (recommendation === 'GO') {
     // Auto-execute GO only if high confidence
-    if (score >= AUTO_EXECUTE_THRESHOLDS.GO_SCORE_MIN &&
-        redFlags.length <= AUTO_EXECUTE_THRESHOLDS.GO_RED_FLAGS_MAX) {
+    if (
+      score >= AUTO_EXECUTE_THRESHOLDS.GO_SCORE_MIN &&
+      redFlags.length <= AUTO_EXECUTE_THRESHOLDS.GO_RED_FLAGS_MAX
+    ) {
       shouldAutoExecute = true;
       decision = 'go';
     }
   } else if (recommendation === 'PASS') {
     // Auto-execute PASS if clearly not a fit
-    if (score <= AUTO_EXECUTE_THRESHOLDS.PASS_SCORE_MAX ||
-        redFlags.length >= AUTO_EXECUTE_THRESHOLDS.PASS_RED_FLAGS_MIN) {
+    if (
+      score <= AUTO_EXECUTE_THRESHOLDS.PASS_SCORE_MAX ||
+      redFlags.length >= AUTO_EXECUTE_THRESHOLDS.PASS_RED_FLAGS_MIN
+    ) {
       shouldAutoExecute = true;
       decision = 'pass';
     }
@@ -576,7 +628,7 @@ export async function processWorkflows(): Promise<void> {
 
   for (const workflow of workflows) {
     await processWorkflow(workflow);
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise((r) => setTimeout(r, 2000));
   }
 
   console.log('\nWorkflow processing complete');
@@ -618,8 +670,12 @@ export async function getWorkflowSummary(): Promise<string> {
     // Add learning stats
     const stats = await getRecommendationAccuracy();
     if (stats.goRecommendations.total > 0) {
-      const winRate = Math.round((stats.goRecommendations.won / stats.goRecommendations.total) * 100);
-      lines.push(`\n📊 Historical: ${stats.goRecommendations.total} GO recommendations, ${winRate}% win rate`);
+      const winRate = Math.round(
+        (stats.goRecommendations.won / stats.goRecommendations.total) * 100
+      );
+      lines.push(
+        `\n📊 Historical: ${stats.goRecommendations.total} GO recommendations, ${winRate}% win rate`
+      );
     }
 
     return lines.join('\n');
@@ -641,7 +697,9 @@ async function main() {
     console.log(`  Won: ${stats.goRecommendations.won}`);
     console.log(`  Lost: ${stats.goRecommendations.lost}`);
     if (stats.goRecommendations.total > 0) {
-      const winRate = Math.round((stats.goRecommendations.won / stats.goRecommendations.total) * 100);
+      const winRate = Math.round(
+        (stats.goRecommendations.won / stats.goRecommendations.total) * 100
+      );
       console.log(`  Win rate: ${winRate}%`);
     }
     console.log(`\nPASS recommendations: ${stats.passRecommendations.total}`);
@@ -669,7 +727,6 @@ async function main() {
     });
 
     console.log('Scheduler running...');
-
   } else {
     await processWorkflows();
   }

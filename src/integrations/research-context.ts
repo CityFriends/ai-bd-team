@@ -3,16 +3,9 @@ import {
   searchNews,
   searchContractAwards,
   searchCompetitorNews,
-  searchAgencyContractNews,
   type NewsArticle,
 } from './news-search.js';
-import {
-  searchFPDS,
-  searchByContractNumber,
-  findIncumbent,
-  formatFPDSForAgent,
-  type FPDSContract,
-} from './fpds.js';
+import { searchByContractNumber, findIncumbent, type FPDSContract } from './fpds.js';
 import { getAgencySpending, getAgencyTrend, formatUSASpendingForAgent } from './usaspending.js';
 import { verifyRegistration, formatSAMEntityForAgent } from './sam-entity.js';
 import { searchFAR, formatFARResults } from './far-search.js';
@@ -22,19 +15,9 @@ import {
   hasRecentIntel,
   type CompetitorIntel,
 } from './supabase.js';
-import {
-  searchOpportunities,
-  mapOpportunityType,
-  getSAMOpportunityURL,
-  type SearchOptions as SAMSearchOptions,
-} from './sam-gov.js';
+import { searchOpportunities, mapOpportunityType, getSAMOpportunityURL } from './sam-gov.js';
 import { getUpcomingForecasts, type ForecastOpportunity } from './agency-forecasts.js';
-import {
-  analyzeRepository,
-  formatRepoAnalysisForAgent,
-  parseGitHubUrl,
-  type RepoAnalysis,
-} from './github.js';
+import { analyzeRepository, formatRepoAnalysisForAgent, type RepoAnalysis } from './github.js';
 import type { SAMOpportunity } from '../types/index.js';
 
 // Agency name mappings for detection
@@ -158,7 +141,7 @@ export interface ResearchContext {
 function detectAgency(text: string): { code: string; name: string } | null {
   const lowerText = text.toLowerCase();
 
-  for (const [abbrev, info] of Object.entries(AGENCY_PATTERNS)) {
+  for (const [_abbrev, info] of Object.entries(AGENCY_PATTERNS)) {
     if (info.keywords.some((kw) => lowerText.includes(kw))) {
       return { code: info.code, name: info.name };
     }

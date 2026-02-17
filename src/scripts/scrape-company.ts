@@ -45,26 +45,6 @@ async function fetchPage(url: string): Promise<string> {
   return response.text();
 }
 
-// Extract text content between tags (simple regex-based)
-function extractText(html: string, pattern: RegExp): string | null {
-  const match = html.match(pattern);
-  return match ? match[1].trim().replace(/<[^>]+>/g, '').trim() : null;
-}
-
-// Extract all matches
-function extractAllText(html: string, pattern: RegExp): string[] {
-  const matches: string[] = [];
-  let match;
-  const globalPattern = new RegExp(pattern.source, 'gi');
-  while ((match = globalPattern.exec(html)) !== null) {
-    const text = match[1].replace(/<[^>]+>/g, '').trim();
-    if (text && text.length > 5) {
-      matches.push(text);
-    }
-  }
-  return matches;
-}
-
 // Extract links matching a pattern
 function extractLinks(html: string, pattern: RegExp): string[] {
   const links: string[] = [];
@@ -89,18 +69,6 @@ async function scrapeCaseStudies(): Promise<CaseStudy[]> {
     // Find links to individual case studies
     const caseStudyLinks = extractLinks(workPageHtml, /\/work\//);
     console.log(`Found ${caseStudyLinks.length} case study links`);
-
-    // Also try to extract case studies directly from the work page
-    // Look for project cards/sections
-    const projectPattern = /<article[^>]*class="[^"]*project[^"]*"[^>]*>([\s\S]*?)<\/article>/gi;
-    const cardPattern = /<div[^>]*class="[^"]*card[^"]*"[^>]*>([\s\S]*?)<\/div>/gi;
-
-    // Try multiple patterns to find case study content
-    const patterns = [
-      /<h2[^>]*>([\s\S]*?)<\/h2>/gi,
-      /<h3[^>]*>([\s\S]*?)<\/h3>/gi,
-      /<div[^>]*class="[^"]*title[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
-    ];
 
     // Scrape each case study link
     for (const link of caseStudyLinks) {
@@ -143,7 +111,10 @@ async function scrapeCaseStudies(): Promise<CaseStudy[]> {
         for (const p of challengePatterns) {
           const m = html.match(p);
           if (m) {
-            caseStudy.challenge = m[1].replace(/<[^>]+>/g, '').trim().slice(0, 1000);
+            caseStudy.challenge = m[1]
+              .replace(/<[^>]+>/g, '')
+              .trim()
+              .slice(0, 1000);
             break;
           }
         }
@@ -156,7 +127,10 @@ async function scrapeCaseStudies(): Promise<CaseStudy[]> {
         for (const p of approachPatterns) {
           const m = html.match(p);
           if (m) {
-            caseStudy.approach = m[1].replace(/<[^>]+>/g, '').trim().slice(0, 1000);
+            caseStudy.approach = m[1]
+              .replace(/<[^>]+>/g, '')
+              .trim()
+              .slice(0, 1000);
             break;
           }
         }
@@ -170,19 +144,35 @@ async function scrapeCaseStudies(): Promise<CaseStudy[]> {
           if (m) {
             // Try to split into bullet points
             const items = m[1].match(/<li[^>]*>([\s\S]*?)<\/li>/gi) || [];
-            caseStudy.outcomes = items.map(i => i.replace(/<[^>]+>/g, '').trim()).filter(i => i.length > 5);
+            caseStudy.outcomes = items
+              .map((i) => i.replace(/<[^>]+>/g, '').trim())
+              .filter((i) => i.length > 5);
           }
         }
 
         // Extract methods/services used
         const methodKeywords = [
-          'human-centered design', 'hcd', 'user research', 'usability testing',
-          'journey mapping', 'content strategy', 'agile', 'scrum', 'design thinking',
-          'prototyping', 'user experience', 'ux', 'service design', 'digital transformation',
-          'accessibility', 'section 508', 'plain language', 'stakeholder engagement',
+          'human-centered design',
+          'hcd',
+          'user research',
+          'usability testing',
+          'journey mapping',
+          'content strategy',
+          'agile',
+          'scrum',
+          'design thinking',
+          'prototyping',
+          'user experience',
+          'ux',
+          'service design',
+          'digital transformation',
+          'accessibility',
+          'section 508',
+          'plain language',
+          'stakeholder engagement',
         ];
         const lowerHtml = html.toLowerCase();
-        caseStudy.methods_used = methodKeywords.filter(m => lowerHtml.includes(m));
+        caseStudy.methods_used = methodKeywords.filter((m) => lowerHtml.includes(m));
 
         // Extract quotes
         const quotePattern = /<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi;
@@ -237,11 +227,7 @@ async function scrapeCaseStudies(): Promise<CaseStudy[]> {
 async function scrapeTeam(): Promise<TeamMember[]> {
   const teamMembers: TeamMember[] = [];
 
-  const teamUrls = [
-    `${BASE_URL}/about`,
-    `${BASE_URL}/team`,
-    `${BASE_URL}/our-team`,
-  ];
+  const teamUrls = [`${BASE_URL}/about`, `${BASE_URL}/team`, `${BASE_URL}/our-team`];
 
   for (const url of teamUrls) {
     try {
@@ -271,7 +257,9 @@ async function scrapeTeam(): Promise<TeamMember[]> {
           };
 
           // Extract role/title
-          const roleMatch = memberHtml.match(/<(?:p|span)[^>]*class="[^"]*(?:title|role|position)[^"]*"[^>]*>([\s\S]*?)<\/(?:p|span)>/i);
+          const roleMatch = memberHtml.match(
+            /<(?:p|span)[^>]*class="[^"]*(?:title|role|position)[^"]*"[^>]*>([\s\S]*?)<\/(?:p|span)>/i
+          );
           if (roleMatch) {
             member.role = roleMatch[1].replace(/<[^>]+>/g, '').trim();
           }
@@ -284,12 +272,21 @@ async function scrapeTeam(): Promise<TeamMember[]> {
 
           // Extract specialties from bio
           const specialtyKeywords = [
-            'user research', 'content strategy', 'design', 'development',
-            'project management', 'strategy', 'accessibility', 'agile',
-            'product', 'engineering', 'ux', 'human-centered',
+            'user research',
+            'content strategy',
+            'design',
+            'development',
+            'project management',
+            'strategy',
+            'accessibility',
+            'agile',
+            'product',
+            'engineering',
+            'ux',
+            'human-centered',
           ];
           const lowerBio = (member.bio || '').toLowerCase();
-          member.specialties = specialtyKeywords.filter(s => lowerBio.includes(s));
+          member.specialties = specialtyKeywords.filter((s) => lowerBio.includes(s));
 
           teamMembers.push(member);
           console.log(`  Found team member: ${member.name}`);
@@ -297,7 +294,6 @@ async function scrapeTeam(): Promise<TeamMember[]> {
       }
 
       if (teamMembers.length > 0) break; // Stop if we found members
-
     } catch (err) {
       // Page might not exist, try next
       continue;
@@ -333,21 +329,32 @@ async function scrapeCompanyInfo(): Promise<CompanyInfo> {
 
     // Extract services/capabilities
     const serviceKeywords = [
-      'human-centered design', 'user research', 'content strategy',
-      'digital transformation', 'service design', 'agile development',
-      'accessibility', 'plain language', 'stakeholder engagement',
-      'journey mapping', 'usability testing', 'design thinking',
-      'product strategy', 'ux design', 'ui design', 'prototyping',
+      'human-centered design',
+      'user research',
+      'content strategy',
+      'digital transformation',
+      'service design',
+      'agile development',
+      'accessibility',
+      'plain language',
+      'stakeholder engagement',
+      'journey mapping',
+      'usability testing',
+      'design thinking',
+      'product strategy',
+      'ux design',
+      'ui design',
+      'prototyping',
     ];
 
     const lowerHtml = homeHtml.toLowerCase();
-    info.capabilities = serviceKeywords.filter(s => lowerHtml.includes(s));
+    info.capabilities = serviceKeywords.filter((s) => lowerHtml.includes(s));
 
     // Try services page
     try {
       const servicesHtml = await fetchPage(`${BASE_URL}/services`);
       const lowerServices = servicesHtml.toLowerCase();
-      const moreCapabilities = serviceKeywords.filter(s => lowerServices.includes(s));
+      const moreCapabilities = serviceKeywords.filter((s) => lowerServices.includes(s));
       info.capabilities = [...new Set([...info.capabilities, ...moreCapabilities])];
 
       // Extract service titles
@@ -362,7 +369,6 @@ async function scrapeCompanyInfo(): Promise<CompanyInfo> {
     } catch {
       // Services page might not exist
     }
-
   } catch (err) {
     console.error('Failed to scrape company info:', err);
   }
@@ -383,19 +389,22 @@ async function saveToDatabase(
     console.log(`\nSaving ${caseStudies.length} case studies...`);
     for (const cs of caseStudies) {
       try {
-        await supabase.from('case_studies').upsert({
-          title: cs.title,
-          client: cs.client,
-          agency: cs.agency || cs.client,
-          challenge: cs.challenge,
-          approach: cs.approach,
-          solution: cs.approach, // Use approach as solution if not separate
-          outcomes: cs.outcomes,
-          methods_used: cs.methods_used,
-          client_quotes: cs.client_quotes,
-          source_url: cs.source_url,
-          public_releasable: true,
-        }, { onConflict: 'title' });
+        await supabase.from('case_studies').upsert(
+          {
+            title: cs.title,
+            client: cs.client,
+            agency: cs.agency || cs.client,
+            challenge: cs.challenge,
+            approach: cs.approach,
+            solution: cs.approach, // Use approach as solution if not separate
+            outcomes: cs.outcomes,
+            methods_used: cs.methods_used,
+            client_quotes: cs.client_quotes,
+            source_url: cs.source_url,
+            public_releasable: true,
+          },
+          { onConflict: 'title' }
+        );
         console.log(`  Saved: ${cs.title}`);
       } catch (err) {
         console.warn(`  Failed to save ${cs.title}:`, err);
@@ -408,13 +417,16 @@ async function saveToDatabase(
     console.log(`\nSaving ${teamMembers.length} team members...`);
     for (const tm of teamMembers) {
       try {
-        await supabase.from('key_personnel').upsert({
-          name: tm.name,
-          role: tm.role,
-          bio: tm.bio,
-          specialties: tm.specialties,
-          available: true,
-        }, { onConflict: 'name' });
+        await supabase.from('key_personnel').upsert(
+          {
+            name: tm.name,
+            role: tm.role,
+            bio: tm.bio,
+            specialties: tm.specialties,
+            available: true,
+          },
+          { onConflict: 'name' }
+        );
         console.log(`  Saved: ${tm.name}`);
       } catch (err) {
         console.warn(`  Failed to save ${tm.name}:`, err);
@@ -425,14 +437,17 @@ async function saveToDatabase(
   // Save company profile
   console.log(`\nSaving company profile...`);
   try {
-    await supabase.from('company_profile').upsert({
-      company_name: 'Friends From The City',
-      tagline: companyInfo.tagline,
-      capabilities: companyInfo.capabilities,
-      website: BASE_URL,
-      set_asides: ['8(a)', 'WOSB', 'EDWOSB'], // Known from context
-      naics_codes: ['541512', '541611', '541519'], // Design/consulting
-    }, { onConflict: 'company_name' });
+    await supabase.from('company_profile').upsert(
+      {
+        company_name: 'Friends From The City',
+        tagline: companyInfo.tagline,
+        capabilities: companyInfo.capabilities,
+        website: BASE_URL,
+        set_asides: ['8(a)', 'WOSB', 'EDWOSB'], // Known from context
+        naics_codes: ['541512', '541611', '541519'], // Design/consulting
+      },
+      { onConflict: 'company_name' }
+    );
     console.log('  Saved company profile');
   } catch (err) {
     console.warn('  Failed to save company profile:', err);
@@ -466,14 +481,14 @@ async function main() {
 
   console.log(`Case Studies Found: ${caseStudies.length}`);
   if (caseStudies.length > 0) {
-    caseStudies.forEach(cs => {
+    caseStudies.forEach((cs) => {
       console.log(`  - ${cs.title} (${cs.client || cs.agency || 'Unknown client'})`);
     });
   }
 
   console.log(`\nTeam Members Found: ${teamMembers.length}`);
   if (teamMembers.length > 0) {
-    teamMembers.forEach(tm => {
+    teamMembers.forEach((tm) => {
       console.log(`  - ${tm.name} (${tm.role || 'No role'})`);
     });
   }

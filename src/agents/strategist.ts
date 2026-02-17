@@ -1,9 +1,5 @@
 import { BaseAgent } from './base-agent.js';
-import {
-  STRATEGIST_SYSTEM_PROMPT,
-  STRATEGIST_STANDUP_PROMPT,
-  STRATEGIST_RESPONSE_PROMPT,
-} from '../prompts/strategist.js';
+import { STRATEGIST_SYSTEM_PROMPT, STRATEGIST_RESPONSE_PROMPT } from '../prompts/strategist.js';
 import {
   getOpportunity,
   updateOpportunity,

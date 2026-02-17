@@ -20,7 +20,11 @@ export function registerSlashCommands(app: App): void {
 /**
  * Handle /pipeline command - shows current opportunity pipeline
  */
-async function handlePipelineCommand({ ack, respond, command }: {
+async function handlePipelineCommand({
+  ack,
+  respond,
+  command,
+}: {
   ack: () => Promise<void>;
   respond: (message: any) => Promise<void>;
   command: { user_id: string; text: string };
@@ -33,12 +37,12 @@ async function handlePipelineCommand({ ack, respond, command }: {
     const pipeline = await getPipelineData();
 
     const blocks = buildPipelineBlocks({
-      hot: pipeline.hot.map(o => ({
+      hot: pipeline.hot.map((o) => ({
         title: o.title,
         agency: o.agency,
         daysLeft: o.daysLeft,
       })),
-      active: pipeline.active.map(o => ({
+      active: pipeline.active.map((o) => ({
         title: o.title,
         stage: formatStage(o.stage),
         owner: o.owner,
@@ -61,7 +65,6 @@ async function handlePipelineCommand({ ack, respond, command }: {
         ...blocks,
       ],
     });
-
   } catch (err) {
     console.error('[Command] Error handling /pipeline:', err);
     await respond({
@@ -98,7 +101,6 @@ interface PipelineData {
 async function getPipelineData(): Promise<PipelineData> {
   const supabase = getSupabase();
   const now = new Date();
-  const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
   const result: PipelineData = {
@@ -169,7 +171,6 @@ async function getPipelineData(): Promise<PipelineData> {
 
     // Sort active by score (highest first)
     result.active.sort((a, b) => b.score - a.score);
-
   } catch (err) {
     console.error('[Pipeline] Error:', err);
   }

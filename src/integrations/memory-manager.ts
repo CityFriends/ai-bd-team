@@ -1,15 +1,19 @@
 // Three-Tier Memory Manager
 // Orchestrates Short-term (working), Long-term (facts), and Episodic (history) memory
 
-import { getConversationalContext, getUserContext, getExtractedFacts, getDecisionPatterns } from './supabase.js';
+import { getConversationalContext, getUserContext, getExtractedFacts } from './supabase.js';
 import {
   searchUserContext,
   searchConversationMemory,
   searchDecisionPatterns,
   searchExtractedFacts,
-  searchAllMemory,
 } from './semantic-search.js';
-import type { UserContext, ConversationMemory, DecisionPattern, ExtractedFact } from './supabase.js';
+import type {
+  UserContext,
+  ConversationMemory,
+  DecisionPattern,
+  ExtractedFact,
+} from './supabase.js';
 
 export interface ShortTermMemory {
   // Current conversation thread context
@@ -50,10 +54,16 @@ export interface FullMemoryContext {
  * Memory Manager class - orchestrates all three memory tiers
  */
 export class MemoryManager {
-  private agentName: string;
+  // Agent name stored for future use in agent-specific memory filtering
+  private _agentName: string;
 
   constructor(agentName: string) {
-    this.agentName = agentName;
+    this._agentName = agentName;
+  }
+
+  /** Get the agent name for this memory manager */
+  get name(): string {
+    return this._agentName;
   }
 
   /**
@@ -109,12 +119,16 @@ export class MemoryManager {
         searchExtractedFacts(message, { threshold: 0.6, limit: 10 }),
       ]);
 
-      const userPreferences = userContextResults.map(r => r.data as UserContext);
-      const allFacts = factsResults.map(r => r.data as ExtractedFact);
+      const userPreferences = userContextResults.map((r) => r.data as UserContext);
+      const allFacts = factsResults.map((r) => r.data as ExtractedFact);
 
       // Separate company patterns from relationships
-      const companyPatterns = allFacts.filter(f => f.fact_type === 'pattern' || f.subject === 'company');
-      const relationships = allFacts.filter(f => f.fact_type === 'context' && f.subject !== 'company');
+      const companyPatterns = allFacts.filter(
+        (f) => f.fact_type === 'pattern' || f.subject === 'company'
+      );
+      const relationships = allFacts.filter(
+        (f) => f.fact_type === 'context' && f.subject !== 'company'
+      );
 
       return { userPreferences, companyPatterns, relationships };
     } else {
@@ -126,8 +140,8 @@ export class MemoryManager {
 
       return {
         userPreferences: userContext,
-        companyPatterns: facts.filter(f => f.fact_type === 'pattern'),
-        relationships: facts.filter(f => f.fact_type === 'context'),
+        companyPatterns: facts.filter((f) => f.fact_type === 'pattern'),
+        relationships: facts.filter((f) => f.fact_type === 'context'),
       };
     }
   }
@@ -147,8 +161,8 @@ export class MemoryManager {
       ]);
 
       return {
-        pastExperiences: memoryResults.map(r => r.data as ConversationMemory),
-        decisionHistory: decisionResults.map(r => r.data as DecisionPattern),
+        pastExperiences: memoryResults.map((r) => r.data as ConversationMemory),
+        decisionHistory: decisionResults.map((r) => r.data as DecisionPattern),
         relatedThreads: [], // Could be populated from thread_summaries
       };
     } else {
@@ -180,14 +194,14 @@ export class MemoryManager {
     // Long-term memory section
     if (memory.longTerm.userPreferences.length > 0) {
       sections.push('\nTHINGS YOU KNOW ABOUT THE USER:');
-      memory.longTerm.userPreferences.forEach(pref => {
+      memory.longTerm.userPreferences.forEach((pref) => {
         sections.push(`- ${pref.content} (${pref.context_type})`);
       });
     }
 
     if (memory.longTerm.companyPatterns.length > 0) {
       sections.push('\nCOMPANY PATTERNS & PREFERENCES:');
-      memory.longTerm.companyPatterns.forEach(pattern => {
+      memory.longTerm.companyPatterns.forEach((pattern) => {
         sections.push(`- ${pattern.content}`);
       });
     }
@@ -195,14 +209,14 @@ export class MemoryManager {
     // Episodic memory section
     if (memory.episodic.pastExperiences.length > 0) {
       sections.push('\nRELEVANT PAST EXPERIENCES:');
-      memory.episodic.pastExperiences.forEach(exp => {
+      memory.episodic.pastExperiences.forEach((exp) => {
         sections.push(`- ${exp.summary}`);
       });
     }
 
     if (memory.episodic.decisionHistory.length > 0) {
       sections.push('\nPAST DECISION PATTERNS:');
-      memory.episodic.decisionHistory.forEach(dec => {
+      memory.episodic.decisionHistory.forEach((dec) => {
         sections.push(`- ${dec.decision.toUpperCase()}: ${dec.reasoning || 'no reason given'}`);
         if (dec.agency) sections.push(`  Agency: ${dec.agency}`);
       });
@@ -214,12 +228,9 @@ export class MemoryManager {
   /**
    * Extract topics from message and thread context
    */
-  private extractTopics(
-    message: string,
-    threadMessages: Array<{ text: string }>
-  ): string[] {
+  private extractTopics(message: string, threadMessages: Array<{ text: string }>): string[] {
     const topics: Set<string> = new Set();
-    const allText = [message, ...threadMessages.map(m => m.text)].join(' ').toLowerCase();
+    const allText = [message, ...threadMessages.map((m) => m.text)].join(' ').toLowerCase();
 
     // Business development topics
     const bdTopics = [
@@ -271,7 +282,11 @@ export class MemoryManager {
     if (lower.includes('excited') || lower.includes('!') || lower.includes('great news')) {
       return 'excited';
     }
-    if (lower.includes('confused') || lower.includes("don't understand") || lower.includes('what do you mean')) {
+    if (
+      lower.includes('confused') ||
+      lower.includes("don't understand") ||
+      lower.includes('what do you mean')
+    ) {
       return 'confused';
     }
     if (lower.includes('thanks') || lower.includes('appreciate')) {

@@ -182,7 +182,7 @@ export async function runNewsDigest(): Promise<void> {
 
         if (relevant.length > 0) {
           cmsUpdate = `Found ${relevant.length} relevant CMS forecast opportunities:\n`;
-          for (const { opp, reasons } of relevant) {
+          for (const { opp } of relevant) {
             cmsUpdate += `• ${opp.title}${opp.estimatedRelease ? ` (Est: ${opp.estimatedRelease})` : ''}\n`;
           }
         }
@@ -237,7 +237,7 @@ export async function runNewsDigest(): Promise<void> {
         }
 
         // Clean up team apps
-        for (const [name, teamApp] of teamApps) {
+        for (const [_name, teamApp] of teamApps) {
           await teamApp.stop();
         }
       }

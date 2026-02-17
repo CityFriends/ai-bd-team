@@ -21,7 +21,7 @@ const CHANNEL_ID = process.env.SLACK_CHANNEL_ID || '';
 
 // Slack IDs for tagging the humans
 const LAPEDRA_ID = 'U01SC2TNYKU';
-const TAMARA_ID = 'U01RXBVUA0P';
+const _TAMARA_ID = 'U01RXBVUA0P';
 
 // Agent Slack IDs for tagging in standups
 const MAYA_ID = 'U0AC3RA4JVB';
@@ -83,7 +83,7 @@ async function getRecentChannelActivity(app: App | null): Promise<RecentActivity
     for (const msg of result.messages || []) {
       // Check if it's from one of our agents (bot messages)
       const username = (msg as any).username?.toLowerCase() || '';
-      const matchedAgent = agentNames.find(a => username.includes(a));
+      const matchedAgent = agentNames.find((a) => username.includes(a));
 
       if (matchedAgent && msg.text) {
         activities.push({
@@ -153,7 +153,10 @@ async function getPendingItems(): Promise<PendingItem[]> {
   return pending;
 }
 
-async function generateMorningCheckin(pending: PendingItem[], recentActivity: RecentActivity[]): Promise<string> {
+async function generateMorningCheckin(
+  pending: PendingItem[],
+  recentActivity: RecentActivity[]
+): Promise<string> {
   const client = getAnthropic();
   const companyData = await loadCompanyContext();
   const companyContext = formatCompanyContextForPrompt(companyData, 'Patricia');
@@ -166,17 +169,26 @@ async function generateMorningCheckin(pending: PendingItem[], recentActivity: Re
 ${companyContext}
 
 Today is ${dayOfWeek}.
-${isMonday ? 'It\'s Monday, so do a quick week-ahead preview.' : ''}
+${isMonday ? "It's Monday, so do a quick week-ahead preview." : ''}
 
 PENDING ITEMS (from database):
-${pending.length > 0
-  ? pending.map(p => `- [${p.urgency.toUpperCase()}] ${p.type}: "${p.title}" (${p.daysOld} days old) ${p.context || ''}`).join('\n')
-  : 'Nothing pending in the tracker.'}
+${
+  pending.length > 0
+    ? pending
+        .map(
+          (p) =>
+            `- [${p.urgency.toUpperCase()}] ${p.type}: "${p.title}" (${p.daysOld} days old) ${p.context || ''}`
+        )
+        .join('\n')
+    : 'Nothing pending in the tracker.'
+}
 
 RECENT CHANNEL ACTIVITY (last 24 hours):
-${recentActivity.length > 0
-  ? recentActivity.map(a => `- ${a.agent}: "${a.message.slice(0, 150)}..."`).join('\n')
-  : 'No agent messages in the last 24 hours.'}
+${
+  recentActivity.length > 0
+    ? recentActivity.map((a) => `- ${a.agent}: "${a.message.slice(0, 150)}..."`).join('\n')
+    : 'No agent messages in the last 24 hours.'
+}
 
 TEAM ROLES:
 - Maya: Scans SAM.gov for opportunities
@@ -192,7 +204,7 @@ Write a morning standup message for #bd-team. Be conversational - you're a mille
    - <@${DAVID_ID}> (David) - any research updates?
    - <@${ROSA_ID}> (Rosa) - any partner conversations?
    - <@${JAMES_ID}> (James) - any strategy decisions needed?
-4. Tag <@${LAPEDRA_ID}> and <@${TAMARA_ID}> for priorities/blockers
+4. Tag <@${LAPEDRA_ID}> and <@${_TAMARA_ID}> for priorities/blockers
 5. ${isMonday ? 'Quick preview of the week' : 'Any deadlines coming up'}
 
 Use emoji naturally - you love them. Ask each person for a quick update.`;
@@ -203,7 +215,7 @@ Use emoji naturally - you love them. Ask each person for a quick update.`;
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const textBlock = response.content.find(b => b.type === 'text');
+  const textBlock = response.content.find((b) => b.type === 'text');
   return textBlock?.type === 'text' ? textBlock.text : '';
 }
 
@@ -230,39 +242,13 @@ Write a gentle nudge (2-3 sentences max). Be friendly but clear that this needs 
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const textBlock = response.content.find(b => b.type === 'text');
+  const textBlock = response.content.find((b) => b.type === 'text');
   return textBlock?.type === 'text' ? textBlock.text : '';
 }
 
-async function generateDecisionRequest(
-  topic: string,
-  context: string,
-  options: string[]
-): Promise<string> {
-  const client = getAnthropic();
-
-  const prompt = `You are Patricia, the PM. You need a decision from Lapedra (the CEO).
-
-TOPIC: ${topic}
-CONTEXT: ${context}
-OPTIONS:
-${options.map((o, i) => `${i + 1}. ${o}`).join('\n')}
-
-Write a clear decision request for @Lapedra. Format it so she can respond with just a number or quick reply. Keep it professional but warm. Include:
-1. Quick summary of what we need
-2. The options clearly numbered
-3. Any deadline or urgency
-4. Offer to provide more context if needed`;
-
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 300,
-    messages: [{ role: 'user', content: prompt }],
-  });
-
-  const textBlock = response.content.find(b => b.type === 'text');
-  return textBlock?.type === 'text' ? textBlock.text : '';
-}
+// generateDecisionRequest is available for future use when Patricia
+// needs to escalate decisions to Lapedra with structured options
+// Currently not active but kept for when decision escalation is implemented
 
 async function postToSlack(app: App | null, message: string, threadTs?: string) {
   if (app) {
@@ -312,7 +298,7 @@ export async function runNudgeCheck() {
   const pending = await getPendingItems();
 
   // Only nudge for high-urgency items older than 3 days
-  const needsNudge = pending.filter(p => p.urgency === 'high' && p.daysOld >= 3);
+  const needsNudge = pending.filter((p) => p.urgency === 'high' && p.daysOld >= 3);
 
   if (needsNudge.length === 0) {
     console.log('No items need nudging right now');
@@ -321,7 +307,7 @@ export async function runNudgeCheck() {
     for (const item of needsNudge.slice(0, 2)) {
       const message = await generateNudge(item);
       await postToSlack(app, message);
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise((r) => setTimeout(r, 2000));
     }
   }
 
@@ -365,7 +351,6 @@ async function main() {
     });
 
     console.log('Scheduler running...');
-
   } else {
     // One-time check-in
     await runMorningCheckin();

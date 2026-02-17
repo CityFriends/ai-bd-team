@@ -20,7 +20,6 @@ import {
   getRecommendationAccuracy,
   type OpportunityWorkflow,
 } from '../integrations/supabase.js';
-import { getAnthropic } from '../integrations/claude.js';
 
 const CHANNEL_ID = process.env.SLACK_CHANNEL_ID || '';
 
@@ -78,8 +77,8 @@ async function getPortfolioSummary(): Promise<PortfolioSummary> {
     .select('*')
     .gte('decided_at', thirtyDaysAgo);
 
-  const wins = outcomes?.filter(o => o.outcome === 'win').length || 0;
-  const losses = outcomes?.filter(o => o.outcome === 'loss').length || 0;
+  const wins = outcomes?.filter((o) => o.outcome === 'win').length || 0;
+  const losses = outcomes?.filter((o) => o.outcome === 'loss').length || 0;
 
   // Get passed opportunities this week
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -90,8 +89,9 @@ async function getPortfolioSummary(): Promise<PortfolioSummary> {
     .gte('updated_at', weekAgo);
 
   // Calculate average score of active opportunities
-  const scores = active?.map(o => o.score).filter(Boolean) || [];
-  const avgScore = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+  const scores = active?.map((o) => o.score).filter(Boolean) || [];
+  const avgScore =
+    scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
 
   return {
     activeOpportunities: active || [],
@@ -135,7 +135,8 @@ async function generateStrategicInsights(portfolio: PortfolioSummary): Promise<S
   if (!stageDistribution['pursuing'] || stageDistribution['pursuing'] < 2) {
     insights.push({
       type: 'concern',
-      insight: 'Pipeline gap: Few opportunities in active pursuit. We may need to be more aggressive on go/no-go decisions.',
+      insight:
+        'Pipeline gap: Few opportunities in active pursuit. We may need to be more aggressive on go/no-go decisions.',
     });
   }
 
@@ -157,7 +158,7 @@ async function generateStrategicInsights(portfolio: PortfolioSummary): Promise<S
   }
 
   // High-value opportunities
-  const highScoreOpps = portfolio.activeOpportunities.filter(o => o.score && o.score >= 85);
+  const highScoreOpps = portfolio.activeOpportunities.filter((o) => o.score && o.score >= 85);
   if (highScoreOpps.length > 0) {
     insights.push({
       type: 'opportunity',
@@ -166,7 +167,7 @@ async function generateStrategicInsights(portfolio: PortfolioSummary): Promise<S
   }
 
   // Deadline pressure (use auto_action_at as proxy for decision deadline)
-  const urgentDeadlines = portfolio.pendingDecisions.filter(o => {
+  const urgentDeadlines = portfolio.pendingDecisions.filter((o) => {
     if (!o.auto_action_at) return false;
     const deadline = new Date(o.auto_action_at);
     const daysUntil = (deadline.getTime() - Date.now()) / (24 * 60 * 60 * 1000);
@@ -189,7 +190,8 @@ async function generateWeeklyBriefing(): Promise<string> {
   const portfolio = await getPortfolioSummary();
   const insights = await generateStrategicInsights(portfolio);
   const accuracyData = await getRecommendationAccuracy();
-  const totalRecommendations = accuracyData.goRecommendations.total + accuracyData.passRecommendations.total;
+  const totalRecommendations =
+    accuracyData.goRecommendations.total + accuracyData.passRecommendations.total;
   const wins = accuracyData.goRecommendations.won;
   const passCorrect = accuracyData.passRecommendations.correct;
   const totalCorrect = wins + passCorrect;
@@ -199,12 +201,16 @@ async function generateWeeklyBriefing(): Promise<string> {
   const lines: string[] = [];
 
   lines.push('*📊 Weekly Strategy Brief*');
-  lines.push(`_${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}_\n`);
+  lines.push(
+    `_${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}_\n`
+  );
 
   // Portfolio Status
   lines.push('*PORTFOLIO STATUS*');
   lines.push(`• ${portfolio.activeOpportunities.length} opportunities in active pipeline`);
-  lines.push(`• ${portfolio.pendingDecisions.length} pending decision${portfolio.pendingDecisions.length !== 1 ? 's' : ''}`);
+  lines.push(
+    `• ${portfolio.pendingDecisions.length} pending decision${portfolio.pendingDecisions.length !== 1 ? 's' : ''}`
+  );
   if (portfolio.avgScore > 0) {
     lines.push(`• Average fit score: ${portfolio.avgScore}/100`);
   }
@@ -216,7 +222,9 @@ async function generateWeeklyBriefing(): Promise<string> {
     lines.push('*LAST 30 DAYS*');
     if (totalOutcomes > 0) {
       const winRate = Math.round((portfolio.recentWins / totalOutcomes) * 100);
-      lines.push(`• Wins: ${portfolio.recentWins} | Losses: ${portfolio.recentLosses} | Win rate: ${winRate}%`);
+      lines.push(
+        `• Wins: ${portfolio.recentWins} | Losses: ${portfolio.recentLosses} | Win rate: ${winRate}%`
+      );
     }
     if (portfolio.passedOpportunities > 0) {
       lines.push(`• Passed this week: ${portfolio.passedOpportunities}`);
@@ -228,9 +236,14 @@ async function generateWeeklyBriefing(): Promise<string> {
   if (insights.length > 0) {
     lines.push("*WHAT I'M THINKING ABOUT*");
     for (const insight of insights) {
-      const emoji = insight.type === 'trend' ? '📈' :
-                   insight.type === 'opportunity' ? '🎯' :
-                   insight.type === 'concern' ? '⚠️' : '💡';
+      const emoji =
+        insight.type === 'trend'
+          ? '📈'
+          : insight.type === 'opportunity'
+            ? '🎯'
+            : insight.type === 'concern'
+              ? '⚠️'
+              : '💡';
       lines.push(`${emoji} ${insight.insight}`);
     }
     lines.push('');
@@ -240,10 +253,15 @@ async function generateWeeklyBriefing(): Promise<string> {
   if (portfolio.pendingDecisions.length > 0) {
     lines.push('*DECISIONS NEEDED*');
     for (const opp of portfolio.pendingDecisions.slice(0, 5)) {
-      const deadline = opp.auto_action_at ? new Date(opp.auto_action_at).toLocaleDateString() : 'No deadline';
+      const deadline = opp.auto_action_at
+        ? new Date(opp.auto_action_at).toLocaleDateString()
+        : 'No deadline';
       const recommendation = opp.james_recommendation || 'Pending analysis';
-      const emoji = recommendation.toLowerCase().includes('go') ? '🟢' :
-                   recommendation.toLowerCase().includes('pass') ? '🔴' : '🟡';
+      const emoji = recommendation.toLowerCase().includes('go')
+        ? '🟢'
+        : recommendation.toLowerCase().includes('pass')
+          ? '🔴'
+          : '🟡';
       lines.push(`${emoji} ${opp.title?.slice(0, 50)}...`);
       lines.push(`   Deadline: ${deadline} | Rec: ${recommendation}`);
     }
@@ -252,7 +270,7 @@ async function generateWeeklyBriefing(): Promise<string> {
     }
     lines.push('');
   } else {
-    lines.push("*DECISIONS NEEDED*");
+    lines.push('*DECISIONS NEEDED*');
     lines.push("• No pending decisions - we're clear");
     lines.push('');
   }
@@ -261,7 +279,9 @@ async function generateWeeklyBriefing(): Promise<string> {
   if (totalRecommendations >= 5) {
     const confidenceEmoji = accuracyRate >= 60 ? '✅' : accuracyRate >= 40 ? '⚠️' : '❌';
     lines.push('*MY TRACK RECORD*');
-    lines.push(`${confidenceEmoji} ${Math.round(accuracyRate)}% accuracy on ${totalRecommendations} recommendations`);
+    lines.push(
+      `${confidenceEmoji} ${Math.round(accuracyRate)}% accuracy on ${totalRecommendations} recommendations`
+    );
     lines.push('');
   }
 

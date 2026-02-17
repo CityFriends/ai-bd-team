@@ -6,7 +6,7 @@
  */
 
 import { getSupabase } from './supabase.js';
-import { OPPORTUNITY_FILTERS, scoreOpportunity } from '../config/opportunity-filters.js';
+import { OPPORTUNITY_FILTERS } from '../config/opportunity-filters.js';
 
 // Agency forecast sources
 export const AGENCY_FORECAST_SOURCES: Array<{
@@ -108,20 +108,53 @@ export interface ForecastOpportunity {
 // Keywords that indicate relevance to FFTC
 const RELEVANCE_KEYWORDS = {
   high: [
-    'human-centered design', 'hcd', 'user experience', 'ux', 'user research',
-    'journey mapping', 'design thinking', 'service design', 'customer experience',
-    'digital services', 'modernization', 'agile', 'devops', 'cloud',
-    'accessibility', '508 compliance', 'plain language', 'content strategy',
+    'human-centered design',
+    'hcd',
+    'user experience',
+    'ux',
+    'user research',
+    'journey mapping',
+    'design thinking',
+    'service design',
+    'customer experience',
+    'digital services',
+    'modernization',
+    'agile',
+    'devops',
+    'cloud',
+    'accessibility',
+    '508 compliance',
+    'plain language',
+    'content strategy',
   ],
   medium: [
-    'website', 'portal', 'mobile', 'application', 'software development',
-    'it services', 'information technology', 'data analytics', 'dashboard',
-    'user interface', 'ui', 'design', 'research', 'discovery',
-    'product management', 'program support', 'technical assistance',
+    'website',
+    'portal',
+    'mobile',
+    'application',
+    'software development',
+    'it services',
+    'information technology',
+    'data analytics',
+    'dashboard',
+    'user interface',
+    'ui',
+    'design',
+    'research',
+    'discovery',
+    'product management',
+    'program support',
+    'technical assistance',
   ],
   low: [
-    'consulting', 'support services', 'program management', 'communications',
-    'training', 'facilitation', 'strategic planning', 'stakeholder engagement',
+    'consulting',
+    'support services',
+    'program management',
+    'communications',
+    'training',
+    'facilitation',
+    'strategic planning',
+    'stakeholder engagement',
   ],
 };
 
@@ -131,25 +164,30 @@ export function scoreForecastRelevance(title: string, description?: string): num
   let score = 0;
 
   // High relevance keywords (+20 each, max 60)
-  const highMatches = RELEVANCE_KEYWORDS.high.filter(kw => text.includes(kw));
+  const highMatches = RELEVANCE_KEYWORDS.high.filter((kw) => text.includes(kw));
   score += Math.min(highMatches.length * 20, 60);
 
   // Medium relevance keywords (+10 each, max 30)
-  const medMatches = RELEVANCE_KEYWORDS.medium.filter(kw => text.includes(kw));
+  const medMatches = RELEVANCE_KEYWORDS.medium.filter((kw) => text.includes(kw));
   score += Math.min(medMatches.length * 10, 30);
 
   // Low relevance keywords (+5 each, max 10)
-  const lowMatches = RELEVANCE_KEYWORDS.low.filter(kw => text.includes(kw));
+  const lowMatches = RELEVANCE_KEYWORDS.low.filter((kw) => text.includes(kw));
   score += Math.min(lowMatches.length * 5, 10);
 
   // NAICS boost: if title mentions our NAICS codes
-  if (OPPORTUNITY_FILTERS.naicsCodes.some(naics => text.includes(naics))) {
+  if (OPPORTUNITY_FILTERS.naicsCodes.some((naics) => text.includes(naics))) {
     score += 15;
   }
 
   // Set-aside boost: if it mentions small business set-asides
-  if (text.includes('8(a)') || text.includes('wosb') || text.includes('sdvosb') ||
-      text.includes('hubzone') || text.includes('small business set-aside')) {
+  if (
+    text.includes('8(a)') ||
+    text.includes('wosb') ||
+    text.includes('sdvosb') ||
+    text.includes('hubzone') ||
+    text.includes('small business set-aside')
+  ) {
     score += 10;
   }
 
@@ -188,11 +226,23 @@ function parseEstimatedDate(dateStr: string): string | null {
   }
 
   // Month Year format (e.g., "March 2026")
-  const monthYearMatch = lowerStr.match(/(january|february|march|april|may|june|july|august|september|october|november|december)\s*(20\d{2})/i);
+  const monthYearMatch = lowerStr.match(
+    /(january|february|march|april|may|june|july|august|september|october|november|december)\s*(20\d{2})/i
+  );
   if (monthYearMatch) {
     const months: Record<string, string> = {
-      january: '01', february: '02', march: '03', april: '04', may: '05', june: '06',
-      july: '07', august: '08', september: '09', october: '10', november: '11', december: '12'
+      january: '01',
+      february: '02',
+      march: '03',
+      april: '04',
+      may: '05',
+      june: '06',
+      july: '07',
+      august: '08',
+      september: '09',
+      october: '10',
+      november: '11',
+      december: '12',
     };
     const month = months[monthYearMatch[1].toLowerCase()];
     const year = monthYearMatch[2];
@@ -208,14 +258,16 @@ function parseEstimatedDate(dateStr: string): string | null {
 }
 
 // Fetch and parse a forecast page (basic HTML parsing)
-export async function fetchForecastPage(source: typeof AGENCY_FORECAST_SOURCES[0]): Promise<ForecastOpportunity[]> {
+export async function fetchForecastPage(
+  source: (typeof AGENCY_FORECAST_SOURCES)[0]
+): Promise<ForecastOpportunity[]> {
   console.log(`[Forecast] Fetching ${source.abbrev} from ${source.url}`);
 
   try {
     const response = await fetch(source.url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; FFTC-BD-Bot/1.0)',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       },
     });
 
@@ -233,7 +285,9 @@ export async function fetchForecastPage(source: typeof AGENCY_FORECAST_SOURCES[0
     // This is a simplified parser - real implementation would need agency-specific parsers
     const opportunities = parseGenericForecastHTML(html, source);
 
-    console.log(`[Forecast] ${source.abbrev} found ${opportunities.length} potential opportunities`);
+    console.log(
+      `[Forecast] ${source.abbrev} found ${opportunities.length} potential opportunities`
+    );
 
     return opportunities;
   } catch (err) {
@@ -246,20 +300,12 @@ export async function fetchForecastPage(source: typeof AGENCY_FORECAST_SOURCES[0
 // This attempts to find tables with opportunity data
 function parseGenericForecastHTML(
   html: string,
-  source: typeof AGENCY_FORECAST_SOURCES[0]
+  source: (typeof AGENCY_FORECAST_SOURCES)[0]
 ): ForecastOpportunity[] {
   const opportunities: ForecastOpportunity[] = [];
 
   // Look for table rows that might contain opportunity data
   // This is a heuristic approach - real implementation would be agency-specific
-
-  // Try to find tables with common column headers
-  const tableHeaderPatterns = [
-    /title|description|requirement|project/i,
-    /naics|code|category/i,
-    /date|timeframe|estimated|anticipated|release|award/i,
-    /value|amount|dollars|funding/i,
-  ];
 
   // Simple row extraction from tables
   // Match table rows
@@ -284,20 +330,18 @@ function parseGenericForecastHTML(
 
     // Skip header rows or empty rows
     if (cells.length < 2) continue;
-    if (cells.some(c => /^(title|description|naics|date|value)$/i.test(c))) continue;
+    if (cells.some((c) => /^(title|description|naics|date|value)$/i.test(c))) continue;
 
     // Try to identify if this looks like an opportunity row
-    const hasTitle = cells.some(c => c.length > 20 && c.length < 500);
-    const hasDate = cells.some(c => /20\d{2}|q[1-4]|fy/i.test(c));
-    const hasValue = cells.some(c => /\$|\d+[mk]/i.test(c));
+    const hasTitle = cells.some((c) => c.length > 20 && c.length < 500);
 
     if (hasTitle) {
       // Best guess at which cell is what
-      const titleCell = cells.find(c => c.length > 20 && c.length < 500) || cells[0];
-      const dateCell = cells.find(c => /20\d{2}|q[1-4]|fy/i.test(c));
-      const valueCell = cells.find(c => /\$|\d+[mk]/i.test(c));
-      const naicsCell = cells.find(c => /^\d{6}$/.test(c.trim()));
-      const setAsideCell = cells.find(c => /8\(a\)|wosb|sdvosb|hubzone|small\s+bus/i.test(c));
+      const titleCell = cells.find((c) => c.length > 20 && c.length < 500) || cells[0];
+      const dateCell = cells.find((c) => /20\d{2}|q[1-4]|fy/i.test(c));
+      const valueCell = cells.find((c) => /\$|\d+[mk]/i.test(c));
+      const naicsCell = cells.find((c) => /^\d{6}$/.test(c.trim()));
+      const setAsideCell = cells.find((c) => /8\(a\)|wosb|sdvosb|hubzone|small\s+bus/i.test(c));
 
       const relevance = scoreForecastRelevance(titleCell, cells.join(' '));
 
@@ -307,7 +351,7 @@ function parseGenericForecastHTML(
           agency: source.abbrev,
           title: titleCell.slice(0, 300),
           description: cells.slice(1).join(' ').slice(0, 1000),
-          estimated_release: dateCell ? (parseEstimatedDate(dateCell) || dateCell) : undefined,
+          estimated_release: dateCell ? parseEstimatedDate(dateCell) || dateCell : undefined,
           estimated_value: valueCell,
           naics_code: naicsCell,
           set_aside: setAsideCell,
@@ -349,13 +393,11 @@ export async function saveForecast(forecast: ForecastOpportunity): Promise<boole
       console.log(`[Forecast] Updated: ${forecast.title.slice(0, 50)}...`);
     } else {
       // Insert new
-      const { error } = await supabase
-        .from('agency_forecasts')
-        .insert({
-          ...forecast,
-          status: 'upcoming',
-          last_checked: new Date().toISOString(),
-        });
+      const { error } = await supabase.from('agency_forecasts').insert({
+        ...forecast,
+        status: 'upcoming',
+        last_checked: new Date().toISOString(),
+      });
 
       if (error) throw error;
       console.log(`[Forecast] Added: ${forecast.title.slice(0, 50)}...`);
@@ -369,7 +411,9 @@ export async function saveForecast(forecast: ForecastOpportunity): Promise<boole
 }
 
 // Get high-relevance upcoming forecasts
-export async function getUpcomingForecasts(minRelevance: number = 60): Promise<ForecastOpportunity[]> {
+export async function getUpcomingForecasts(
+  minRelevance: number = 60
+): Promise<ForecastOpportunity[]> {
   try {
     const supabase = getSupabase();
 
@@ -391,7 +435,10 @@ export async function getUpcomingForecasts(minRelevance: number = 60): Promise<F
 }
 
 // Check if a SAM.gov opportunity matches a forecast
-export async function matchForecastToSAM(samTitle: string, samAgency: string): Promise<{ matched: boolean; forecastId?: string; forecastTitle?: string }> {
+export async function matchForecastToSAM(
+  samTitle: string,
+  samAgency: string
+): Promise<{ matched: boolean; forecastId?: string; forecastTitle?: string }> {
   try {
     const supabase = getSupabase();
 
@@ -407,11 +454,17 @@ export async function matchForecastToSAM(samTitle: string, samAgency: string): P
     }
 
     // Simple title similarity check
-    const samWords = samTitle.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+    const samWords = samTitle
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((w) => w.length > 3);
 
     for (const forecast of forecasts) {
-      const forecastWords = forecast.title.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3);
-      const commonWords = samWords.filter(w => forecastWords.includes(w));
+      const forecastWords = forecast.title
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((w: string) => w.length > 3);
+      const commonWords = samWords.filter((w) => forecastWords.includes(w));
 
       // If >40% of words match, consider it a match
       if (commonWords.length / Math.max(samWords.length, forecastWords.length) > 0.4) {
@@ -450,7 +503,11 @@ export async function linkForecastToSAM(forecastId: string, samUrl: string): Pro
 }
 
 // Run full forecast scan
-export async function runForecastScan(): Promise<{ total: number; saved: number; byAgency: Record<string, number> }> {
+export async function runForecastScan(): Promise<{
+  total: number;
+  saved: number;
+  byAgency: Record<string, number>;
+}> {
   console.log('[Forecast] Starting full agency forecast scan...\n');
 
   let total = 0;
@@ -472,7 +529,7 @@ export async function runForecastScan(): Promise<{ total: number; saved: number;
       }
 
       // Rate limit
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise((r) => setTimeout(r, 2000));
     } catch (err) {
       console.error(`[Forecast] Error processing ${source.abbrev}:`, err);
     }

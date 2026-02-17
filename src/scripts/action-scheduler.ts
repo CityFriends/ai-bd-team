@@ -24,8 +24,16 @@ async function initializeApps(): Promise<Map<string, App>> {
   const agentConfigs = [
     { name: 'maya', botToken: process.env.MAYA_BOT_TOKEN, appToken: process.env.MAYA_APP_TOKEN },
     { name: 'david', botToken: process.env.DAVID_BOT_TOKEN, appToken: process.env.DAVID_APP_TOKEN },
-    { name: 'marcus', botToken: process.env.MARCUS_BOT_TOKEN, appToken: process.env.MARCUS_APP_TOKEN },
-    { name: 'patricia', botToken: process.env.PATRICIA_BOT_TOKEN, appToken: process.env.PATRICIA_APP_TOKEN },
+    {
+      name: 'marcus',
+      botToken: process.env.MARCUS_BOT_TOKEN,
+      appToken: process.env.MARCUS_APP_TOKEN,
+    },
+    {
+      name: 'patricia',
+      botToken: process.env.PATRICIA_BOT_TOKEN,
+      appToken: process.env.PATRICIA_APP_TOKEN,
+    },
     { name: 'rosa', botToken: process.env.ROSA_BOT_TOKEN, appToken: process.env.ROSA_APP_TOKEN },
     { name: 'james', botToken: process.env.JAMES_BOT_TOKEN, appToken: process.env.JAMES_APP_TOKEN },
   ];
@@ -54,7 +62,7 @@ async function initializeApps(): Promise<Map<string, App>> {
  * Cleanup all apps
  */
 async function cleanupApps(apps: Map<string, App>): Promise<void> {
-  for (const [name, app] of apps) {
+  for (const [_name, app] of apps) {
     try {
       await app.stop();
     } catch {
@@ -97,7 +105,7 @@ export async function checkAndExecuteActions(): Promise<number> {
     }
 
     // Small delay between actions
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise((r) => setTimeout(r, 2000));
   }
 
   // Cleanup
@@ -130,7 +138,7 @@ export async function checkAndExecuteActionsWithApps(apps: Map<string, App>): Pr
       console.error(`[ActionScheduler] Failed to execute action:`, err);
     }
 
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise((r) => setTimeout(r, 2000));
   }
 
   console.log(`[ActionScheduler] Executed ${executed} action(s)`);
@@ -159,7 +167,6 @@ async function main(): Promise<void> {
     });
 
     console.log('[ActionScheduler] Scheduler running...');
-
   } else {
     // One-time check
     await checkAndExecuteActions();

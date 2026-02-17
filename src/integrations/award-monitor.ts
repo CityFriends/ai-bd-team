@@ -2,7 +2,7 @@
 // Used by Maya to proactively report new awards (like OrangeSlices does)
 
 import { getSupabase } from './supabase.js';
-import { searchFPDS, type FPDSContract } from './fpds.js';
+import { searchFPDS } from './fpds.js';
 
 // Agencies to monitor for new awards
 const MONITORED_AGENCIES: { code: string; name: string; abbrev: string }[] = [
@@ -67,29 +67,29 @@ export async function checkAgencyAwards(
 
   // Filter to significant awards from real vendors (not government agencies)
   const govAgencyPatterns = [
-    /department of/i,           // Any "department of" (federal, state, local)
-    /^u\.?s\.? /i,              // U.S. anything
-    /^united states/i,          // United States
-    /^state of/i,               // State of X
-    /^city of/i,                // City of X
-    /^county of/i,              // County of X
-    /\bstate\b.*\b(department|agency|commission|board)\b/i,  // State agencies
+    /department of/i, // Any "department of" (federal, state, local)
+    /^u\.?s\.? /i, // U.S. anything
+    /^united states/i, // United States
+    /^state of/i, // State of X
+    /^city of/i, // City of X
+    /^county of/i, // County of X
+    /\bstate\b.*\b(department|agency|commission|board)\b/i, // State agencies
     /\b(health and human services|labor|education|transportation)\b.*\b(department|agency)\b/i,
-    /^(alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|montana|nebraska|nevada|new hampshire|new jersey|new mexico|new york|north carolina|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|south carolina|south dakota|tennessee|texas|utah|vermont|virginia|washington|west virginia|wisconsin|wyoming)\b/i,  // State names at start
-    /\buniversity\b/i,          // Universities
-    /\bcollege\b/i,             // Colleges
-    /\bgovernment\b/i,          // Government entities
-    /\bpublic\s+(school|health|safety)\b/i,  // Public entities
-    /^health and human services$/i,         // Bare HHS name
-    /^(labor|education|transportation|agriculture|interior|commerce|treasury|justice|defense|energy|housing)$/i,  // Bare agency names
+    /^(alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|montana|nebraska|nevada|new hampshire|new jersey|new mexico|new york|north carolina|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|south carolina|south dakota|tennessee|texas|utah|vermont|virginia|washington|west virginia|wisconsin|wyoming)\b/i, // State names at start
+    /\buniversity\b/i, // Universities
+    /\bcollege\b/i, // Colleges
+    /\bgovernment\b/i, // Government entities
+    /\bpublic\s+(school|health|safety)\b/i, // Public entities
+    /^health and human services$/i, // Bare HHS name
+    /^(labor|education|transportation|agriculture|interior|commerce|treasury|justice|defense|energy|housing)$/i, // Bare agency names
   ];
 
-  const significantAwards = result.contracts.filter(c => {
+  const significantAwards = result.contracts.filter((c) => {
     // Must meet minimum value
     if (c.obligatedAmount < MIN_AWARD_VALUE) return false;
 
     // Filter out government agencies as "vendors" (bad data)
-    const isGovAgency = govAgencyPatterns.some(p => p.test(c.vendorName));
+    const isGovAgency = govAgencyPatterns.some((p) => p.test(c.vendorName));
     if (isGovAgency) return false;
 
     return true;
@@ -100,25 +100,27 @@ export async function checkAgencyAwards(
   }
 
   // Check which ones we've already seen
-  const seenIds = await getSeenAwardIds(significantAwards.map(c => c.contractId));
+  const seenIds = await getSeenAwardIds(significantAwards.map((c) => c.contractId));
 
   // Filter to new awards only
-  const newAwards = significantAwards.filter(c => !seenIds.has(c.contractId));
+  const newAwards = significantAwards.filter((c) => !seenIds.has(c.contractId));
 
   if (newAwards.length === 0) {
     return [];
   }
 
   // Mark these as seen
-  await markAwardsSeen(newAwards.map(c => ({
-    contractId: c.contractId,
-    vendorName: c.vendorName,
-    agencyCode,
-    amount: c.obligatedAmount,
-  })));
+  await markAwardsSeen(
+    newAwards.map((c) => ({
+      contractId: c.contractId,
+      vendorName: c.vendorName,
+      agencyCode,
+      amount: c.obligatedAmount,
+    }))
+  );
 
   // Convert to NewAward format
-  return newAwards.map(c => ({
+  return newAwards.map((c) => ({
     contractId: c.contractId,
     vendorName: c.vendorName,
     agencyName,
@@ -140,7 +142,7 @@ async function getSeenAwardIds(contractIds: string[]): Promise<Set<string>> {
       .select('contract_id')
       .in('contract_id', contractIds);
 
-    return new Set((data || []).map(d => d.contract_id));
+    return new Set((data || []).map((d) => d.contract_id));
   } catch {
     // Table might not exist yet
     return new Set();
@@ -148,16 +150,18 @@ async function getSeenAwardIds(contractIds: string[]): Promise<Set<string>> {
 }
 
 // Mark awards as seen so we don't report them again
-async function markAwardsSeen(awards: {
-  contractId: string;
-  vendorName: string;
-  agencyCode: string;
-  amount: number;
-}[]): Promise<void> {
+async function markAwardsSeen(
+  awards: {
+    contractId: string;
+    vendorName: string;
+    agencyCode: string;
+    amount: number;
+  }[]
+): Promise<void> {
   try {
     const supabase = getSupabase();
 
-    const records = awards.map(a => ({
+    const records = awards.map((a) => ({
       contract_id: a.contractId,
       vendor_name: a.vendorName,
       agency_code: a.agencyCode,
@@ -165,9 +169,7 @@ async function markAwardsSeen(awards: {
       seen_at: new Date().toISOString(),
     }));
 
-    await supabase
-      .from('seen_awards')
-      .upsert(records, { onConflict: 'contract_id' });
+    await supabase.from('seen_awards').upsert(records, { onConflict: 'contract_id' });
   } catch (err) {
     console.warn('Award monitor: Failed to mark awards as seen:', err);
   }
@@ -179,10 +181,11 @@ export function formatAwardsForSlack(awards: NewAward[], maxToShow: number = 10)
     return '';
   }
 
-  const lines = awards.slice(0, maxToShow).map(a => {
-    const value = a.obligatedAmount >= 1000000
-      ? `$${(a.obligatedAmount / 1000000).toFixed(1)}M`
-      : `$${(a.obligatedAmount / 1000).toFixed(0)}K`;
+  const lines = awards.slice(0, maxToShow).map((a) => {
+    const value =
+      a.obligatedAmount >= 1000000
+        ? `$${(a.obligatedAmount / 1000000).toFixed(1)}M`
+        : `$${(a.obligatedAmount / 1000).toFixed(0)}K`;
     const type = a.contractType && a.contractType !== 'Unknown' ? ` (${a.contractType})` : '';
     return `• *${a.vendorName}* - ${value} from ${a.agencyAbbrev}${type}`;
   });
@@ -209,14 +212,14 @@ export function getAwardsSummary(awards: NewAward[]): {
 
   // Count by vendor
   const vendorCounts = new Map<string, number>();
-  awards.forEach(a => {
+  awards.forEach((a) => {
     vendorCounts.set(a.vendorName, (vendorCounts.get(a.vendorName) || 0) + 1);
   });
   const topVendor = [...vendorCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || null;
 
   // Count by agency
   const agencyCounts = new Map<string, number>();
-  awards.forEach(a => {
+  awards.forEach((a) => {
     agencyCounts.set(a.agencyAbbrev, (agencyCounts.get(a.agencyAbbrev) || 0) + 1);
   });
   const topAgency = [...agencyCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || null;

@@ -18,9 +18,6 @@ import { getSupabase } from './supabase.js';
 const FCO_BASE_URL = 'https://acquisitiongateway.gov';
 const FCO_SEARCH_URL = `${FCO_BASE_URL}/forecast`;
 
-// GSA API key for authenticated requests (if available)
-const GSA_API_KEY = process.env.GSA_API_KEY || 'DEMO_KEY';
-
 export interface FCOForecast {
   id: string;
   title: string;
@@ -96,7 +93,7 @@ export async function searchFCO(params: FCOSearchParams): Promise<FCOSearchResul
     const response = await fetch(searchUrl.toString(), {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; FFTC-BD-Bot/1.0)',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       },
     });
 
@@ -174,11 +171,17 @@ function parseFCOSearchResults(html: string, limit: number): FCOForecast[] {
  */
 function extractForecastFromHtml(html: string): FCOForecast | null {
   // Clean HTML and extract text content
-  const cleanHtml = (s: string) => s.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+  const cleanHtml = (s: string) =>
+    s
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
 
   // Try to extract key fields
-  const title = extractField(html, ['title', 'name', 'requirement', 'project']) ||
-                extractFirstMatch(html, /<(?:h[1-6]|strong|b)[^>]*>([\s\S]*?)<\/(?:h[1-6]|strong|b)>/i);
+  const title =
+    extractField(html, ['title', 'name', 'requirement', 'project']) ||
+    extractFirstMatch(html, /<(?:h[1-6]|strong|b)[^>]*>([\s\S]*?)<\/(?:h[1-6]|strong|b)>/i);
 
   if (!title || title.length < 10) return null;
 
@@ -275,17 +278,18 @@ export async function getRelevantForecasts(naicsCodes: string[]): Promise<FCOSea
   const allForecasts: FCOForecast[] = [];
 
   // Search for each NAICS code
-  for (const naics of naicsCodes.slice(0, 5)) { // Limit to avoid rate limiting
+  for (const naics of naicsCodes.slice(0, 5)) {
+    // Limit to avoid rate limiting
     const result = await searchFCO({ naicsCodes: [naics], limit: 10 });
     allForecasts.push(...result.forecasts);
 
     // Rate limit
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise((r) => setTimeout(r, 1000));
   }
 
   // Deduplicate by title similarity
   const seen = new Set<string>();
-  const unique = allForecasts.filter(f => {
+  const unique = allForecasts.filter((f) => {
     const key = f.title.toLowerCase().slice(0, 50);
     if (seen.has(key)) return false;
     seen.add(key);
@@ -316,9 +320,13 @@ export function scoreForecastRelevance(forecast: FCOForecast, relevanceKeywords:
   // Boost for small business set-asides
   if (forecast.setAside) {
     const setAside = forecast.setAside.toLowerCase();
-    if (setAside.includes('8(a)') || setAside.includes('wosb') ||
-        setAside.includes('sdvosb') || setAside.includes('hubzone') ||
-        setAside.includes('small')) {
+    if (
+      setAside.includes('8(a)') ||
+      setAside.includes('wosb') ||
+      setAside.includes('sdvosb') ||
+      setAside.includes('hubzone') ||
+      setAside.includes('small')
+    ) {
       score += 20;
     }
   }
@@ -339,10 +347,10 @@ export function scoreForecastRelevance(forecast: FCOForecast, relevanceKeywords:
  */
 export function formatFCOForAgent(forecasts: FCOForecast[]): string {
   if (forecasts.length === 0) {
-    return "No relevant forecasts found in Acquisition Gateway FCO.";
+    return 'No relevant forecasts found in Acquisition Gateway FCO.';
   }
 
-  const lines = forecasts.slice(0, 5).map(f => {
+  const lines = forecasts.slice(0, 5).map((f) => {
     let line = `• *${f.title.slice(0, 60)}${f.title.length > 60 ? '...' : ''}*`;
     line += `\n  Agency: ${f.agency}`;
     if (f.estimatedValue) line += ` | Value: ${f.estimatedValue}`;
@@ -382,14 +390,15 @@ async function cacheResult(cacheKey: string, result: FCOSearchResult): Promise<v
   try {
     const supabase = getSupabase();
 
-    await supabase
-      .from('research_cache')
-      .upsert({
+    await supabase.from('research_cache').upsert(
+      {
         cache_key: cacheKey,
         source: 'acquisition-gateway',
         data: result,
         created_at: new Date().toISOString(),
-      }, { onConflict: 'cache_key' });
+      },
+      { onConflict: 'cache_key' }
+    );
   } catch (error) {
     console.warn('Failed to cache FCO result:', error);
   }

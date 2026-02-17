@@ -36,7 +36,7 @@ export interface AgentContext {
 
 // Generate a response from an agent
 export async function generateAgentResponse(
-  agent: AgentName,
+  _agent: AgentName,
   systemPrompt: string,
   userMessage: string,
   context?: AgentContext
@@ -68,14 +68,14 @@ export async function generateAgentResponse(
     model: MODEL,
     max_tokens: 1024,
     system: systemPrompt,
-    messages: messages.map(m => ({
+    messages: messages.map((m) => ({
       role: m.role,
       content: m.content,
     })),
   });
 
   // Extract text from response
-  const textBlock = response.content.find(block => block.type === 'text');
+  const textBlock = response.content.find((block) => block.type === 'text');
   if (!textBlock || textBlock.type !== 'text') {
     throw new Error('No text response from Claude');
   }
@@ -125,7 +125,7 @@ Respond in JSON format:
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const textBlock = response.content.find(block => block.type === 'text');
+  const textBlock = response.content.find((block) => block.type === 'text');
   if (!textBlock || textBlock.type !== 'text') {
     throw new Error('No text response from Claude');
   }
@@ -182,7 +182,7 @@ Respond in JSON format:
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const textBlock = response.content.find(block => block.type === 'text');
+  const textBlock = response.content.find((block) => block.type === 'text');
   if (!textBlock || textBlock.type !== 'text') {
     throw new Error('No text response from Claude');
   }
@@ -243,7 +243,7 @@ Respond in JSON format:
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const textBlock = response.content.find(block => block.type === 'text');
+  const textBlock = response.content.find((block) => block.type === 'text');
   if (!textBlock || textBlock.type !== 'text') {
     throw new Error('No text response from Claude');
   }

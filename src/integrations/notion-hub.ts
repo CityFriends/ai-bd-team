@@ -19,7 +19,18 @@ const NOTION_VERSION = '2022-06-28';
 const NOTION_API = 'https://api.notion.com/v1';
 
 // Color options for selects
-const COLORS = ['default', 'gray', 'brown', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'red'];
+const COLORS = [
+  'default',
+  'gray',
+  'brown',
+  'orange',
+  'yellow',
+  'green',
+  'blue',
+  'purple',
+  'pink',
+  'red',
+];
 
 // Store database IDs after creation
 export interface NotionHubIds {
@@ -43,7 +54,7 @@ async function notionRequest(
   const response = await fetch(`${NOTION_API}${endpoint}`, {
     method,
     headers: {
-      'Authorization': `Bearer ${NOTION_API_KEY}`,
+      Authorization: `Bearer ${NOTION_API_KEY}`,
       'Notion-Version': NOTION_VERSION,
       'Content-Type': 'application/json',
     },
@@ -59,13 +70,18 @@ async function notionRequest(
 }
 
 // Create a page
-async function createPage(parentId: string, title: string, icon?: string, children?: any[]): Promise<string> {
+async function createPage(
+  parentId: string,
+  title: string,
+  icon?: string,
+  children?: any[]
+): Promise<string> {
   const body: any = {
     parent: { page_id: parentId },
     properties: {
       title: {
-        title: [{ text: { content: title } }]
-      }
+        title: [{ text: { content: title } }],
+      },
     },
   };
 
@@ -127,34 +143,71 @@ const prop = {
 // DATABASE SCHEMAS
 // ============================================================
 
-function opportunitiesProperties(partnersDbId?: string, contactsDbId?: string, pastPerfDbId?: string) {
+function opportunitiesProperties(
+  partnersDbId?: string,
+  contactsDbId?: string,
+  pastPerfDbId?: string
+) {
   const props: Record<string, any> = {
-    'Name': prop.title(),
-    'Status': prop.select(['New', 'Researching', 'Go', 'No-Go', 'Pursuing', 'Submitted', 'Won', 'Lost']),
+    Name: prop.title(),
+    Status: prop.select([
+      'New',
+      'Researching',
+      'Go',
+      'No-Go',
+      'Pursuing',
+      'Submitted',
+      'Won',
+      'Lost',
+    ]),
     'Fit Score': prop.number(),
     'Strategic Fit': prop.checkbox(),
-    'Agency': prop.select([
-      'VA', 'HHS', 'CMS', 'DOL', 'DHS', 'GSA', 'SBA', 'ED', 'DOJ', 'DOT',
-      'USDA', 'DOE', 'EPA', 'NASA', 'OPM', 'SSA', 'Treasury', 'State', 'Other'
+    Agency: prop.select([
+      'VA',
+      'HHS',
+      'CMS',
+      'DOL',
+      'DHS',
+      'GSA',
+      'SBA',
+      'ED',
+      'DOJ',
+      'DOT',
+      'USDA',
+      'DOE',
+      'EPA',
+      'NASA',
+      'OPM',
+      'SSA',
+      'Treasury',
+      'State',
+      'Other',
     ]),
     'Sub-Agency': prop.text(),
     'Value Low': prop.number('dollar'),
     'Value High': prop.number('dollar'),
     'Due Date': prop.date(),
     'Posted Date': prop.date(),
-    'NAICS': prop.text(),
-    'Set-Aside': prop.select(['Small Business', '8(a)', 'WOSB', 'HUBZone', 'SDVOSB', 'Unrestricted']),
-    'Type': prop.select(['RFI', 'Sources Sought', 'RFP', 'Task Order', 'BPA Call', 'Other']),
+    NAICS: prop.text(),
+    'Set-Aside': prop.select([
+      'Small Business',
+      '8(a)',
+      'WOSB',
+      'HUBZone',
+      'SDVOSB',
+      'Unrestricted',
+    ]),
+    Type: prop.select(['RFI', 'Sources Sought', 'RFP', 'Task Order', 'BPA Call', 'Other']),
     'SAM Link': prop.url(),
     "Maya's Take": prop.text(),
     "David's Analysis": prop.text(),
     "Rosa's Partners": prop.text(),
     "James's Recommendation": prop.text(),
-    'Decision': prop.select(['Pending', 'Go', 'No-Go']),
+    Decision: prop.select(['Pending', 'Go', 'No-Go']),
     'Decision Date': prop.date(),
     'Decision Rationale': prop.text(),
-    'Incumbent': prop.text(),
-    'Competitors': prop.text(),
+    Incumbent: prop.text(),
+    Competitors: prop.text(),
     'Our Role': prop.select(['Prime', 'Sub', 'Undecided']),
   };
 
@@ -175,12 +228,29 @@ function opportunitiesProperties(partnersDbId?: string, contactsDbId?: string, p
 function partnersProperties(opportunitiesDbId?: string) {
   const props: Record<string, any> = {
     'Company Name': prop.title(),
-    'Capabilities': prop.multiSelect([
-      'HCD', 'UX Research', 'Service Design', 'Software Development', 'Cloud',
-      'Data Analytics', 'AI/ML', 'Agile', 'DevOps', 'Cybersecurity', 'PMO'
+    Capabilities: prop.multiSelect([
+      'HCD',
+      'UX Research',
+      'Service Design',
+      'Software Development',
+      'Cloud',
+      'Data Analytics',
+      'AI/ML',
+      'Agile',
+      'DevOps',
+      'Cybersecurity',
+      'PMO',
     ]),
-    'Certifications': prop.multiSelect([
-      '8(a)', 'WOSB', 'EDWOSB', 'SDVOSB', 'VOSB', 'HUBZone', 'SDB', 'MBE', 'WBE'
+    Certifications: prop.multiSelect([
+      '8(a)',
+      'WOSB',
+      'EDWOSB',
+      'SDVOSB',
+      'VOSB',
+      'HUBZone',
+      'SDB',
+      'MBE',
+      'WBE',
     ]),
     'Relationship Status': prop.select(['Strong', 'Warm', 'Cold', 'New']),
     'Contact Person': prop.text(),
@@ -188,11 +258,11 @@ function partnersProperties(opportunitiesDbId?: string) {
     'Contact Phone': prop.phone(),
     'Last Contact': prop.date(),
     'Teaming History': prop.text(),
-    'Strengths': prop.text(),
-    'Weaknesses': prop.text(),
+    Strengths: prop.text(),
+    Weaknesses: prop.text(),
     'NDA Signed': prop.checkbox(),
     'Teaming Agreement': prop.checkbox(),
-    'Notes': prop.text(),
+    Notes: prop.text(),
   };
 
   if (opportunitiesDbId) {
@@ -204,21 +274,38 @@ function partnersProperties(opportunitiesDbId?: string) {
 
 function contactsProperties(opportunitiesDbId?: string) {
   const props: Record<string, any> = {
-    'Name': prop.title(),
-    'Agency': prop.select([
-      'VA', 'HHS', 'CMS', 'DOL', 'DHS', 'GSA', 'SBA', 'ED', 'DOJ', 'DOT',
-      'USDA', 'DOE', 'EPA', 'NASA', 'OPM', 'SSA', 'Treasury', 'State', 'Other'
+    Name: prop.title(),
+    Agency: prop.select([
+      'VA',
+      'HHS',
+      'CMS',
+      'DOL',
+      'DHS',
+      'GSA',
+      'SBA',
+      'ED',
+      'DOJ',
+      'DOT',
+      'USDA',
+      'DOE',
+      'EPA',
+      'NASA',
+      'OPM',
+      'SSA',
+      'Treasury',
+      'State',
+      'Other',
     ]),
     'Sub-Agency': prop.text(),
-    'Title': prop.text(),
-    'Email': prop.email(),
-    'Phone': prop.phone(),
-    'LinkedIn': prop.url(),
+    Title: prop.text(),
+    Email: prop.email(),
+    Phone: prop.phone(),
+    LinkedIn: prop.url(),
     'Relationship Strength': prop.select(['1', '2', '3', '4', '5']),
     'How We Know': prop.text(),
     'Last Contact': prop.date(),
-    'Notes': prop.text(),
-    'Tags': prop.multiSelect(['Procurement', 'Technical', 'Executive', 'Champion', 'Blocker']),
+    Notes: prop.text(),
+    Tags: prop.multiSelect(['Procurement', 'Technical', 'Executive', 'Champion', 'Blocker']),
   };
 
   if (opportunitiesDbId) {
@@ -231,9 +318,26 @@ function contactsProperties(opportunitiesDbId?: string) {
 function pastPerformanceProperties(opportunitiesDbId?: string) {
   const props: Record<string, any> = {
     'Contract Name': prop.title(),
-    'Agency': prop.select([
-      'VA', 'HHS', 'CMS', 'DOL', 'DHS', 'GSA', 'SBA', 'ED', 'DOJ', 'DOT',
-      'USDA', 'DOE', 'EPA', 'NASA', 'OPM', 'SSA', 'Treasury', 'State', 'Other'
+    Agency: prop.select([
+      'VA',
+      'HHS',
+      'CMS',
+      'DOL',
+      'DHS',
+      'GSA',
+      'SBA',
+      'ED',
+      'DOJ',
+      'DOT',
+      'USDA',
+      'DOE',
+      'EPA',
+      'NASA',
+      'OPM',
+      'SSA',
+      'Treasury',
+      'State',
+      'Other',
     ]),
     'Sub-Agency': prop.text(),
     'Contract Number': prop.text(),
@@ -242,13 +346,19 @@ function pastPerformanceProperties(opportunitiesDbId?: string) {
     'Prime Contractor': prop.text(),
     'Start Date': prop.date(),
     'End Date': prop.date(),
-    'Value': prop.number('dollar'),
-    'Description': prop.text(),
+    Value: prop.number('dollar'),
+    Description: prop.text(),
     'Key Accomplishments': prop.text(),
-    'CPAR Rating': prop.select(['Exceptional', 'Very Good', 'Satisfactory', 'Marginal', 'Unsatisfactory']),
-    'Referenceable': prop.checkbox(),
+    'CPAR Rating': prop.select([
+      'Exceptional',
+      'Very Good',
+      'Satisfactory',
+      'Marginal',
+      'Unsatisfactory',
+    ]),
+    Referenceable: prop.checkbox(),
     'Client Contact': prop.text(),
-    'Tags': prop.multiSelect(['HCD', 'UX', 'Research', 'Dev', 'AI', 'Agile', 'Cloud', 'Data']),
+    Tags: prop.multiSelect(['HCD', 'UX', 'Research', 'Dev', 'AI', 'Agile', 'Cloud', 'Data']),
   };
 
   if (opportunitiesDbId) {
@@ -260,36 +370,63 @@ function pastPerformanceProperties(opportunitiesDbId?: string) {
 
 function forecastsProperties() {
   return {
-    'Title': prop.title(),
-    'Agency': prop.select([
-      'VA', 'HHS', 'CMS', 'DOL', 'DHS', 'GSA', 'SBA', 'ED', 'DOJ', 'DOT',
-      'USDA', 'DOE', 'EPA', 'NASA', 'FEMA', 'State', 'Other'
+    Title: prop.title(),
+    Agency: prop.select([
+      'VA',
+      'HHS',
+      'CMS',
+      'DOL',
+      'DHS',
+      'GSA',
+      'SBA',
+      'ED',
+      'DOJ',
+      'DOT',
+      'USDA',
+      'DOE',
+      'EPA',
+      'NASA',
+      'FEMA',
+      'State',
+      'Other',
     ]),
     'Sub-Agency': prop.text(),
-    'Description': prop.text(),
+    Description: prop.text(),
     'Estimated Release': prop.date(),
     'Estimated Value': prop.text(),
-    'NAICS': prop.text(),
-    'Set-Aside': prop.select(['Small Business', '8(a)', 'WOSB', 'HUBZone', 'SDVOSB', 'Unrestricted', 'TBD']),
+    NAICS: prop.text(),
+    'Set-Aside': prop.select([
+      'Small Business',
+      '8(a)',
+      'WOSB',
+      'HUBZone',
+      'SDVOSB',
+      'Unrestricted',
+      'TBD',
+    ]),
     'Relevance Score': prop.number(),
     'Source URL': prop.url(),
-    'Status': prop.select(['Upcoming', 'Released', 'Cancelled']),
+    Status: prop.select(['Upcoming', 'Released', 'Cancelled']),
     'SAM Link': prop.url(),
-    'Notes': prop.text(),
+    Notes: prop.text(),
     'Last Checked': prop.date(),
   };
 }
 
 function activityLogProperties(opportunitiesDbId?: string) {
   const props: Record<string, any> = {
-    'Date': prop.title(), // Using title as date display
-    'Agent': prop.select(['Maya', 'David', 'Rosa', 'James', 'Patricia']),
+    Date: prop.title(), // Using title as date display
+    Agent: prop.select(['Maya', 'David', 'Rosa', 'James', 'Patricia']),
     'Action Type': prop.select([
-      'Found Opportunity', 'Analyzed', 'Recommended Partner',
-      'Made Recommendation', 'Decision Requested', 'Decision Made'
+      'Found Opportunity',
+      'Analyzed',
+      'Recommended Partner',
+      'Made Recommendation',
+      'Decision Requested',
+      'Decision Made',
     ]),
-    'Summary': prop.text(),
-    'Notes': prop.text(),
+    Summary: prop.text(),
+    Notes: prop.text(),
   };
 
   if (opportunitiesDbId) {
@@ -301,24 +438,31 @@ function activityLogProperties(opportunitiesDbId?: string) {
 
 function feedbackLogProperties() {
   return {
-    'Date': prop.title(),
-    'Agent': prop.select(['Maya', 'David', 'Rosa', 'James', 'Patricia', 'System']),
-    'Feedback Type': prop.select(['Bug', 'Wrong Answer', 'Great Catch', 'Suggestion', 'Annoying', 'Missing Info']),
+    Date: prop.title(),
+    Agent: prop.select(['Maya', 'David', 'Rosa', 'James', 'Patricia', 'System']),
+    'Feedback Type': prop.select([
+      'Bug',
+      'Wrong Answer',
+      'Great Catch',
+      'Suggestion',
+      'Annoying',
+      'Missing Info',
+    ]),
     'What Happened': prop.text(),
     'What Should Happen': prop.text(),
-    'Severity': prop.select(['Minor', 'Medium', 'Major']),
-    'Resolved': prop.checkbox(),
-    'Resolution': prop.text(),
+    Severity: prop.select(['Minor', 'Medium', 'Major']),
+    Resolved: prop.checkbox(),
+    Resolution: prop.text(),
   };
 }
 
 function decisionsProperties(opportunitiesDbId?: string) {
   const props: Record<string, any> = {
-    'Title': prop.title(),
-    'Decision': prop.select(['Go', 'No-Go']),
-    'Date': prop.date(),
-    'Rationale': prop.text(),
-    'Outcome': prop.select(['Pending', 'Won', 'Lost', 'Cancelled']),
+    Title: prop.title(),
+    Decision: prop.select(['Go', 'No-Go']),
+    Date: prop.date(),
+    Rationale: prop.text(),
+    Outcome: prop.select(['Pending', 'Won', 'Lost', 'Cancelled']),
     'Lessons Learned': prop.text(),
   };
 
@@ -351,19 +495,9 @@ export async function createNotionHub(parentPageId: string): Promise<NotionHubId
     opportunitiesProperties()
   );
 
-  const partnersDbId = await createDatabase(
-    hubPageId,
-    'Partners',
-    '🤝',
-    partnersProperties()
-  );
+  const partnersDbId = await createDatabase(hubPageId, 'Partners', '🤝', partnersProperties());
 
-  const contactsDbId = await createDatabase(
-    hubPageId,
-    'Contacts',
-    '👥',
-    contactsProperties()
-  );
+  const contactsDbId = await createDatabase(hubPageId, 'Contacts', '👥', contactsProperties());
 
   const pastPerformanceDbId = await createDatabase(
     hubPageId,
@@ -372,12 +506,7 @@ export async function createNotionHub(parentPageId: string): Promise<NotionHubId
     pastPerformanceProperties()
   );
 
-  const forecastsDbId = await createDatabase(
-    hubPageId,
-    'Forecasts',
-    '🔮',
-    forecastsProperties()
-  );
+  const forecastsDbId = await createDatabase(hubPageId, 'Forecasts', '🔮', forecastsProperties());
 
   const activityLogDbId = await createDatabase(
     hubPageId,
@@ -393,100 +522,156 @@ export async function createNotionHub(parentPageId: string): Promise<NotionHubId
     feedbackLogProperties()
   );
 
-  const decisionsDbId = await createDatabase(
-    hubPageId,
-    'Decisions',
-    '📈',
-    decisionsProperties()
-  );
+  const decisionsDbId = await createDatabase(hubPageId, 'Decisions', '📈', decisionsProperties());
 
   // 3. Create sub-pages for Settings and Playbook
   console.log('\nCreating sub-pages...');
 
-  const settingsPageId = await createPage(hubPageId, 'Settings', '⚙️', [
+  await createPage(hubPageId, 'Settings', '⚙️', [
     {
       object: 'block',
       type: 'heading_2',
-      heading_2: { rich_text: [{ text: { content: 'Company Profile' } }] }
+      heading_2: { rich_text: [{ text: { content: 'Company Profile' } }] },
     },
     {
       object: 'block',
       type: 'paragraph',
-      paragraph: { rich_text: [{ text: { content: 'Company settings and profile information.' } }] }
+      paragraph: {
+        rich_text: [{ text: { content: 'Company settings and profile information.' } }],
+      },
     },
     {
       object: 'block',
       type: 'heading_2',
-      heading_2: { rich_text: [{ text: { content: 'Search Filters' } }] }
+      heading_2: { rich_text: [{ text: { content: 'Search Filters' } }] },
     },
     {
       object: 'block',
       type: 'paragraph',
-      paragraph: { rich_text: [{ text: { content: 'NAICS codes, keywords, and opportunity filters.' } }] }
+      paragraph: {
+        rich_text: [{ text: { content: 'NAICS codes, keywords, and opportunity filters.' } }],
+      },
     },
     {
       object: 'block',
       type: 'heading_2',
-      heading_2: { rich_text: [{ text: { content: 'Strategic Goals' } }] }
+      heading_2: { rich_text: [{ text: { content: 'Strategic Goals' } }] },
     },
     {
       object: 'block',
       type: 'paragraph',
-      paragraph: { rich_text: [{ text: { content: 'Current strategic priorities and capability gaps to fill.' } }] }
+      paragraph: {
+        rich_text: [
+          { text: { content: 'Current strategic priorities and capability gaps to fill.' } },
+        ],
+      },
     },
   ]);
   console.log(`  Created: Settings page`);
 
-  const playbookPageId = await createPage(hubPageId, 'Playbook', '📚', [
+  await createPage(hubPageId, 'Playbook', '📚', [
     {
       object: 'block',
       type: 'heading_2',
-      heading_2: { rich_text: [{ text: { content: 'How the System Works' } }] }
+      heading_2: { rich_text: [{ text: { content: 'How the System Works' } }] },
     },
     {
       object: 'block',
       type: 'paragraph',
-      paragraph: { rich_text: [{ text: { content: 'The AI BD Team scans SAM.gov daily for opportunities matching our profile. Maya finds opportunities, David analyzes them, Rosa identifies partners, James makes recommendations, and Patricia tracks everything.' } }] }
+      paragraph: {
+        rich_text: [
+          {
+            text: {
+              content:
+                'The AI BD Team scans SAM.gov daily for opportunities matching our profile. Maya finds opportunities, David analyzes them, Rosa identifies partners, James makes recommendations, and Patricia tracks everything.',
+            },
+          },
+        ],
+      },
     },
     {
       object: 'block',
       type: 'heading_2',
-      heading_2: { rich_text: [{ text: { content: 'Agent Roles' } }] }
+      heading_2: { rich_text: [{ text: { content: 'Agent Roles' } }] },
     },
     {
       object: 'block',
       type: 'bulleted_list_item',
-      bulleted_list_item: { rich_text: [{ text: { content: 'Maya (Scout): Finds opportunities on SAM.gov, assesses initial fit' } }] }
+      bulleted_list_item: {
+        rich_text: [
+          {
+            text: { content: 'Maya (Scout): Finds opportunities on SAM.gov, assesses initial fit' },
+          },
+        ],
+      },
     },
     {
       object: 'block',
       type: 'bulleted_list_item',
-      bulleted_list_item: { rich_text: [{ text: { content: 'David (Analyst): Researches incumbents, agencies, risks using FPDS/USASpending' } }] }
+      bulleted_list_item: {
+        rich_text: [
+          {
+            text: {
+              content:
+                'David (Analyst): Researches incumbents, agencies, risks using FPDS/USASpending',
+            },
+          },
+        ],
+      },
     },
     {
       object: 'block',
       type: 'bulleted_list_item',
-      bulleted_list_item: { rich_text: [{ text: { content: 'Rosa (Connector): Identifies teaming partners, manages relationships' } }] }
+      bulleted_list_item: {
+        rich_text: [
+          {
+            text: {
+              content: 'Rosa (Connector): Identifies teaming partners, manages relationships',
+            },
+          },
+        ],
+      },
     },
     {
       object: 'block',
       type: 'bulleted_list_item',
-      bulleted_list_item: { rich_text: [{ text: { content: 'James (Strategist): Synthesizes intel, makes Go/No-Go recommendations' } }] }
+      bulleted_list_item: {
+        rich_text: [
+          {
+            text: {
+              content: 'James (Strategist): Synthesizes intel, makes Go/No-Go recommendations',
+            },
+          },
+        ],
+      },
     },
     {
       object: 'block',
       type: 'bulleted_list_item',
-      bulleted_list_item: { rich_text: [{ text: { content: 'Patricia (PM): Tracks decisions, deadlines, action items' } }] }
+      bulleted_list_item: {
+        rich_text: [
+          { text: { content: 'Patricia (PM): Tracks decisions, deadlines, action items' } },
+        ],
+      },
     },
     {
       object: 'block',
       type: 'heading_2',
-      heading_2: { rich_text: [{ text: { content: 'Decision Criteria' } }] }
+      heading_2: { rich_text: [{ text: { content: 'Decision Criteria' } }] },
     },
     {
       object: 'block',
       type: 'paragraph',
-      paragraph: { rich_text: [{ text: { content: 'Go/No-Go decisions are based on: fit score, strategic value, past performance relevance, teaming options, timeline feasibility, and win probability.' } }] }
+      paragraph: {
+        rich_text: [
+          {
+            text: {
+              content:
+                'Go/No-Go decisions are based on: fit score, strategic value, past performance relevance, teaming options, timeline feasibility, and win probability.',
+            },
+          },
+        ],
+      },
     },
   ]);
   console.log(`  Created: Playbook page`);
@@ -542,7 +727,7 @@ export async function addOpportunityToNotion(
   }
 ): Promise<string> {
   const properties: Record<string, any> = {
-    'Name': { title: [{ text: { content: opportunity.name } }] },
+    Name: { title: [{ text: { content: opportunity.name } }] },
   };
 
   if (opportunity.status) {
@@ -585,16 +770,24 @@ export async function addOpportunityToNotion(
     properties['SAM Link'] = { url: opportunity.samLink };
   }
   if (opportunity.mayasTake) {
-    properties["Maya's Take"] = { rich_text: [{ text: { content: opportunity.mayasTake.slice(0, 2000) } }] };
+    properties["Maya's Take"] = {
+      rich_text: [{ text: { content: opportunity.mayasTake.slice(0, 2000) } }],
+    };
   }
   if (opportunity.davidsAnalysis) {
-    properties["David's Analysis"] = { rich_text: [{ text: { content: opportunity.davidsAnalysis.slice(0, 2000) } }] };
+    properties["David's Analysis"] = {
+      rich_text: [{ text: { content: opportunity.davidsAnalysis.slice(0, 2000) } }],
+    };
   }
   if (opportunity.rosasPartners) {
-    properties["Rosa's Partners"] = { rich_text: [{ text: { content: opportunity.rosasPartners.slice(0, 2000) } }] };
+    properties["Rosa's Partners"] = {
+      rich_text: [{ text: { content: opportunity.rosasPartners.slice(0, 2000) } }],
+    };
   }
   if (opportunity.jamesRecommendation) {
-    properties["James's Recommendation"] = { rich_text: [{ text: { content: opportunity.jamesRecommendation.slice(0, 2000) } }] };
+    properties["James's Recommendation"] = {
+      rich_text: [{ text: { content: opportunity.jamesRecommendation.slice(0, 2000) } }],
+    };
   }
   if (opportunity.incumbent) {
     properties['Incumbent'] = { rich_text: [{ text: { content: opportunity.incumbent } }] };
@@ -629,7 +822,9 @@ export async function updateOpportunityInNotion(
     } else if (key === 'rosasPartners') {
       properties["Rosa's Partners"] = { rich_text: [{ text: { content: value.slice(0, 2000) } }] };
     } else if (key === 'jamesRecommendation') {
-      properties["James's Recommendation"] = { rich_text: [{ text: { content: value.slice(0, 2000) } }] };
+      properties["James's Recommendation"] = {
+        rich_text: [{ text: { content: value.slice(0, 2000) } }],
+      };
     } else if (key === 'decision') {
       properties['Decision'] = { select: { name: value } };
     } else if (key === 'decisionDate') {
@@ -660,10 +855,10 @@ export async function logActivityToNotion(
   const date = new Date().toISOString().split('T')[0];
 
   const properties: Record<string, any> = {
-    'Date': { title: [{ text: { content: date } }] },
-    'Agent': { select: { name: activity.agent } },
+    Date: { title: [{ text: { content: date } }] },
+    Agent: { select: { name: activity.agent } },
     'Action Type': { select: { name: activity.actionType } },
-    'Summary': { rich_text: [{ text: { content: activity.summary.slice(0, 2000) } }] },
+    Summary: { rich_text: [{ text: { content: activity.summary.slice(0, 2000) } }] },
   };
 
   if (activity.notes) {
@@ -695,16 +890,18 @@ export async function logFeedbackToNotion(
   const date = new Date().toISOString().split('T')[0];
 
   const properties: Record<string, any> = {
-    'Date': { title: [{ text: { content: date } }] },
-    'Agent': { select: { name: feedback.agent } },
+    Date: { title: [{ text: { content: date } }] },
+    Agent: { select: { name: feedback.agent } },
     'Feedback Type': { select: { name: feedback.feedbackType } },
     'What Happened': { rich_text: [{ text: { content: feedback.whatHappened } }] },
-    'Severity': { select: { name: feedback.severity } },
-    'Resolved': { checkbox: false },
+    Severity: { select: { name: feedback.severity } },
+    Resolved: { checkbox: false },
   };
 
   if (feedback.whatShouldHappen) {
-    properties['What Should Happen'] = { rich_text: [{ text: { content: feedback.whatShouldHappen } }] };
+    properties['What Should Happen'] = {
+      rich_text: [{ text: { content: feedback.whatShouldHappen } }],
+    };
   }
 
   const result = await notionRequest('/pages', 'POST', {

@@ -15,7 +15,6 @@ import 'dotenv/config';
 import * as fs from 'fs';
 import {
   addOpportunityToNotion,
-  updateOpportunityInNotion,
   logActivityToNotion,
   logFeedbackToNotion,
   queryNotionDatabase,
@@ -102,10 +101,7 @@ async function syncOpportunities(hubIds: NotionHubIds) {
       });
 
       // Update Supabase with Notion page ID
-      await supabase
-        .from('seen_opportunities')
-        .update({ notion_page_id: pageId })
-        .eq('id', opp.id);
+      await supabase.from('seen_opportunities').update({ notion_page_id: pageId }).eq('id', opp.id);
 
       // Log activity
       await logActivityToNotion(hubIds.activityLogDbId, {
@@ -156,28 +152,38 @@ async function syncForecasts(hubIds: NotionHubIds) {
       const result = await fetch('https://api.notion.com/v1/pages', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${process.env.NOTION_API_KEY}`,
+          Authorization: `Bearer ${process.env.NOTION_API_KEY}`,
           'Notion-Version': '2022-06-28',
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           parent: { database_id: hubIds.forecastsDbId },
           properties: {
-            'Title': { title: [{ text: { content: forecast.title || 'Untitled' } }] },
-            'Agency': { select: { name: mapAgency(forecast.agency) } },
-            'Description': { rich_text: [{ text: { content: (forecast.description || '').slice(0, 2000) } }] },
-            'Estimated Value': { rich_text: [{ text: { content: forecast.estimated_value || 'TBD' } }] },
+            Title: { title: [{ text: { content: forecast.title || 'Untitled' } }] },
+            Agency: { select: { name: mapAgency(forecast.agency) } },
+            Description: {
+              rich_text: [{ text: { content: (forecast.description || '').slice(0, 2000) } }],
+            },
+            'Estimated Value': {
+              rich_text: [{ text: { content: forecast.estimated_value || 'TBD' } }],
+            },
             'Relevance Score': { number: forecast.relevance_score },
             'Source URL': { url: forecast.source_url || null },
-            'Status': { select: { name: 'Upcoming' } },
-            ...(forecast.estimated_release ? { 'Estimated Release': { date: { start: forecast.estimated_release } } } : {}),
-            ...(forecast.naics_code ? { 'NAICS': { rich_text: [{ text: { content: forecast.naics_code } }] } } : {}),
-            ...(forecast.set_aside ? { 'Set-Aside': { select: { name: mapSetAside(forecast.set_aside) } } } : {}),
+            Status: { select: { name: 'Upcoming' } },
+            ...(forecast.estimated_release
+              ? { 'Estimated Release': { date: { start: forecast.estimated_release } } }
+              : {}),
+            ...(forecast.naics_code
+              ? { NAICS: { rich_text: [{ text: { content: forecast.naics_code } }] } }
+              : {}),
+            ...(forecast.set_aside
+              ? { 'Set-Aside': { select: { name: mapSetAside(forecast.set_aside) } } }
+              : {}),
           },
         }),
       });
 
-      const data = await result.json() as { id?: string };
+      const data = (await result.json()) as { id?: string };
 
       if (data.id) {
         // Update Supabase with Notion page ID
@@ -246,10 +252,7 @@ async function syncFeedback(hubIds: NotionHubIds) {
       });
 
       // Update Supabase with Notion page ID
-      await supabase
-        .from('system_feedback')
-        .update({ notion_page_id: pageId })
-        .eq('id', fb.id);
+      await supabase.from('system_feedback').update({ notion_page_id: pageId }).eq('id', fb.id);
 
       console.log(`  ✓ Synced feedback: ${fb.what_happened?.slice(0, 50)}...`);
     } catch (err) {
@@ -265,9 +268,7 @@ async function syncDecisions(hubIds: NotionHubIds) {
   try {
     // Query opportunities with decisions
     const pages = await queryNotionDatabase(hubIds.opportunitiesDbId, {
-      and: [
-        { property: 'Decision', select: { is_not_empty: true } },
-      ],
+      and: [{ property: 'Decision', select: { is_not_empty: true } }],
     });
 
     let synced = 0;
@@ -310,7 +311,7 @@ async function syncDecisions(hubIds: NotionHubIds) {
 }
 
 // Run daily sync check (for Patricia)
-async function runDailySyncCheck(hubIds: NotionHubIds): Promise<string> {
+async function runDailySyncCheck(_hubIds: NotionHubIds): Promise<string> {
   const supabase = getSupabase();
 
   // Count items that need syncing

@@ -26,18 +26,42 @@ const MAX_CONTENT_LENGTH = 50000; // ~50k chars, roughly 12k tokens
 
 // Supported file types
 const SUPPORTED_TEXT_TYPES = [
-  'text', 'txt', 'md', 'markdown', 'csv', 'json', 'xml', 'html', 'htm',
-  'js', 'ts', 'py', 'java', 'c', 'cpp', 'h', 'css', 'scss', 'yaml', 'yml',
-  'sh', 'bash', 'sql', 'log', 'ini', 'conf', 'cfg', 'env', 'gitignore'
+  'text',
+  'txt',
+  'md',
+  'markdown',
+  'csv',
+  'json',
+  'xml',
+  'html',
+  'htm',
+  'js',
+  'ts',
+  'py',
+  'java',
+  'c',
+  'cpp',
+  'h',
+  'css',
+  'scss',
+  'yaml',
+  'yml',
+  'sh',
+  'bash',
+  'sql',
+  'log',
+  'ini',
+  'conf',
+  'cfg',
+  'env',
+  'gitignore',
 ];
-
-const SUPPORTED_DOC_TYPES = ['pdf', 'doc', 'docx', 'rtf'];
 
 /**
  * Download and parse files from a Slack message
  */
 export async function parseSlackFiles(
-  client: WebClient,
+  _client: WebClient,
   files: SlackFile[],
   botToken: string
 ): Promise<ParsedFileContent[]> {
@@ -48,20 +72,20 @@ export async function parseSlackFiles(
       console.log(`Parsing file: ${file.name} (${file.filetype}, ${formatBytes(file.size)})`);
 
       // Check file size - skip very large files
-      if (file.size > 10 * 1024 * 1024) { // 10MB limit
+      if (file.size > 10 * 1024 * 1024) {
+        // 10MB limit
         results.push({
           filename: file.name,
           filetype: file.filetype,
           content: '',
           truncated: false,
-          error: `File too large (${formatBytes(file.size)}). Maximum is 10MB.`
+          error: `File too large (${formatBytes(file.size)}). Maximum is 10MB.`,
         });
         continue;
       }
 
       const content = await downloadAndParseFile(file, botToken);
       results.push(content);
-
     } catch (error) {
       console.error(`Error parsing file ${file.name}:`, error);
       results.push({
@@ -69,7 +93,7 @@ export async function parseSlackFiles(
         filetype: file.filetype,
         content: '',
         truncated: false,
-        error: `Failed to parse: ${error instanceof Error ? error.message : 'Unknown error'}`
+        error: `Failed to parse: ${error instanceof Error ? error.message : 'Unknown error'}`,
       });
     }
   }
@@ -80,16 +104,13 @@ export async function parseSlackFiles(
 /**
  * Download file content and parse based on type
  */
-async function downloadAndParseFile(
-  file: SlackFile,
-  botToken: string
-): Promise<ParsedFileContent> {
+async function downloadAndParseFile(file: SlackFile, botToken: string): Promise<ParsedFileContent> {
   const downloadUrl = file.url_private_download || file.url_private;
 
   // Download the file
   const response = await fetch(downloadUrl, {
     headers: {
-      'Authorization': `Bearer ${botToken}`,
+      Authorization: `Bearer ${botToken}`,
     },
   });
 
@@ -106,7 +127,9 @@ async function downloadAndParseFile(
     return {
       filename: file.name,
       filetype: file.filetype,
-      content: truncated ? text.substring(0, MAX_CONTENT_LENGTH) + '\n\n[... content truncated ...]' : text,
+      content: truncated
+        ? text.substring(0, MAX_CONTENT_LENGTH) + '\n\n[... content truncated ...]'
+        : text,
       truncated,
     };
   }
@@ -119,20 +142,27 @@ async function downloadAndParseFile(
     return {
       filename: file.name,
       filetype: 'pdf',
-      content: truncated ? text.substring(0, MAX_CONTENT_LENGTH) + '\n\n[... content truncated ...]' : text,
+      content: truncated
+        ? text.substring(0, MAX_CONTENT_LENGTH) + '\n\n[... content truncated ...]'
+        : text,
       truncated,
     };
   }
 
   // Handle Word documents
-  if (filetype === 'docx' || file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+  if (
+    filetype === 'docx' ||
+    file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  ) {
     const buffer = await response.arrayBuffer();
     const text = await extractTextFromDocx(Buffer.from(buffer));
     const truncated = text.length > MAX_CONTENT_LENGTH;
     return {
       filename: file.name,
       filetype: 'docx',
-      content: truncated ? text.substring(0, MAX_CONTENT_LENGTH) + '\n\n[... content truncated ...]' : text,
+      content: truncated
+        ? text.substring(0, MAX_CONTENT_LENGTH) + '\n\n[... content truncated ...]'
+        : text,
       truncated,
     };
   }
@@ -143,7 +173,7 @@ async function downloadAndParseFile(
     filetype: file.filetype,
     content: '',
     truncated: false,
-    error: `Unsupported file type: ${file.filetype}. Supported: text files, PDF, Word documents.`
+    error: `Unsupported file type: ${file.filetype}. Supported: text files, PDF, Word documents.`,
   };
 }
 

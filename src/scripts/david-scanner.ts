@@ -19,16 +19,13 @@ import cron from 'node-cron';
 import { App } from '@slack/bolt';
 import { getAnthropic } from '../integrations/claude.js';
 import { getSupabase } from '../integrations/supabase.js';
-import { searchNews, searchCompetitorNews, type NewsArticle } from '../integrations/news-search.js';
-import { findIncumbent, formatFPDSForAgent } from '../integrations/fpds.js';
+import { searchNews, searchCompetitorNews } from '../integrations/news-search.js';
+import { findIncumbent } from '../integrations/fpds.js';
 import { loadCompanyContext, formatCompanyContextForPrompt } from '../context/company-context.js';
-import { gatherResearchContext, formatResearchContext } from '../integrations/research-context.js';
-import { bold, bullets, formatIntelBrief } from '../utils/slack-format.js';
 import {
   saveCompetitorIntel,
   getCompetitorIntelByAgency,
   getRecentCompetitorIntel,
-  type CompetitorIntel,
 } from '../integrations/supabase.js';
 
 const CHANNEL_ID = process.env.SLACK_CHANNEL_ID || '';
@@ -78,25 +75,12 @@ async function getDavidApp(): Promise<App | null> {
   return app;
 }
 
-// David's voice patterns for morning briefs
-const MORNING_OPENERS = [
-  "Alright, here's what I found this morning.",
-  "Morning intel brief. Grabbed my coffee, here's what we're looking at.",
-  "So, did my rounds. Here's what's happening.",
-  "Okay, here's the morning rundown.",
-  "Quick brief before you all dive in.",
-];
-
 const QUIET_MORNING_MESSAGES = [
-  "Did my morning scan - nothing significant on the competitor front. Quiet day so far.",
+  'Did my morning scan - nothing significant on the competitor front. Quiet day so far.',
   "Checked the usual sources. It's quiet out there today. I'll keep watching.",
-  "Morning scan complete - no major moves from our competitors. Sometimes no news is good news.",
-  "Ran through everything. Nothing worth flagging right now. Will update if that changes.",
+  'Morning scan complete - no major moves from our competitors. Sometimes no news is good news.',
+  'Ran through everything. Nothing worth flagging right now. Will update if that changes.',
 ];
-
-function getRandomOpener(): string {
-  return MORNING_OPENERS[Math.floor(Math.random() * MORNING_OPENERS.length)];
-}
 
 function getQuietMorningMessage(): string {
   return QUIET_MORNING_MESSAGES[Math.floor(Math.random() * QUIET_MORNING_MESSAGES.length)];
@@ -239,10 +223,10 @@ async function analyzeCompetitorPatterns(): Promise<PatternInsight[]> {
 async function saveIntelToDatabase(intel: CompetitorIntelItem[]): Promise<void> {
   // Map local types to database types
   const typeMap: Record<string, 'protest' | 'performance' | 'award' | 'debarment' | 'general'> = {
-    'win': 'award',
-    'loss': 'general',
-    'protest': 'protest',
-    'news': 'general',
+    win: 'award',
+    loss: 'general',
+    protest: 'protest',
+    news: 'general',
   };
 
   for (const item of intel) {
@@ -273,13 +257,14 @@ async function checkForAlerts(): Promise<PatternInsight[]> {
       const agencyIntel = await getCompetitorIntelByAgency(agency.code, 10);
 
       // Check for recent wins at this agency
-      const recentWins = agencyIntel.filter(i => {
-        const daysAgo = (Date.now() - new Date(i.discovered_at || 0).getTime()) / (1000 * 60 * 60 * 24);
+      const recentWins = agencyIntel.filter((i) => {
+        const daysAgo =
+          (Date.now() - new Date(i.discovered_at || 0).getTime()) / (1000 * 60 * 60 * 24);
         return daysAgo <= 7 && i.intel_type === 'award';
       });
 
       if (recentWins.length > 0) {
-        const winners = [...new Set(recentWins.map(w => w.company_name))];
+        const winners = [...new Set(recentWins.map((w) => w.company_name))];
         alerts.push({
           type: 'alert',
           insight: `🚨 ${agency.name}: ${winners.join(', ')} won contracts this week at our target agency`,
@@ -300,7 +285,8 @@ async function scanCompetitorNews(): Promise<CompetitorIntelItem[]> {
   console.log('Scanning competitor news...');
   const intel: CompetitorIntelItem[] = [];
 
-  for (const competitor of COMPETITORS.slice(0, 6)) { // Top 6 to avoid rate limits
+  for (const competitor of COMPETITORS.slice(0, 6)) {
+    // Top 6 to avoid rate limits
     try {
       console.log(`  Checking ${competitor}...`);
       const result = await searchCompetitorNews({
@@ -341,7 +327,7 @@ async function scanCompetitorNews(): Promise<CompetitorIntelItem[]> {
         });
       }
 
-      await new Promise(r => setTimeout(r, 500)); // Rate limit
+      await new Promise((r) => setTimeout(r, 500)); // Rate limit
     } catch (err) {
       console.warn(`  Error checking ${competitor}:`, err);
     }
@@ -378,7 +364,7 @@ async function checkGAOProtests(): Promise<CompetitorIntelItem[]> {
         }
       }
 
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 500));
     } catch (err) {
       console.warn(`  Error checking ${agency.name} protests:`, err);
     }
@@ -388,14 +374,16 @@ async function checkGAOProtests(): Promise<CompetitorIntelItem[]> {
 }
 
 // Get Maya's recent opportunities that need research
-async function getMayasRecentOpportunities(): Promise<Array<{
-  noticeId: string;
-  title: string;
-  agency: string;
-  score: number;
-  postedAt: string;
-  threadTs?: string;
-}>> {
+async function getMayasRecentOpportunities(): Promise<
+  Array<{
+    noticeId: string;
+    title: string;
+    agency: string;
+    score: number;
+    postedAt: string;
+    threadTs?: string;
+  }>
+> {
   try {
     const supabase = getSupabase();
 
@@ -415,7 +403,7 @@ async function getMayasRecentOpportunities(): Promise<Array<{
       return [];
     }
 
-    return (data || []).map(opp => ({
+    return (data || []).map((opp) => ({
       noticeId: opp.notice_id,
       title: opp.title,
       agency: 'Unknown', // Would need to store this in seen_opportunities
@@ -483,7 +471,6 @@ async function researchOpportunity(
     if (lowerTitle.includes('j&a') || lowerTitle.includes('justification and approval')) {
       research.redFlags.push('J&A indicates limited competition');
     }
-
   } catch (err) {
     console.warn(`  Error researching ${noticeId}:`, err);
   }
@@ -496,20 +483,28 @@ async function generateMorningBrief(brief: MorningBrief): Promise<string> {
   const client = getAnthropic();
 
   // Format the intel for the prompt
-  const competitorSection = brief.competitorIntel.length > 0
-    ? brief.competitorIntel.map(i => `- ${i.company}: ${i.summary} (${i.type})`).join('\n')
-    : 'Nothing significant from competitors today.';
+  const competitorSection =
+    brief.competitorIntel.length > 0
+      ? brief.competitorIntel.map((i) => `- ${i.company}: ${i.summary} (${i.type})`).join('\n')
+      : 'Nothing significant from competitors today.';
 
-  const incumbentSection = brief.incumbentResearch.length > 0
-    ? brief.incumbentResearch.map(r =>
-        `- ${r.opportunityTitle.slice(0, 60)}...\n  Incumbent: ${r.incumbent || 'No prior contract found (may be new work)'}, Value: ${r.contractValue || 'N/A'}${r.redFlags.length > 0 ? `\n  Red flags: ${r.redFlags.join(', ')}` : ''}`
-      ).join('\n')
-    : 'No new opportunities needed incumbent research.';
+  const incumbentSection =
+    brief.incumbentResearch.length > 0
+      ? brief.incumbentResearch
+          .map(
+            (r) =>
+              `- ${r.opportunityTitle.slice(0, 60)}...\n  Incumbent: ${r.incumbent || 'No prior contract found (may be new work)'}, Value: ${r.contractValue || 'N/A'}${r.redFlags.length > 0 ? `\n  Red flags: ${r.redFlags.join(', ')}` : ''}`
+          )
+          .join('\n')
+      : 'No new opportunities needed incumbent research.';
 
   // Format patterns for the prompt
-  const patternsSection = brief.patterns.length > 0
-    ? brief.patterns.map(p => `- [${p.type.toUpperCase()}] ${p.insight} (confidence: ${p.confidence})`).join('\n')
-    : '';
+  const patternsSection =
+    brief.patterns.length > 0
+      ? brief.patterns
+          .map((p) => `- [${p.type.toUpperCase()}] ${p.insight} (confidence: ${p.confidence})`)
+          .join('\n')
+      : '';
 
   const prompt = `You are David, the analyst for Friends From The City. You're posting a morning intel brief to #bd-team.
 
@@ -527,7 +522,7 @@ ${competitorSection}
 INCUMBENT RESEARCH (for yesterday's opportunities):
 ${incumbentSection}
 
-${brief.redFlags.length > 0 ? `RED FLAGS SURFACED:\n${brief.redFlags.map(r => `- ${r}`).join('\n')}` : ''}
+${brief.redFlags.length > 0 ? `RED FLAGS SURFACED:\n${brief.redFlags.map((r) => `- ${r}`).join('\n')}` : ''}
 
 ${patternsSection ? `PATTERN ANALYSIS (from historical data):\n${patternsSection}` : ''}
 
@@ -555,9 +550,13 @@ STRUCTURE YOUR POST LIKE THIS:
 
 ${brief.redFlags.length > 0 ? '*Red Flags*\n• [Concern]\n• [Concern]' : ''}
 
-${brief.patterns.length > 0 ? `*Patterns I'm Tracking*
+${
+  brief.patterns.length > 0
+    ? `*Patterns I'm Tracking*
 • [Trend or insight from pattern analysis]
-• [What this means for our strategy]` : ''}
+• [What this means for our strategy]`
+    : ''
+}
 
 [Closing line - offer to dig deeper]
 
@@ -571,7 +570,7 @@ If there's nothing significant, say so briefly.`;
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const textBlock = response.content.find(b => b.type === 'text');
+  const textBlock = response.content.find((b) => b.type === 'text');
   return textBlock?.type === 'text' ? textBlock.text : '';
 }
 
@@ -618,7 +617,7 @@ Keep it under 200 words. Be direct. If you couldn't find much, say so honestly.`
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const textBlock = response.content.find(b => b.type === 'text');
+  const textBlock = response.content.find((b) => b.type === 'text');
   return textBlock?.type === 'text' ? textBlock.text : '';
 }
 
@@ -661,14 +660,14 @@ export async function runDailyScan() {
   const protestIntel = await checkGAOProtests();
 
   // Phase 3: Research Maya's opportunities
-  console.log('\nPhase 3: Auto-Research Maya\'s Opportunities');
+  console.log("\nPhase 3: Auto-Research Maya's Opportunities");
   const mayaOpps = await getMayasRecentOpportunities();
   const incumbentResearch: IncumbentResearch[] = [];
 
   for (const opp of mayaOpps) {
     const research = await researchOpportunity(opp.noticeId, opp.title, opp.agency);
     incumbentResearch.push(research);
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise((r) => setTimeout(r, 1000));
   }
 
   // Phase 4: Pattern analysis (new!)
@@ -682,13 +681,14 @@ export async function runDailyScan() {
   console.log('\nSaving intel to database for pattern tracking...');
   await saveIntelToDatabase(allIntel);
 
-  const allRedFlags = incumbentResearch.flatMap(r => r.redFlags);
+  const allRedFlags = incumbentResearch.flatMap((r) => r.redFlags);
 
   const brief: MorningBrief = {
     competitorIntel: allIntel,
     incumbentResearch,
     redFlags: allRedFlags,
-    hasSignificantNews: allIntel.length > 0 || incumbentResearch.some(r => r.incumbent) || allPatterns.length > 0,
+    hasSignificantNews:
+      allIntel.length > 0 || incumbentResearch.some((r) => r.incumbent) || allPatterns.length > 0,
     patterns: allPatterns,
   };
 
@@ -698,9 +698,9 @@ export async function runDailyScan() {
     await postToSlack(app, message);
 
     // Post alerts separately if significant
-    const highPriorityAlerts = alerts.filter(a => a.confidence === 'HIGH');
+    const highPriorityAlerts = alerts.filter((a) => a.confidence === 'HIGH');
     if (highPriorityAlerts.length > 0) {
-      const alertMessage = `🚨 *Competitive Alert*\n\n${highPriorityAlerts.map(a => `• ${a.insight}`).join('\n')}\n\nThese are target agencies - worth keeping an eye on.`;
+      const alertMessage = `🚨 *Competitive Alert*\n\n${highPriorityAlerts.map((a) => `• ${a.insight}`).join('\n')}\n\nThese are target agencies - worth keeping an eye on.`;
       await postToSlack(app, alertMessage);
     }
 
@@ -824,7 +824,7 @@ async function main() {
     console.log('\nSchedule (CST - UTC-6):');
     console.log('  - 7:00 AM CST (13:00 UTC): Competitor intel scan');
     console.log('  - 7:30 AM CST (13:30 UTC): GAO protest check');
-    console.log('  - 8:00 AM CST (14:00 UTC): Auto-research Maya\'s opportunities');
+    console.log("  - 8:00 AM CST (14:00 UTC): Auto-research Maya's opportunities");
     console.log('  - Press Ctrl+C to stop\n');
 
     // Run immediately on start
@@ -846,7 +846,6 @@ async function main() {
     });
 
     console.log('Scheduler running...');
-
   } else {
     // One-time scan
     await runDailyScan();

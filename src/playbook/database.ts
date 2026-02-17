@@ -6,7 +6,6 @@ import type {
   ActiveRule,
   ProposeRuleInput,
   PlaybookApplication,
-  RetrospectiveRun,
   RuleHealthCheck,
   RuleCategoryValue,
 } from './types.js';

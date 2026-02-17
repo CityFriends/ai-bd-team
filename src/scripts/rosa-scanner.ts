@@ -22,15 +22,11 @@ import {
   getSupabase,
   savePartnerCompany,
   getActivePartners,
-  getTeamingHistory,
   searchPartnersByCertification,
   searchPartnersByAgency,
   formatPartnerForContext,
-  type PartnerCompany,
 } from '../integrations/supabase.js';
-import { loadCompanyContext, formatCompanyContextForPrompt } from '../context/company-context.js';
 import { searchSAMEntities, type SAMEntity } from '../integrations/sam-entity.js';
-import { bold, bullets, formatPartnerReport } from '../utils/slack-format.js';
 
 const CHANNEL_ID = process.env.SLACK_CHANNEL_ID || '';
 
@@ -53,17 +49,12 @@ const PARTNER_NAICS_CODES = [
 
 // Certifications we value in partners
 const TARGET_CERTIFICATIONS = [
-  '8(a)',           // 8(a) Business Development
-  'WOSB',           // Women-Owned Small Business
-  'EDWOSB',         // Economically Disadvantaged WOSB
-  'SDVOSB',         // Service-Disabled Veteran-Owned
-  'HUBZone',        // Historically Underutilized Business Zone
-  'SDB',            // Small Disadvantaged Business
-];
-
-// Target agencies where partner relationships matter most
-const TARGET_AGENCIES = [
-  'VA', 'HHS', 'CMS', 'DOL', 'ED', 'SBA', 'SSA', 'GSA',
+  '8(a)', // 8(a) Business Development
+  'WOSB', // Women-Owned Small Business
+  'EDWOSB', // Economically Disadvantaged WOSB
+  'SDVOSB', // Service-Disabled Veteran-Owned
+  'HUBZone', // Historically Underutilized Business Zone
+  'SDB', // Small Disadvantaged Business
 ];
 
 // Initialize Rosa's Slack app
@@ -105,7 +96,8 @@ async function searchSAMForPartners(): Promise<PartnerCandidate[]> {
   const candidates: PartnerCandidate[] = [];
 
   // Search by NAICS codes with small business filter
-  for (const naics of PARTNER_NAICS_CODES.slice(0, 5)) { // Limit to avoid rate limits
+  for (const naics of PARTNER_NAICS_CODES.slice(0, 5)) {
+    // Limit to avoid rate limits
     try {
       console.log(`  Searching NAICS ${naics}...`);
 
@@ -134,7 +126,7 @@ async function searchSAMForPartners(): Promise<PartnerCandidate[]> {
         }
       }
 
-      await new Promise(r => setTimeout(r, 1000)); // Rate limit
+      await new Promise((r) => setTimeout(r, 1000)); // Rate limit
     } catch (err) {
       console.warn(`  Error searching NAICS ${naics}:`, err);
     }
@@ -142,7 +134,7 @@ async function searchSAMForPartners(): Promise<PartnerCandidate[]> {
 
   // Deduplicate by UEI
   const seen = new Set<string>();
-  return candidates.filter(c => {
+  return candidates.filter((c) => {
     if (!c.uei || seen.has(c.uei)) return false;
     seen.add(c.uei);
     return true;
@@ -175,7 +167,7 @@ function extractCertifications(entity: SAMEntity): string[] {
   return certs;
 }
 
-function hasTargetAgencyExperience(entity: SAMEntity): boolean {
+function hasTargetAgencyExperience(_entity: SAMEntity): boolean {
   // This would require additional data - for now return false
   // In future, could cross-reference with FPDS data
   return false;
@@ -231,13 +223,11 @@ async function getExistingPartners(): Promise<string[]> {
         .from('companies')
         .select('name')
         .in('relationship_status', ['researched', 'contacted', 'met', 'teamed']),
-      supabase
-        .from('partner_companies')
-        .select('company_name'),
+      supabase.from('partner_companies').select('company_name'),
     ]);
 
-    const oldNames = (oldData.data || []).map(c => c.name?.toLowerCase()).filter(Boolean);
-    const newNames = (newData.data || []).map(c => c.company_name?.toLowerCase()).filter(Boolean);
+    const oldNames = (oldData.data || []).map((c) => c.name?.toLowerCase()).filter(Boolean);
+    const newNames = (newData.data || []).map((c) => c.company_name?.toLowerCase()).filter(Boolean);
 
     return [...new Set([...oldNames, ...newNames])];
   } catch {
@@ -250,10 +240,12 @@ async function generatePartnerReport(candidates: PartnerCandidate[]): Promise<st
   const client = getAnthropic();
 
   // Group by certification
-  const by8a = candidates.filter(c => c.certifications.includes('8(a)'));
-  const byWOSB = candidates.filter(c => c.certifications.includes('WOSB') || c.certifications.includes('EDWOSB'));
-  const bySDVOSB = candidates.filter(c => c.certifications.includes('SDVOSB'));
-  const byHubzone = candidates.filter(c => c.certifications.includes('HUBZone'));
+  const by8a = candidates.filter((c) => c.certifications.includes('8(a)'));
+  const byWOSB = candidates.filter(
+    (c) => c.certifications.includes('WOSB') || c.certifications.includes('EDWOSB')
+  );
+  const bySDVOSB = candidates.filter((c) => c.certifications.includes('SDVOSB'));
+  const byHubzone = candidates.filter((c) => c.certifications.includes('HUBZone'));
 
   const prompt = `You are Rosa, the connector for Friends From The City's BD team.
 
@@ -266,16 +258,36 @@ YOUR VOICE:
 You just completed your weekly partner landscape scan. Here's what you found:
 
 8(a) CERTIFIED FIRMS (${by8a.length}):
-${by8a.slice(0, 5).map(c => `- ${c.name} (${c.location || 'Unknown'}): ${c.whyRelevant.join(', ')}`).join('\n') || 'None found this week'}
+${
+  by8a
+    .slice(0, 5)
+    .map((c) => `- ${c.name} (${c.location || 'Unknown'}): ${c.whyRelevant.join(', ')}`)
+    .join('\n') || 'None found this week'
+}
 
 WOSB/EDWOSB FIRMS (${byWOSB.length}):
-${byWOSB.slice(0, 5).map(c => `- ${c.name} (${c.location || 'Unknown'}): ${c.whyRelevant.join(', ')}`).join('\n') || 'None found this week'}
+${
+  byWOSB
+    .slice(0, 5)
+    .map((c) => `- ${c.name} (${c.location || 'Unknown'}): ${c.whyRelevant.join(', ')}`)
+    .join('\n') || 'None found this week'
+}
 
 SDVOSB FIRMS (${bySDVOSB.length}):
-${bySDVOSB.slice(0, 3).map(c => `- ${c.name} (${c.location || 'Unknown'}): ${c.whyRelevant.join(', ')}`).join('\n') || 'None found this week'}
+${
+  bySDVOSB
+    .slice(0, 3)
+    .map((c) => `- ${c.name} (${c.location || 'Unknown'}): ${c.whyRelevant.join(', ')}`)
+    .join('\n') || 'None found this week'
+}
 
 HUBZONE FIRMS (${byHubzone.length}):
-${byHubzone.slice(0, 3).map(c => `- ${c.name} (${c.location || 'Unknown'}): ${c.whyRelevant.join(', ')}`).join('\n') || 'None found this week'}
+${
+  byHubzone
+    .slice(0, 3)
+    .map((c) => `- ${c.name} (${c.location || 'Unknown'}): ${c.whyRelevant.join(', ')}`)
+    .join('\n') || 'None found this week'
+}
 
 Write a brief weekly partner landscape report for #bd-team.
 
@@ -310,7 +322,7 @@ End with something like "Let me know if you want me to dig deeper on any of thes
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const textBlock = response.content.find(b => b.type === 'text');
+  const textBlock = response.content.find((b) => b.type === 'text');
   return textBlock?.type === 'text' ? textBlock.text : '';
 }
 
@@ -319,7 +331,7 @@ function getQuietWeekMessage(): string {
   const messages = [
     "Did my weekly partner scan - it's quiet out there. Either folks aren't updating their SAM registrations, or we've already identified the good ones. I'll cast a wider net next week.",
     "Ran through the usual sources for partners this week. Nothing jumped out that we don't already know about. Let me know if there's a specific capability gap I should focus on.",
-    "Partner landscape scan complete. Slim pickings this week - might be worth looking at industry events or GovCon conferences for fresh connections. Thoughts?",
+    'Partner landscape scan complete. Slim pickings this week - might be worth looking at industry events or GovCon conferences for fresh connections. Thoughts?',
   ];
   return messages[Math.floor(Math.random() * messages.length)];
 }
@@ -386,7 +398,9 @@ export async function getRelationshipContext(params: {
     if (agencyPartners.length > 0) {
       lines.push(`\n*Partners with ${params.agencyCode} Experience:*`);
       for (const partner of agencyPartners.slice(0, 3)) {
-        lines.push(`• ${partner.company_name} - ${partner.certifications?.join(', ') || 'No certs'}`);
+        lines.push(
+          `• ${partner.company_name} - ${partner.certifications?.join(', ') || 'No certs'}`
+        );
       }
     }
   }
@@ -423,9 +437,7 @@ export async function runWeeklyPartnerScan(): Promise<void> {
 
   // Filter out companies we already know
   const existingPartners = await getExistingPartners();
-  const newCandidates = candidates.filter(c =>
-    !existingPartners.includes(c.name.toLowerCase())
-  );
+  const newCandidates = candidates.filter((c) => !existingPartners.includes(c.name.toLowerCase()));
   console.log(`${newCandidates.length} are new (not in our database)`);
 
   // Generate and post report
@@ -479,12 +491,12 @@ export async function generateDetailedReport(): Promise<string> {
       return 'No partner candidates in database yet. Run `npm run rosa:scan` to populate.';
     }
 
-    const by8a = companies.filter(c => c.certifications?.includes('8(a)'));
-    const byWOSB = companies.filter(c =>
-      c.certifications?.includes('WOSB') || c.certifications?.includes('EDWOSB')
+    const by8a = companies.filter((c) => c.certifications?.includes('8(a)'));
+    const byWOSB = companies.filter(
+      (c) => c.certifications?.includes('WOSB') || c.certifications?.includes('EDWOSB')
     );
-    const bySDVOSB = companies.filter(c => c.certifications?.includes('SDVOSB'));
-    const teamed = companies.filter(c => c.relationship_status === 'teamed');
+    const bySDVOSB = companies.filter((c) => c.certifications?.includes('SDVOSB'));
+    const teamed = companies.filter((c) => c.relationship_status === 'teamed');
 
     let report = '*Partner Landscape Report*\n\n';
     report += `Total companies tracked: ${companies.length}\n\n`;
@@ -495,9 +507,9 @@ export async function generateDetailedReport(): Promise<string> {
     report += `• SDVOSB: ${bySDVOSB.length} companies\n\n`;
 
     report += `*Relationship Status:*\n`;
-    report += `• Researched: ${companies.filter(c => c.relationship_status === 'researched').length}\n`;
-    report += `• Contacted: ${companies.filter(c => c.relationship_status === 'contacted').length}\n`;
-    report += `• Met: ${companies.filter(c => c.relationship_status === 'met').length}\n`;
+    report += `• Researched: ${companies.filter((c) => c.relationship_status === 'researched').length}\n`;
+    report += `• Contacted: ${companies.filter((c) => c.relationship_status === 'contacted').length}\n`;
+    report += `• Met: ${companies.filter((c) => c.relationship_status === 'met').length}\n`;
     report += `• Teamed: ${teamed.length}\n\n`;
 
     if (teamed.length > 0) {
@@ -543,7 +555,6 @@ async function main() {
     });
 
     console.log('Scheduler running...');
-
   } else {
     // One-time scan
     await runWeeklyPartnerScan();

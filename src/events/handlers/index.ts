@@ -1,7 +1,7 @@
 // Event Handler Registry
 // Maps agents to their event handlers
 
-import { EventType, EventTypes } from '../eventTypes.js';
+import { EventType } from '../eventTypes.js';
 import { EventHandler } from '../eventProcessor.js';
 import type { LiveAgentName } from '../../live/types.js';
 

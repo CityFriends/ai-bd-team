@@ -4,7 +4,6 @@
  */
 
 import { getSupabase } from '../integrations/supabase.js';
-import { getAnthropic } from '../integrations/claude.js';
 import * as readline from 'readline';
 
 interface ProfileGap {
@@ -16,31 +15,129 @@ interface ProfileGap {
 }
 
 const PROFILE_GAPS: ProfileGap[] = [
-  { field: 'company_name', displayName: 'Company Name', question: "What's the official company name?", priority: 'high', type: 'text' },
-  { field: 'tagline', displayName: 'Tagline', question: "Do you have a tagline or slogan? Something short that captures what you do.", priority: 'medium', type: 'text' },
-  { field: 'elevator_pitch', displayName: 'Elevator Pitch', question: "Give me your 30-second pitch - what does the company do and why does it matter?", priority: 'high', type: 'text' },
-  { field: 'capabilities', displayName: 'Core Capabilities', question: "What are your core capabilities? (list them, I'll capture each one)", priority: 'high', type: 'array' },
-  { field: 'differentiators', displayName: 'Differentiators', question: "What makes you different from competitors? What's your secret sauce?", priority: 'high', type: 'array' },
-  { field: 'certifications', displayName: 'Certifications', question: "Any certifications? (ISO, CMMI, clearances, etc.)", priority: 'medium', type: 'array' },
-  { field: 'set_asides', displayName: 'Set-Asides', question: "What set-aside categories do you qualify for? (8(a), HUBZone, WOSB, SDVOSB, etc.)", priority: 'high', type: 'array' },
-  { field: 'naics_codes', displayName: 'NAICS Codes', question: "What NAICS codes do you use? (list the ones you're registered for in SAM)", priority: 'high', type: 'array' },
-  { field: 'contract_vehicles', displayName: 'Contract Vehicles', question: "What contract vehicles are you on? (GSA Schedule, CIO-SP3, Alliant, etc.)", priority: 'high', type: 'array' },
-  { field: 'agency_experience', displayName: 'Agency Experience', question: "Which agencies have you worked with?", priority: 'medium', type: 'array' },
-  { field: 'ideal_opportunity', displayName: 'Ideal Opportunity', question: "Describe your ideal opportunity - what's the sweet spot?", priority: 'medium', type: 'text' },
-  { field: 'no_bid_criteria', displayName: 'No-Bid Criteria', question: "What makes you automatically pass on an opportunity?", priority: 'medium', type: 'array' },
-  { field: 'team_size', displayName: 'Team Size', question: "How many people on the team?", priority: 'low', type: 'number' },
-  { field: 'location', displayName: 'Location', question: "Where's the company based?", priority: 'low', type: 'text' },
-  { field: 'website', displayName: 'Website', question: "What's your website URL?", priority: 'low', type: 'text' },
-  { field: 'cage_code', displayName: 'CAGE Code', question: "What's your CAGE code?", priority: 'medium', type: 'text' },
-  { field: 'uei', displayName: 'UEI', question: "What's your Unique Entity ID (UEI)?", priority: 'medium', type: 'text' },
+  {
+    field: 'company_name',
+    displayName: 'Company Name',
+    question: "What's the official company name?",
+    priority: 'high',
+    type: 'text',
+  },
+  {
+    field: 'tagline',
+    displayName: 'Tagline',
+    question: 'Do you have a tagline or slogan? Something short that captures what you do.',
+    priority: 'medium',
+    type: 'text',
+  },
+  {
+    field: 'elevator_pitch',
+    displayName: 'Elevator Pitch',
+    question: 'Give me your 30-second pitch - what does the company do and why does it matter?',
+    priority: 'high',
+    type: 'text',
+  },
+  {
+    field: 'capabilities',
+    displayName: 'Core Capabilities',
+    question: "What are your core capabilities? (list them, I'll capture each one)",
+    priority: 'high',
+    type: 'array',
+  },
+  {
+    field: 'differentiators',
+    displayName: 'Differentiators',
+    question: "What makes you different from competitors? What's your secret sauce?",
+    priority: 'high',
+    type: 'array',
+  },
+  {
+    field: 'certifications',
+    displayName: 'Certifications',
+    question: 'Any certifications? (ISO, CMMI, clearances, etc.)',
+    priority: 'medium',
+    type: 'array',
+  },
+  {
+    field: 'set_asides',
+    displayName: 'Set-Asides',
+    question: 'What set-aside categories do you qualify for? (8(a), HUBZone, WOSB, SDVOSB, etc.)',
+    priority: 'high',
+    type: 'array',
+  },
+  {
+    field: 'naics_codes',
+    displayName: 'NAICS Codes',
+    question: "What NAICS codes do you use? (list the ones you're registered for in SAM)",
+    priority: 'high',
+    type: 'array',
+  },
+  {
+    field: 'contract_vehicles',
+    displayName: 'Contract Vehicles',
+    question: 'What contract vehicles are you on? (GSA Schedule, CIO-SP3, Alliant, etc.)',
+    priority: 'high',
+    type: 'array',
+  },
+  {
+    field: 'agency_experience',
+    displayName: 'Agency Experience',
+    question: 'Which agencies have you worked with?',
+    priority: 'medium',
+    type: 'array',
+  },
+  {
+    field: 'ideal_opportunity',
+    displayName: 'Ideal Opportunity',
+    question: "Describe your ideal opportunity - what's the sweet spot?",
+    priority: 'medium',
+    type: 'text',
+  },
+  {
+    field: 'no_bid_criteria',
+    displayName: 'No-Bid Criteria',
+    question: 'What makes you automatically pass on an opportunity?',
+    priority: 'medium',
+    type: 'array',
+  },
+  {
+    field: 'team_size',
+    displayName: 'Team Size',
+    question: 'How many people on the team?',
+    priority: 'low',
+    type: 'number',
+  },
+  {
+    field: 'location',
+    displayName: 'Location',
+    question: "Where's the company based?",
+    priority: 'low',
+    type: 'text',
+  },
+  {
+    field: 'website',
+    displayName: 'Website',
+    question: "What's your website URL?",
+    priority: 'low',
+    type: 'text',
+  },
+  {
+    field: 'cage_code',
+    displayName: 'CAGE Code',
+    question: "What's your CAGE code?",
+    priority: 'medium',
+    type: 'text',
+  },
+  {
+    field: 'uei',
+    displayName: 'UEI',
+    question: "What's your Unique Entity ID (UEI)?",
+    priority: 'medium',
+    type: 'text',
+  },
 ];
 
 async function getExistingProfile(): Promise<Record<string, any> | null> {
-  const { data, error } = await getSupabase()
-    .from('company_profile')
-    .select('*')
-    .limit(1)
-    .single();
+  const { data, error } = await getSupabase().from('company_profile').select('*').limit(1).single();
 
   if (error && error.code !== 'PGRST116') {
     console.error('Error fetching profile:', error);
@@ -54,7 +151,7 @@ function findGaps(profile: Record<string, any> | null): ProfileGap[] {
     return PROFILE_GAPS;
   }
 
-  return PROFILE_GAPS.filter(gap => {
+  return PROFILE_GAPS.filter((gap) => {
     const value = profile[gap.field];
     if (gap.type === 'array') {
       return !value || value.length === 0;
@@ -105,11 +202,14 @@ function parseArrayResponse(response: string): string[] {
   // Handle various formats: comma-separated, newline-separated, numbered lists
   const cleaned = response
     .replace(/^\d+\.\s*/gm, '') // Remove numbered list prefixes
-    .replace(/^[-*]\s*/gm, '')  // Remove bullet points
-    .replace(/\n+/g, ',')       // Convert newlines to commas
+    .replace(/^[-*]\s*/gm, '') // Remove bullet points
+    .replace(/\n+/g, ',') // Convert newlines to commas
     .split(',')
-    .map(item => item.trim())
-    .filter(item => item.length > 0 && item.toLowerCase() !== 'skip' && item.toLowerCase() !== 'not sure');
+    .map((item) => item.trim())
+    .filter(
+      (item) =>
+        item.length > 0 && item.toLowerCase() !== 'skip' && item.toLowerCase() !== 'not sure'
+    );
 
   return cleaned;
 }
@@ -123,7 +223,7 @@ async function runOnboarding(): Promise<void> {
   });
 
   const askQuestion = (question: string): Promise<string> => {
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
       rl.question(`\nPatricia: ${question}\n\nYou: `, resolve);
     });
   };
@@ -133,13 +233,17 @@ async function runOnboarding(): Promise<void> {
   const gaps = findGaps(existingProfile);
 
   if (gaps.length === 0) {
-    console.log("\nPatricia: Your profile looks complete! All the key fields are filled in.");
-    console.log("If you want to update anything, you can edit directly in Supabase or ask me specific questions.");
+    console.log('\nPatricia: Your profile looks complete! All the key fields are filled in.');
+    console.log(
+      'If you want to update anything, you can edit directly in Supabase or ask me specific questions.'
+    );
     rl.close();
     return;
   }
 
-  console.log(`\nPatricia: I see ${gaps.length} fields that could use some info. Let's go through the high-priority ones first.\n`);
+  console.log(
+    `\nPatricia: I see ${gaps.length} fields that could use some info. Let's go through the high-priority ones first.\n`
+  );
 
   // Sort by priority
   const sortedGaps = gaps.sort((a, b) => {
@@ -151,12 +255,17 @@ async function runOnboarding(): Promise<void> {
   let answeredCount = 0;
 
   for (const gap of sortedGaps) {
-    const priorityTag = gap.priority === 'high' ? '(important)' : gap.priority === 'low' ? '(optional)' : '';
+    const priorityTag =
+      gap.priority === 'high' ? '(important)' : gap.priority === 'low' ? '(optional)' : '';
 
     const response = await askQuestion(`${gap.question} ${priorityTag}`);
 
-    if (response.toLowerCase() === 'skip' || response.toLowerCase() === 'not sure' || response.trim() === '') {
-      console.log("\nPatricia: Got it, we can come back to that later.");
+    if (
+      response.toLowerCase() === 'skip' ||
+      response.toLowerCase() === 'not sure' ||
+      response.trim() === ''
+    ) {
+      console.log('\nPatricia: Got it, we can come back to that later.');
       continue;
     }
 
@@ -190,10 +299,10 @@ async function runOnboarding(): Promise<void> {
     // Occasional Patricia commentary
     if (answeredCount % 3 === 0 && answeredCount < sortedGaps.length) {
       const comments = [
-        "Nice, making good progress!",
-        "This is helpful - the team will appreciate having this info.",
-        "Great, keep going!",
-        "Perfect, this is exactly what we need.",
+        'Nice, making good progress!',
+        'This is helpful - the team will appreciate having this info.',
+        'Great, keep going!',
+        'Perfect, this is exactly what we need.',
       ];
       console.log(`\nPatricia: ${comments[Math.floor(Math.random() * comments.length)]}`);
     }
@@ -216,9 +325,11 @@ async function runOnboarding(): Promise<void> {
 
   const remainingGaps = findGaps(updatedProfile);
   if (remainingGaps.length > 0) {
-    console.log(`\nStill missing ${remainingGaps.length} fields - run this again anytime to fill them in.`);
+    console.log(
+      `\nStill missing ${remainingGaps.length} fields - run this again anytime to fill them in.`
+    );
   } else {
-    console.log("\nProfile is complete! The agents now have full context about the company.");
+    console.log('\nProfile is complete! The agents now have full context about the company.');
   }
 
   rl.close();

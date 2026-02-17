@@ -226,7 +226,7 @@ Respond in JSON format:
 // ============================================================
 // Slack Formatting
 // ============================================================
-function formatResearchForSlack(research: ResearchResult, payload: NewOpportunityPayload): string {
+function formatResearchForSlack(research: ResearchResult, _payload: NewOpportunityPayload): string {
   let message = `📋 *Research Complete*\n\n`;
   message += `${research.summary}\n\n`;
 

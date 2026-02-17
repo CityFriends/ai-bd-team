@@ -158,13 +158,8 @@ function checkRuleViolation(
     }
   }
 
-  if (evidence.preferredAgencies !== undefined && opportunity.agency) {
-    const preferred = evidence.preferredAgencies as string[];
-    const isPreferred = preferred.some((a) =>
-      opportunity.agency?.toLowerCase().includes(a.toLowerCase())
-    );
-    // This is a positive check, not a violation
-  }
+  // Note: preferredAgencies is a positive check, not a violation
+  // It's intentionally not used here since we only return violations
 
   return null;
 }

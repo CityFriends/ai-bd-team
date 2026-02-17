@@ -6,20 +6,33 @@ import { recordAgentFeedback, getAgentFeedbackStats } from '../integrations/supa
 import { embed, cosineSimilarity } from '../integrations/embeddings.js';
 
 // Positive reactions
-const POSITIVE_REACTIONS = ['+1', 'thumbsup', 'heart', 'fire', '100', 'raised_hands', 'clap', 'tada', 'white_check_mark', 'heavy_check_mark'];
+const POSITIVE_REACTIONS = [
+  '+1',
+  'thumbsup',
+  'heart',
+  'fire',
+  '100',
+  'raised_hands',
+  'clap',
+  'tada',
+  'white_check_mark',
+  'heavy_check_mark',
+];
 
 // Negative reactions
-const NEGATIVE_REACTIONS = ['-1', 'thumbsdown', 'confused', 'thinking_face', 'x', 'no_entry', 'warning'];
+const NEGATIVE_REACTIONS = [
+  '-1',
+  'thumbsdown',
+  'confused',
+  'thinking_face',
+  'x',
+  'no_entry',
+  'warning',
+];
 
-// Map of agent Slack user IDs to agent names
-const AGENT_USER_IDS: Record<string, string> = {
-  'U0AC3RA4JVB': 'maya',
-  'U0AC0SVD3MH': 'david',
-  'U0ACASZ36BW': 'rosa',
-  'U0AC582GXBQ': 'james',
-  'U0AC79NTDAN': 'patricia',
-  'U0ACP8LKFB3': 'jodie',
-};
+// Agent Slack user IDs for reference when mapping reactions to agents
+// Currently reactions are tracked by message timestamp rather than user ID lookup
+// Kept for potential future use in identifying which agent's response received feedback
 
 // Track recent agent responses for correlation
 interface RecentResponse {
@@ -126,7 +139,7 @@ export async function detectRephrasedQuestion(
   try {
     // Find recent agent responses in this thread
     const threadResponses = Array.from(recentResponses.values())
-      .filter(r => r.threadTs === threadTs)
+      .filter((r) => r.threadTs === threadTs)
       .sort((a, b) => b.timestamp - a.timestamp);
 
     if (threadResponses.length === 0 || !threadResponses[0].originalQuestion) {
@@ -205,7 +218,7 @@ export async function getAgentFeedbackSummary(
 
   // Penalize for rephrased questions (indicates unhelpful responses)
   if (stats.rephrasedQuestions > 0) {
-    feedbackScore = Math.max(0, feedbackScore - (stats.rephrasedQuestions * 5));
+    feedbackScore = Math.max(0, feedbackScore - stats.rephrasedQuestions * 5);
   }
 
   return {
@@ -220,8 +233,7 @@ export async function getAgentFeedbackSummary(
 export function formatFeedbackSummary(
   summary: Awaited<ReturnType<typeof getAgentFeedbackSummary>>
 ): string {
-  const emoji = summary.feedbackScore >= 70 ? '🟢' :
-                summary.feedbackScore >= 40 ? '🟡' : '🔴';
+  const emoji = summary.feedbackScore >= 70 ? '🟢' : summary.feedbackScore >= 40 ? '🟡' : '🔴';
 
   return `${emoji} Feedback Score: ${summary.feedbackScore}/100
   👍 Positive: ${summary.positiveReactions}
