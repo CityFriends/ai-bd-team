@@ -86,7 +86,7 @@ export function channel(channelId: string): string {
  * Format a list of items as bullets
  */
 export function bullets(items: string[]): string {
-  return items.map(item => `• ${item}`).join('\n');
+  return items.map((item) => `• ${item}`).join('\n');
 }
 
 /**
@@ -100,13 +100,20 @@ export function numbered(items: string[]): string {
  * Format as blockquote
  */
 export function blockquote(text: string): string {
-  return text.split('\n').map(line => `> ${line}`).join('\n');
+  return text
+    .split('\n')
+    .map((line) => `> ${line}`)
+    .join('\n');
 }
 
 /**
  * Format a section with optional header
  */
-export function section(header: string | null, content: string | string[], type: 'bullets' | 'numbered' | 'plain' = 'plain'): string {
+export function section(
+  header: string | null,
+  content: string | string[],
+  type: 'bullets' | 'numbered' | 'plain' = 'plain'
+): string {
   const parts: string[] = [];
 
   if (header) {
@@ -139,7 +146,7 @@ export function keyValue(key: string, value: string): string {
  * Format multiple key-value pairs as a list
  */
 export function keyValueList(pairs: Array<{ key: string; value: string }>): string {
-  return pairs.map(p => `• ${bold(p.key)}: ${p.value}`).join('\n');
+  return pairs.map((p) => `• ${bold(p.key)}: ${p.value}`).join('\n');
 }
 
 /**
@@ -185,7 +192,10 @@ export function buildPost(post: SlackPost): string {
   }
 
   // Clean up: remove trailing empty lines, collapse multiple empty lines
-  return parts.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return parts
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 /**
@@ -261,9 +271,7 @@ export function formatIntelBrief(data: {
   if (data.competitorNews && data.competitorNews.length > 0) {
     sections.push({
       header: 'Competitor Watch',
-      content: data.competitorNews.map(n =>
-        `${bold(n.company)}: ${n.summary} (${n.type})`
-      ),
+      content: data.competitorNews.map((n) => `${bold(n.company)}: ${n.summary} (${n.type})`),
       type: 'bullets',
     });
   } else {
@@ -277,7 +285,7 @@ export function formatIntelBrief(data: {
   if (data.incumbentResearch && data.incumbentResearch.length > 0) {
     sections.push({
       header: 'Incumbent Research',
-      content: data.incumbentResearch.map(r => {
+      content: data.incumbentResearch.map((r) => {
         let line = r.title.slice(0, 60) + (r.title.length > 60 ? '...' : '');
         if (r.incumbent) line += ` | Incumbent: ${r.incumbent}`;
         if (r.value) line += ` | Value: ${r.value}`;
@@ -298,7 +306,7 @@ export function formatIntelBrief(data: {
   return buildPost({
     opener: bold('Morning Intel Brief') + '\n' + data.opener,
     sections,
-    footer: data.closing || "Let me know if you want me to dig deeper on any of these.",
+    footer: data.closing || 'Let me know if you want me to dig deeper on any of these.',
   });
 }
 
@@ -328,7 +336,7 @@ export function formatPartnerReport(data: {
   if (data.partners.length > 0) {
     sections.push({
       header: 'Potential Partners',
-      content: data.partners.map(p => {
+      content: data.partners.map((p) => {
         const parts = [bold(p.name)];
         if (p.location) parts.push(`(${p.location})`);
         if (p.certifications && p.certifications.length > 0) {
@@ -340,7 +348,8 @@ export function formatPartnerReport(data: {
     });
   } else {
     sections.push({
-      content: "Didn't find strong matches with the current filters. Want me to broaden the search?",
+      content:
+        "Didn't find strong matches with the current filters. Want me to broaden the search?",
       type: 'plain',
     });
   }
@@ -364,8 +373,8 @@ export function formatStrategicRec(data: {
   nextSteps?: string[];
   closing?: string;
 }): string {
-  const recEmoji = data.recommendation === 'GO' ? '✅' :
-                   data.recommendation === 'PASS' ? '⛔' : '🤔';
+  const recEmoji =
+    data.recommendation === 'GO' ? '✅' : data.recommendation === 'PASS' ? '⛔' : '🤔';
 
   const sections: SlackSection[] = [
     {

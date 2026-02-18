@@ -26,12 +26,12 @@ export interface AgentAction {
 }
 
 export type ActionType =
-  | 'team_meeting'      // Patricia calls a team discussion
+  | 'team_meeting' // Patricia calls a team discussion
   | 'watch_opportunity' // Maya watches a specific opportunity
-  | 'follow_up'         // General follow-up reminder
-  | 'research'          // David does deep research
-  | 'outreach'          // Marcus follows up on contacts
-  | 'alert';            // Any agent sets an alert
+  | 'follow_up' // General follow-up reminder
+  | 'research' // David does deep research
+  | 'outreach' // Marcus follows up on contacts
+  | 'alert'; // Any agent sets an alert
 
 /**
  * Save a new action commitment to the database
@@ -60,7 +60,9 @@ export async function createAction(action: AgentAction): Promise<string | null> 
       return null;
     }
 
-    console.log(`[AgentActions] Created action: ${action.agent_name} - ${action.action_type} at ${action.scheduled_for}`);
+    console.log(
+      `[AgentActions] Created action: ${action.agent_name} - ${action.action_type} at ${action.scheduled_for}`
+    );
     return data.id;
   } catch (err) {
     console.error('[AgentActions] Error creating action:', err);
@@ -88,7 +90,7 @@ export async function getDueActions(): Promise<AgentAction[]> {
       return [];
     }
 
-    return (data || []).map(row => ({
+    return (data || []).map((row) => ({
       id: row.id,
       agent_name: row.agent_name,
       action_type: row.action_type,
@@ -183,7 +185,7 @@ export async function getAgentPendingActions(agentName: string): Promise<AgentAc
 
     if (error) return [];
 
-    return (data || []).map(row => ({
+    return (data || []).map((row) => ({
       id: row.id,
       agent_name: row.agent_name,
       action_type: row.action_type,
@@ -313,7 +315,7 @@ NO_ACTION`;
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const text = result.content.find(b => b.type === 'text');
+    const text = result.content.find((b) => b.type === 'text');
     const parsed = text?.type === 'text' ? text.text.trim() : '';
 
     if (parsed.includes('NO_ACTION')) {

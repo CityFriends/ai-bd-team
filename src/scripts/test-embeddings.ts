@@ -17,11 +17,7 @@ async function testEmbeddings() {
     const text2 = 'Veterans Affairs hospital technology upgrade RFP';
     const text3 = 'Recipe for chocolate cake';
 
-    const [emb1, emb2, emb3] = await Promise.all([
-      embed(text1),
-      embed(text2),
-      embed(text3),
-    ]);
+    const [emb1, emb2, emb3] = await Promise.all([embed(text1), embed(text2), embed(text3)]);
 
     const sim12 = cosineSimilarity(emb1, emb2);
     const sim13 = cosineSimilarity(emb1, emb3);

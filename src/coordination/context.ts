@@ -1,8 +1,4 @@
-import {
-  getThreadBySlackTs,
-  updateThread,
-  getOpportunity,
-} from '../integrations/supabase.js';
+import { getThreadBySlackTs, updateThread, getOpportunity } from '../integrations/supabase.js';
 import { getThreadMessages as getSlackThreadMessages } from '../integrations/slack.js';
 import type { ConversationThread, Opportunity } from '../types/index.js';
 
@@ -14,9 +10,7 @@ export interface ConversationContext {
 }
 
 // Build context for an agent responding in a thread
-export async function buildConversationContext(
-  threadTs: string
-): Promise<ConversationContext> {
+export async function buildConversationContext(threadTs: string): Promise<ConversationContext> {
   const context: ConversationContext = {
     recentMessages: [],
   };
@@ -45,7 +39,8 @@ export async function buildConversationContext(
     for (const msg of recentSlackMessages) {
       if (msg.text) {
         // Determine if this is from the user or an agent
-        const isAgent = msg.text.includes('*Scout*') ||
+        const isAgent =
+          msg.text.includes('*Scout*') ||
           msg.text.includes('*Analyst*') ||
           msg.text.includes('*Connector*') ||
           msg.text.includes('*Strategist*');
@@ -64,10 +59,7 @@ export async function buildConversationContext(
 }
 
 // Update thread context summary (for long-running conversations)
-export async function updateContextSummary(
-  threadTs: string,
-  summary: string
-): Promise<void> {
+export async function updateContextSummary(threadTs: string, summary: string): Promise<void> {
   const thread = await getThreadBySlackTs(threadTs);
   if (thread) {
     await updateThread(thread.id, {
@@ -96,10 +88,7 @@ export async function recordDecision(
 }
 
 // Mark who the thread is waiting for
-export async function setAwaitingResponse(
-  threadTs: string,
-  awaitingFrom: string
-): Promise<void> {
+export async function setAwaitingResponse(threadTs: string, awaitingFrom: string): Promise<void> {
   const thread = await getThreadBySlackTs(threadTs);
   if (thread) {
     await updateThread(thread.id, {
@@ -129,10 +118,7 @@ export async function resolveThread(threadTs: string): Promise<void> {
 }
 
 // Track which agents have participated
-export async function addAgentToThread(
-  threadTs: string,
-  agent: string
-): Promise<void> {
+export async function addAgentToThread(threadTs: string, agent: string): Promise<void> {
   const thread = await getThreadBySlackTs(threadTs);
   if (thread) {
     const currentAgents = thread.agents_involved || [];

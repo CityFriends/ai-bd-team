@@ -13,7 +13,7 @@ async function main() {
   if (!process.env.DAVID_BOT_TOKEN || !process.env.DAVID_APP_TOKEN) {
     console.error('ERROR: Missing DAVID_BOT_TOKEN or DAVID_APP_TOKEN in .env');
     console.error('');
-    console.error('Please create David\'s Slack app and add his tokens to .env:');
+    console.error("Please create David's Slack app and add his tokens to .env:");
     console.error('  DAVID_BOT_TOKEN=xoxb-...');
     console.error('  DAVID_APP_TOKEN=xapp-...');
     process.exit(1);
@@ -32,7 +32,6 @@ async function main() {
       await david.disconnect();
       process.exit(0);
     });
-
   } catch (error) {
     console.error('Failed to start David:', error);
     process.exit(1);

@@ -32,10 +32,7 @@ async function saveHubIds(ids: NotionHubIds) {
 
   // Also write to a local file for backup
   const fs = await import('fs');
-  fs.writeFileSync(
-    'notion-hub-ids.json',
-    JSON.stringify(ids, null, 2)
-  );
+  fs.writeFileSync('notion-hub-ids.json', JSON.stringify(ids, null, 2));
   console.log('\nSaved hub IDs to notion-hub-ids.json');
 }
 
@@ -84,7 +81,6 @@ Next Steps:
 3. Run 'npm run notion:test' to verify everything works
 4. The agents will now sync opportunities to Notion automatically
 `);
-
   } catch (error) {
     console.error('\nError creating hub:', error);
     process.exit(1);

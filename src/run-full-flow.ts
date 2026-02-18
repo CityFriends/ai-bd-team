@@ -11,7 +11,7 @@ import { getOpportunity } from './integrations/supabase.js';
 let DELAY_MS = 2 * 60 * 1000;
 
 function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function formatTime(ms: number): string {
@@ -52,7 +52,9 @@ async function main() {
     console.error('');
     console.error('Example:');
     console.error('  npm run full-flow -- --opportunity-id=2e59b339-6c37-4925-84c5-4e27abf7a47f');
-    console.error('  npm run full-flow -- --opportunity-id=2e59b339-6c37-4925-84c5-4e27abf7a47f --delay=15');
+    console.error(
+      '  npm run full-flow -- --opportunity-id=2e59b339-6c37-4925-84c5-4e27abf7a47f --delay=15'
+    );
     process.exit(1);
   }
 
@@ -155,7 +157,6 @@ async function main() {
     console.log('  Check Slack - Patricia wrapped it up for @Lapedra!');
     console.log('══════════════════════════════════════════════════════════');
     console.log('');
-
   } catch (error) {
     console.error('\n❌ Pipeline failed:', error);
     process.exit(1);

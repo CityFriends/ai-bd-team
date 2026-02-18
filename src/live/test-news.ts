@@ -15,7 +15,7 @@ async function test() {
   const result = await searchNews({
     query: 'contract award',
     agencyName: 'VA',
-    limit: 3
+    limit: 3,
   });
 
   console.log(`Source: ${result.source}`);
@@ -47,12 +47,12 @@ async function test() {
 
   if (agencyNews.recentNews.length > 0) {
     console.log('Recent:');
-    agencyNews.recentNews.slice(0, 2).forEach(a => console.log('  -', a.title));
+    agencyNews.recentNews.slice(0, 2).forEach((a) => console.log('  -', a.title));
   }
 
   if (agencyNews.leadershipChanges.length > 0) {
     console.log('Leadership:');
-    agencyNews.leadershipChanges.slice(0, 2).forEach(a => console.log('  -', a.title));
+    agencyNews.leadershipChanges.slice(0, 2).forEach((a) => console.log('  -', a.title));
   }
 
   console.log('');

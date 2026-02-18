@@ -81,7 +81,7 @@ Maya, Marcus - would love your thoughts on this one."`;
       messages: [{ role: 'user', content: openerPrompt }],
     });
 
-    const text = response.content.find(b => b.type === 'text');
+    const text = response.content.find((b) => b.type === 'text');
     const openerMessage = text?.type === 'text' ? text.text : '';
 
     if (!openerMessage) {
@@ -102,7 +102,7 @@ Maya, Marcus - would love your thoughts on this one."`;
     console.log('[ActionExecutor] Patricia started team meeting');
 
     // Small delay then get team responses
-    await new Promise(r => setTimeout(r, 3000 + Math.random() * 3000));
+    await new Promise((r) => setTimeout(r, 3000 + Math.random() * 3000));
 
     // Get responses from relevant agents
     const respondingAgents = ['maya', 'marcus', 'david'];
@@ -129,18 +129,18 @@ Maya, Marcus - would love your thoughts on this one."`;
         console.log(`[ActionExecutor] ${agentName} contributed to meeting`);
 
         // Delay between responses
-        await new Promise(r => setTimeout(r, 2000 + Math.random() * 3000));
+        await new Promise((r) => setTimeout(r, 2000 + Math.random() * 3000));
       }
     }
 
     // Patricia wraps up
     if (responses.length > 0) {
-      await new Promise(r => setTimeout(r, 3000 + Math.random() * 2000));
+      await new Promise((r) => setTimeout(r, 3000 + Math.random() * 2000));
 
       const wrapUpPrompt = `You are Patricia. You called a team meeting about "${action.description}".
 
 Team responses:
-${responses.map(r => `${r.agent}: "${r.response}"`).join('\n')}
+${responses.map((r) => `${r.agent}: "${r.response}"`).join('\n')}
 
 Write a brief wrap-up (2-3 sentences max):
 - Acknowledge key points raised
@@ -155,7 +155,7 @@ Keep it short and actionable.`;
         messages: [{ role: 'user', content: wrapUpPrompt }],
       });
 
-      const wrapUpText = wrapUpResponse.content.find(b => b.type === 'text');
+      const wrapUpText = wrapUpResponse.content.find((b) => b.type === 'text');
       const wrapUp = wrapUpText?.type === 'text' ? wrapUpText.text : '';
 
       if (wrapUp) {
@@ -223,7 +223,7 @@ Your contribution:`;
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const text = response.content.find(b => b.type === 'text');
+    const text = response.content.find((b) => b.type === 'text');
     const contribution = text?.type === 'text' ? text.text.trim() : '';
 
     if (contribution.includes('NO_CONTRIBUTION')) {
@@ -266,7 +266,7 @@ Your follow-up:`;
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const text = response.content.find(b => b.type === 'text');
+    const text = response.content.find((b) => b.type === 'text');
     const message = text?.type === 'text' ? text.text : '';
 
     if (!message) {
@@ -346,7 +346,7 @@ Be honest and direct. Use your dry humor if appropriate.`;
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const text = response.content.find(b => b.type === 'text');
+    const text = response.content.find((b) => b.type === 'text');
     const researchUpdate = text?.type === 'text' ? text.text : '';
 
     if (!researchUpdate) {
@@ -398,7 +398,7 @@ Be honest - if you can't actually access a codebase or system, say so. Don't inv
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const text = response.content.find(b => b.type === 'text');
+    const text = response.content.find((b) => b.type === 'text');
     const update = text?.type === 'text' ? text.text : '';
 
     if (!update) {
@@ -419,16 +419,15 @@ Be honest - if you can't actually access a codebase or system, say so. Don't inv
 /**
  * Main executor - routes actions to appropriate handlers
  */
-export async function executeAction(
-  action: AgentAction,
-  apps: Map<string, App>
-): Promise<void> {
+export async function executeAction(action: AgentAction, apps: Map<string, App>): Promise<void> {
   if (!action.id) {
     console.error('[ActionExecutor] Action has no ID');
     return;
   }
 
-  console.log(`[ActionExecutor] Executing: ${action.agent_name} - ${action.action_type} - ${action.description}`);
+  console.log(
+    `[ActionExecutor] Executing: ${action.agent_name} - ${action.action_type} - ${action.description}`
+  );
 
   await markActionInProgress(action.id);
 

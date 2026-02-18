@@ -24,7 +24,10 @@ import { google } from 'googleapis';
 import * as http from 'http';
 import { URL } from 'url';
 
-const SCOPES = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.modify'];
+const SCOPES = [
+  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.modify',
+];
 const REDIRECT_URI = 'http://localhost:3000/oauth2callback';
 
 async function main() {
@@ -67,11 +70,7 @@ async function main() {
     process.exit(1);
   }
 
-  const oauth2Client = new google.auth.OAuth2(
-    clientId,
-    clientSecret,
-    REDIRECT_URI
-  );
+  const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, REDIRECT_URI);
 
   const authUrl = oauth2Client.generateAuthUrl({
     access_type: 'offline',
@@ -153,7 +152,6 @@ async function main() {
 
       server.close();
       process.exit(0);
-
     } catch (err) {
       res.writeHead(500);
       res.end('Error getting tokens');
@@ -169,11 +167,14 @@ async function main() {
   });
 
   // Timeout after 5 minutes
-  setTimeout(() => {
-    console.log('\nTimeout: No authorization received within 5 minutes.');
-    server.close();
-    process.exit(1);
-  }, 5 * 60 * 1000);
+  setTimeout(
+    () => {
+      console.log('\nTimeout: No authorization received within 5 minutes.');
+      server.close();
+      process.exit(1);
+    },
+    5 * 60 * 1000
+  );
 }
 
 main().catch(console.error);

@@ -4,7 +4,11 @@
 import 'dotenv/config';
 import cron from 'node-cron';
 import { WebClient } from '@slack/web-api';
-import { checkForNewAwards, formatAwardsForSlack, getAwardsSummary } from '../integrations/award-monitor.js';
+import {
+  checkForNewAwards,
+  formatAwardsForSlack,
+  getAwardsSummary,
+} from '../integrations/award-monitor.js';
 
 async function runAwardCheck() {
   console.log(`[${new Date().toISOString()}] Running scheduled award check...`);
@@ -20,7 +24,9 @@ async function runAwardCheck() {
     const summary = getAwardsSummary(newAwards);
     const formatted = formatAwardsForSlack(newAwards, 15);
 
-    console.log(`Found ${summary.totalCount} new awards totaling $${(summary.totalValue / 1000000).toFixed(1)}M`);
+    console.log(
+      `Found ${summary.totalCount} new awards totaling $${(summary.totalValue / 1000000).toFixed(1)}M`
+    );
 
     // Post to Slack via Maya
     const mayaToken = process.env.MAYA_BOT_TOKEN;
@@ -30,9 +36,10 @@ async function runAwardCheck() {
       const slack = new WebClient(mayaToken);
 
       const totalValue = `$${(summary.totalValue / 1000000).toFixed(1)}M`;
-      const intro = newAwards.length === 1
-        ? `yo heads up, just spotted a new award drop`
-        : `okay so ${newAwards.length} new awards just dropped, ${totalValue} total`;
+      const intro =
+        newAwards.length === 1
+          ? `yo heads up, just spotted a new award drop`
+          : `okay so ${newAwards.length} new awards just dropped, ${totalValue} total`;
 
       const message = `${intro} 👀\n\n${formatted}\n\n_pulled fresh from FPDS_`;
 
@@ -65,7 +72,7 @@ if (process.argv.includes('--now')) {
 
 // Schedule future runs
 cron.schedule(schedule, runAwardCheck, {
-  timezone: 'America/New_York'
+  timezone: 'America/New_York',
 });
 
 // Keep process alive

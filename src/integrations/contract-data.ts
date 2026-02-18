@@ -64,7 +64,7 @@ export async function searchContracts(params: {
         {
           start_date: getDateNYearsAgo(3),
           end_date: new Date().toISOString().split('T')[0],
-        }
+        },
       ],
     };
 
@@ -74,7 +74,7 @@ export async function searchContracts(params: {
           type: 'awarding',
           tier: 'toptier',
           toptier_name: agencyCode, // USASpending uses agency names
-        }
+        },
       ];
     }
 
@@ -129,7 +129,10 @@ export async function searchContracts(params: {
       throw new Error(`USASpending API error: ${response.status}`);
     }
 
-    const data = await response.json() as { results?: Record<string, unknown>[]; page_metadata?: { total?: number } };
+    const data = (await response.json()) as {
+      results?: Record<string, unknown>[];
+      page_metadata?: { total?: number };
+    };
     const contracts = parseUSASpendingResults(data.results || []);
 
     const result: ContractSearchResult = {
@@ -155,7 +158,9 @@ export async function searchContracts(params: {
 export const searchFPDS = searchContracts;
 
 // Search by contract number
-export async function searchByContractNumber(contractNumber: string): Promise<ContractSearchResult> {
+export async function searchByContractNumber(
+  contractNumber: string
+): Promise<ContractSearchResult> {
   const queryKey = `contract:${contractNumber}`;
 
   const cached = await getCachedResult(queryKey);
@@ -202,7 +207,10 @@ export async function searchByContractNumber(contractNumber: string): Promise<Co
       throw new Error(`USASpending API error: ${response.status}`);
     }
 
-    const data = await response.json() as { results?: Record<string, unknown>[]; page_metadata?: { total?: number } };
+    const data = (await response.json()) as {
+      results?: Record<string, unknown>[];
+      page_metadata?: { total?: number };
+    };
     const contracts = parseUSASpendingResults(data.results || []);
 
     const result: ContractSearchResult = {
@@ -299,7 +307,7 @@ export async function getVendorHistory(vendorName: string): Promise<{
     limit: 50,
   });
 
-  const agencies = [...new Set(result.contracts.map(c => c.agencyName))];
+  const agencies = [...new Set(result.contracts.map((c) => c.agencyName))];
   const totalValue = result.contracts.reduce((sum, c) => sum + (c.obligatedAmount || 0), 0);
 
   return {
@@ -316,7 +324,8 @@ function parseUSASpendingResults(results: Record<string, unknown>[]): ContractAw
     contractId: (r['Award ID'] as string) || 'unknown',
     vendorName: (r['Recipient Name'] as string) || 'Unknown Vendor',
     vendorUei: r['Recipient UEI'] as string | undefined,
-    agencyName: (r['Awarding Agency'] as string) || (r['Awarding Sub Agency'] as string) || 'Unknown Agency',
+    agencyName:
+      (r['Awarding Agency'] as string) || (r['Awarding Sub Agency'] as string) || 'Unknown Agency',
     agencyCode: undefined,
     contractDescription: (r['Description'] as string) || '',
     obligatedAmount: (r['Award Amount'] as number) || 0,
@@ -332,11 +341,13 @@ function parseUSASpendingResults(results: Record<string, unknown>[]): ContractAw
 // Format contract data for agent response
 export function formatContractDataForAgent(contracts: ContractAward[]): string {
   if (contracts.length === 0) {
-    return "No contract data found in USASpending.";
+    return 'No contract data found in USASpending.';
   }
 
-  const lines = contracts.slice(0, 3).map(c => {
-    const value = c.obligatedAmount ? `$${(c.obligatedAmount / 1000000).toFixed(1)}M` : 'unknown value';
+  const lines = contracts.slice(0, 3).map((c) => {
+    const value = c.obligatedAmount
+      ? `$${(c.obligatedAmount / 1000000).toFixed(1)}M`
+      : 'unknown value';
     return `- ${c.vendorName}: ${value} with ${c.agencyName}`;
   });
 
@@ -383,14 +394,15 @@ async function cacheResult(query: string, result: ContractSearchResult): Promise
     const supabase = getSupabase();
     const cacheKey = `contracts:${query}`;
 
-    await supabase
-      .from('research_cache')
-      .upsert({
+    await supabase.from('research_cache').upsert(
+      {
         cache_key: cacheKey,
         source: 'usaspending',
         data: result,
         created_at: new Date().toISOString(),
-      }, { onConflict: 'cache_key' });
+      },
+      { onConflict: 'cache_key' }
+    );
   } catch (error) {
     console.warn('Failed to cache contract result:', error);
   }

@@ -78,32 +78,43 @@ const TOPIC_SECTIONS: Record<string, string[]> = {
   'source selection': ['15.101', '15.102', '15.303', '15.304', '15.305', '15.308'],
   'best value': ['15.101', '15.101-1', '15.101-2'],
   'task order': ['16.505', '16.501', '16.504'],
-  'idiq': ['16.501', '16.504', '16.505'],
+  idiq: ['16.501', '16.504', '16.505'],
   'small business': ['19.501', '19.502', '19.505', '19.702'],
-  'subcontracting': ['19.702', '19.703', '19.704', '44.201', '44.202'],
+  subcontracting: ['19.702', '19.703', '19.704', '44.201', '44.202'],
   'organizational conflict': ['9.505', '9.505-1', '9.505-2', '9.505-3', '9.505-4'],
-  'oci': ['9.505', '9.505-1', '9.505-2', '9.505-3', '9.505-4'],
-  'protest': ['33.101', '33.102', '33.103', '33.104', '33.105'],
-  'debriefing': ['15.505', '15.506'],
-  'pricing': ['15.402', '15.403', '15.404'],
+  oci: ['9.505', '9.505-1', '9.505-2', '9.505-3', '9.505-4'],
+  protest: ['33.101', '33.102', '33.103', '33.104', '33.105'],
+  debriefing: ['15.505', '15.506'],
+  pricing: ['15.402', '15.403', '15.404'],
   'cost realism': ['15.404-1'],
-  'discussions': ['15.306', '15.307'],
-  'teaming': ['9.601', '9.602', '9.603', '9.604'],
-  'responsibility': ['9.103', '9.104', '9.105'],
-  'specifications': ['11.101', '11.102', '11.104'],
+  discussions: ['15.306', '15.307'],
+  teaming: ['9.601', '9.602', '9.603', '9.604'],
+  responsibility: ['9.103', '9.104', '9.105'],
+  specifications: ['11.101', '11.102', '11.104'],
   'brand name': ['11.104', '11.105'],
   'market research': ['10.001', '10.002'],
-  'competition': ['6.101', '6.102', '6.301', '6.302'],
+  competition: ['6.101', '6.102', '6.301', '6.302'],
   'sole source': ['6.302', '6.302-1', '6.302-2', '6.303'],
-  'justification': ['6.303', '6.304'],
+  justification: ['6.303', '6.304'],
   'contract types': ['16.101', '16.102', '16.103', '16.104'],
   'fixed price': ['16.201', '16.202', '16.203'],
   'cost reimbursement': ['16.301', '16.302', '16.303', '16.304', '16.305', '16.306', '16.307'],
-  'modifications': ['43.101', '43.102', '43.103'],
-  'changes': ['43.201', '43.202', '43.203', '43.204', '43.205'],
-  'termination': ['49.101', '49.102', '49.103', '49.104'],
-  'option': ['17.201', '17.202', '17.203', '17.204', '17.205', '17.206', '17.207', '17.208'],
-  'warranty': ['46.701', '46.702', '46.703', '46.704', '46.705', '46.706', '46.707', '46.708', '46.709', '46.710'],
+  modifications: ['43.101', '43.102', '43.103'],
+  changes: ['43.201', '43.202', '43.203', '43.204', '43.205'],
+  termination: ['49.101', '49.102', '49.103', '49.104'],
+  option: ['17.201', '17.202', '17.203', '17.204', '17.205', '17.206', '17.207', '17.208'],
+  warranty: [
+    '46.701',
+    '46.702',
+    '46.703',
+    '46.704',
+    '46.705',
+    '46.706',
+    '46.707',
+    '46.708',
+    '46.709',
+    '46.710',
+  ],
 };
 
 // Direct lookup by section number (e.g., "FAR 15.304" or "15.304")
@@ -177,23 +188,21 @@ export async function searchFAR(query: string, limit: number = 5): Promise<FARSe
       .toLowerCase()
       .replace(/[^\w\s]/g, ' ')
       .split(/\s+/)
-      .filter(term => term.length > 3);
+      .filter((term) => term.length > 3);
 
     if (searchTerms.length > 0) {
       // Search in title and full_text
       const { data, error } = await supabase
         .from('far_sections')
         .select()
-        .or(searchTerms.map(term =>
-          `title.ilike.%${term}%,full_text.ilike.%${term}%`
-        ).join(','))
+        .or(searchTerms.map((term) => `title.ilike.%${term}%,full_text.ilike.%${term}%`).join(','))
         .limit(limit * 2);
 
       if (!error && data) {
         for (const section of data) {
           if (!seenSections.has(section.section_number)) {
             // Determine relevance based on match location
-            const titleMatch = searchTerms.some(term =>
+            const titleMatch = searchTerms.some((term) =>
               section.title.toLowerCase().includes(term)
             );
 
@@ -250,7 +259,7 @@ export function formatFARResults(results: FARSearchResult[]): string {
     return 'No relevant FAR sections found.';
   }
 
-  const formatted = results.map(r => {
+  const formatted = results.map((r) => {
     const section = r.section;
     const citation = `FAR ${section.section_number}`;
     const summary = section.summary || section.full_text.slice(0, 200) + '...';
@@ -289,8 +298,7 @@ export function isFARQuery(text: string): boolean {
     /\bsubcontracting plan/i,
   ];
 
-  return farIndicators.some(r => r.test(text)) ||
-         topicIndicators.some(r => r.test(text));
+  return farIndicators.some((r) => r.test(text)) || topicIndicators.some((r) => r.test(text));
 }
 
 // Get relevant FAR context for a conversation

@@ -7,16 +7,20 @@ const scheduledJobs: cron.ScheduledTask[] = [];
 
 // Schedule Scout's daily scan at 6am
 export function scheduleScoutDailyScan(): void {
-  const job = cron.schedule('0 6 * * *', async () => {
-    console.log('Running scheduled Scout daily scan...');
-    try {
-      await scout.handleAction('daily_scan', {});
-    } catch (error) {
-      console.error('Error in Scout daily scan:', error);
+  const job = cron.schedule(
+    '0 6 * * *',
+    async () => {
+      console.log('Running scheduled Scout daily scan...');
+      try {
+        await scout.handleAction('daily_scan', {});
+      } catch (error) {
+        console.error('Error in Scout daily scan:', error);
+      }
+    },
+    {
+      timezone: 'America/New_York', // Adjust to your timezone
     }
-  }, {
-    timezone: 'America/New_York', // Adjust to your timezone
-  });
+  );
 
   scheduledJobs.push(job);
   console.log('Scheduled Scout daily scan for 6:00 AM');
@@ -24,16 +28,20 @@ export function scheduleScoutDailyScan(): void {
 
 // Schedule Strategist's morning standup at 8am
 export function scheduleStrategistStandup(): void {
-  const job = cron.schedule('0 8 * * 1-5', async () => {
-    console.log('Running scheduled Strategist standup...');
-    try {
-      await strategist.handleAction('morning_standup', {});
-    } catch (error) {
-      console.error('Error in Strategist standup:', error);
+  const job = cron.schedule(
+    '0 8 * * 1-5',
+    async () => {
+      console.log('Running scheduled Strategist standup...');
+      try {
+        await strategist.handleAction('morning_standup', {});
+      } catch (error) {
+        console.error('Error in Strategist standup:', error);
+      }
+    },
+    {
+      timezone: 'America/New_York', // Adjust to your timezone
     }
-  }, {
-    timezone: 'America/New_York', // Adjust to your timezone
-  });
+  );
 
   scheduledJobs.push(job);
   console.log('Scheduled Strategist standup for 8:00 AM weekdays');

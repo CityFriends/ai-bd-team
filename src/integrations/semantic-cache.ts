@@ -2,11 +2,15 @@
 // Caches query results by meaning, not exact words
 // Significantly reduces API costs and latency for repeated query patterns
 
-import { findSimilarCachedQuery, storeCachedQuery, cleanupExpiredCache } from './semantic-search.js';
+import {
+  findSimilarCachedQuery,
+  storeCachedQuery,
+  cleanupExpiredCache,
+} from './semantic-search.js';
 
 export interface CacheOptions {
-  cacheType: string;           // 'research', 'response', 'analysis', etc.
-  ttlHours?: number;           // Time to live in hours (default 24)
+  cacheType: string; // 'research', 'response', 'analysis', etc.
+  ttlHours?: number; // Time to live in hours (default 24)
   similarityThreshold?: number; // Min similarity to consider a cache hit (default 0.92)
 }
 
@@ -28,18 +32,16 @@ export async function getCachedOrFetch<T>(
   fetcher: () => Promise<T>,
   options: CacheOptions
 ): Promise<CacheResult<T>> {
-  const {
-    cacheType,
-    ttlHours = 24,
-    similarityThreshold = 0.92,
-  } = options;
+  const { cacheType, ttlHours = 24, similarityThreshold = 0.92 } = options;
 
   try {
     // Check for semantically similar cached query
     const cached = await findSimilarCachedQuery(query, cacheType, similarityThreshold);
 
     if (cached) {
-      console.log(`Semantic cache HIT: "${query.slice(0, 50)}..." matched "${cached.query.slice(0, 50)}..." (similarity: ${cached.similarity.toFixed(3)})`);
+      console.log(
+        `Semantic cache HIT: "${query.slice(0, 50)}..." matched "${cached.query.slice(0, 50)}..." (similarity: ${cached.similarity.toFixed(3)})`
+      );
       return {
         data: cached.result as T,
         cached: true,
@@ -88,7 +90,7 @@ export async function getCachedResearch<T>(
   return getCachedOrFetch(query, fetcher, {
     cacheType: 'research',
     ttlHours: 48,
-    similarityThreshold: 0.90, // Lower threshold for research (more lenient matching)
+    similarityThreshold: 0.9, // Lower threshold for research (more lenient matching)
   });
 }
 

@@ -24,10 +24,19 @@ async function main() {
       posted_date: today,
       due_date: twoWeeksOut,
       est_value: '$5M - $10M',
-      description: 'The VA is seeking information on modern approaches to human-centered design, user experience research, veteran journey mapping, and rapid prototyping for digital services modernization.',
+      description:
+        'The VA is seeking information on modern approaches to human-centered design, user experience research, veteran journey mapping, and rapid prototyping for digital services modernization.',
       fit_score: 87,
-      fit_reasoning: 'Strong keyword matches: human-centered design, user experience, veteran journey, rapid prototyping, digital services, modernization. Priority agency (VA). Good entry point (RFI).',
-      keywords_matched: ['human-centered design', 'user experience', 'rapid prototyping', 'digital services', 'modernization', 'research'],
+      fit_reasoning:
+        'Strong keyword matches: human-centered design, user experience, veteran journey, rapid prototyping, digital services, modernization. Priority agency (VA). Good entry point (RFI).',
+      keywords_matched: [
+        'human-centered design',
+        'user experience',
+        'rapid prototyping',
+        'digital services',
+        'modernization',
+        'research',
+      ],
       status: 'new',
       sam_url: 'https://sam.gov/test/123',
     })

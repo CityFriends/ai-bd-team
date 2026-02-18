@@ -67,8 +67,10 @@ I'll keep scanning. Sometimes agencies are slow to update their forecasts.`;
   }
 
   // Group by relevance
-  const high = forecasts.filter(f => (f.relevance_score || 0) >= 80);
-  const medium = forecasts.filter(f => (f.relevance_score || 0) >= 60 && (f.relevance_score || 0) < 80);
+  const high = forecasts.filter((f) => (f.relevance_score || 0) >= 80);
+  const medium = forecasts.filter(
+    (f) => (f.relevance_score || 0) >= 60 && (f.relevance_score || 0) < 80
+  );
 
   let message = `📅 *Forecast Update - Here's what's coming down the pike:*\n`;
 
@@ -166,7 +168,6 @@ async function main() {
     });
 
     console.log('Scheduler running...');
-
   } else {
     // One-time scan
     await runScanAndBrief();

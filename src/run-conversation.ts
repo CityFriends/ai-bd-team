@@ -20,8 +20,12 @@ async function main() {
     console.error('Usage: npm run conversation -- --opportunity-id=<uuid> [--delay=<seconds>]');
     console.error('');
     console.error('Example:');
-    console.error('  npm run conversation -- --opportunity-id=2e59b339-6c37-4925-84c5-4e27abf7a47f');
-    console.error('  npm run conversation -- --opportunity-id=2e59b339-6c37-4925-84c5-4e27abf7a47f --delay=5');
+    console.error(
+      '  npm run conversation -- --opportunity-id=2e59b339-6c37-4925-84c5-4e27abf7a47f'
+    );
+    console.error(
+      '  npm run conversation -- --opportunity-id=2e59b339-6c37-4925-84c5-4e27abf7a47f --delay=5'
+    );
     process.exit(1);
   }
 
@@ -43,9 +47,9 @@ async function main() {
     console.log(`✅ Conversation complete in ${elapsed}s`);
     console.log('');
     console.log('Check Slack:');
-    console.log('  • Maya\'s post in main channel (thread has full discussion)');
+    console.log("  • Maya's post in main channel (thread has full discussion)");
     console.log('  • David, Rosa, James reply in thread');
-    console.log('  • Patricia\'s summary in main channel');
+    console.log("  • Patricia's summary in main channel");
     console.log('');
   } catch (error) {
     console.error('\n❌ Conversation failed:', error);

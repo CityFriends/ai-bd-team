@@ -5,7 +5,14 @@
  * Uses Slack's Block Kit: https://api.slack.com/block-kit
  */
 
-import type { KnownBlock, Button, ActionsBlock, SectionBlock, DividerBlock, ContextBlock } from '@slack/types';
+import type {
+  KnownBlock,
+  Button,
+  ActionsBlock,
+  SectionBlock,
+  DividerBlock,
+  ContextBlock,
+} from '@slack/types';
 
 export interface OpportunityBlocks {
   noticeId: string;
@@ -40,7 +47,7 @@ export function section(text: string): SectionBlock {
 export function sectionWithFields(fields: string[]): SectionBlock {
   return {
     type: 'section',
-    fields: fields.map(f => ({
+    fields: fields.map((f) => ({
       type: 'mrkdwn',
       text: f,
     })),
@@ -60,7 +67,7 @@ export function divider(): DividerBlock {
 export function context(texts: string[]): ContextBlock {
   return {
     type: 'context',
-    elements: texts.map(t => ({
+    elements: texts.map((t) => ({
       type: 'mrkdwn',
       text: t,
     })),
@@ -136,14 +143,15 @@ export function buildOpportunityBlocks(opp: OpportunityBlocks): KnownBlock[] {
   }
 
   // Score and reasons
-  const reasonsText = opp.reasons.length > 0
-    ? `*Fit Score: ${opp.score}/100*\n${opp.reasons.map(r => `• ${r}`).join('\n')}`
-    : `*Fit Score: ${opp.score}/100*`;
+  const reasonsText =
+    opp.reasons.length > 0
+      ? `*Fit Score: ${opp.score}/100*\n${opp.reasons.map((r) => `• ${r}`).join('\n')}`
+      : `*Fit Score: ${opp.score}/100*`;
   blocks.push(section(reasonsText));
 
   // Red flags if any
   if (opp.redFlags && opp.redFlags.length > 0) {
-    blocks.push(section(`⚠️ *Concerns:*\n${opp.redFlags.map(r => `• ${r}`).join('\n')}`));
+    blocks.push(section(`⚠️ *Concerns:*\n${opp.redFlags.map((r) => `• ${r}`).join('\n')}`));
   }
 
   // Link
@@ -182,9 +190,7 @@ export function buildConfirmationBlocks(
     pipeline: `📋 Added *${title}* to the pipeline`,
   };
 
-  return [
-    section(actionText[action] || `Action taken on ${title}`),
-  ];
+  return [section(actionText[action] || `Action taken on ${title}`)];
 }
 
 /**
@@ -203,7 +209,7 @@ export function buildPipelineBlocks(pipeline: {
   // Hot opportunities
   if (pipeline.hot.length > 0) {
     let hotText = '*🔥 Hot (due soon)*\n';
-    pipeline.hot.forEach(o => {
+    pipeline.hot.forEach((o) => {
       hotText += `• ${o.title.slice(0, 40)}... (${o.agency || 'Unknown'}) - ${o.daysLeft} days left\n`;
     });
     blocks.push(section(hotText));
@@ -214,7 +220,7 @@ export function buildPipelineBlocks(pipeline: {
   // Active pursuits
   if (pipeline.active.length > 0) {
     let activeText = '*📋 Active Pursuits*\n';
-    pipeline.active.forEach(o => {
+    pipeline.active.forEach((o) => {
       activeText += `• ${o.title.slice(0, 40)}... - ${o.stage}${o.owner ? ` (${o.owner})` : ''}\n`;
     });
     blocks.push(section(activeText));
@@ -228,10 +234,12 @@ export function buildPipelineBlocks(pipeline: {
   blocks.push(divider());
 
   // Quick action buttons
-  blocks.push(actions([
-    button('🔄 Refresh', 'pipeline_refresh', 'refresh'),
-    button('📊 Full Report', 'pipeline_report', 'report'),
-  ]));
+  blocks.push(
+    actions([
+      button('🔄 Refresh', 'pipeline_refresh', 'refresh'),
+      button('📊 Full Report', 'pipeline_report', 'report'),
+    ])
+  );
 
   return blocks;
 }
@@ -249,22 +257,24 @@ export function buildDecisionBlocks(decision: {
 }): KnownBlock[] {
   const blocks: KnownBlock[] = [];
 
-  const recEmoji = decision.recommendation === 'GO' ? '✅' :
-                   decision.recommendation === 'PASS' ? '⛔' : '🤔';
+  const recEmoji =
+    decision.recommendation === 'GO' ? '✅' : decision.recommendation === 'PASS' ? '⛔' : '🤔';
 
   blocks.push(section(`*Decision Needed: ${decision.title}*`));
   blocks.push(divider());
 
-  blocks.push(sectionWithFields([
-    `*Recommendation:* ${recEmoji} ${decision.recommendation}`,
-    `*Confidence:* ${decision.confidence}`,
-  ]));
+  blocks.push(
+    sectionWithFields([
+      `*Recommendation:* ${recEmoji} ${decision.recommendation}`,
+      `*Confidence:* ${decision.confidence}`,
+    ])
+  );
 
   if (decision.dueDate) {
     blocks.push(section(`*Response Due:* ${decision.dueDate}`));
   }
 
-  const reasoningText = decision.reasoning.map(r => `• ${r}`).join('\n');
+  const reasoningText = decision.reasoning.map((r) => `• ${r}`).join('\n');
   blocks.push(section(`*Reasoning:*\n${reasoningText}`));
 
   blocks.push(divider());

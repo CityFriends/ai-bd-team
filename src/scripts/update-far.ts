@@ -20,7 +20,9 @@ async function updateFAR() {
   }
 
   // Get current FAC version from last commit message
-  const currentMessage = execSync(`git -C ${FAR_DIR} log -1 --format=%s`, { encoding: 'utf-8' }).trim();
+  const currentMessage = execSync(`git -C ${FAR_DIR} log -1 --format=%s`, {
+    encoding: 'utf-8',
+  }).trim();
   console.log(`Current version: ${currentMessage}`);
 
   // Pull latest changes
@@ -33,7 +35,9 @@ async function updateFAR() {
   }
 
   // Check if there are new commits
-  const remoteCommit = execSync(`git -C ${FAR_DIR} rev-parse origin/master`, { encoding: 'utf-8' }).trim();
+  const remoteCommit = execSync(`git -C ${FAR_DIR} rev-parse origin/master`, {
+    encoding: 'utf-8',
+  }).trim();
 
   if (currentCommit === remoteCommit) {
     console.log('\n✓ FAR is up to date. No new changes.');
@@ -43,10 +47,9 @@ async function updateFAR() {
   // There are updates - show what's new
   console.log('\n★ New FAR updates available!');
   console.log('\nNew commits:');
-  const newCommits = execSync(
-    `git -C ${FAR_DIR} log ${currentCommit}..${remoteCommit} --oneline`,
-    { encoding: 'utf-8' }
-  );
+  const newCommits = execSync(`git -C ${FAR_DIR} log ${currentCommit}..${remoteCommit} --oneline`, {
+    encoding: 'utf-8',
+  });
   console.log(newCommits);
 
   // Pull the changes
@@ -70,7 +73,7 @@ async function updateFAR() {
 }
 
 // Run
-updateFAR().catch(err => {
+updateFAR().catch((err) => {
   console.error('Update failed:', err);
   process.exit(1);
 });

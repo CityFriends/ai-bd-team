@@ -18,7 +18,7 @@ async function testRaw() {
 
   const response = await fetch(url.toString(), {
     headers: {
-      'Accept': 'application/atom+xml, application/xml, text/xml',
+      Accept: 'application/atom+xml, application/xml, text/xml',
       'User-Agent': 'BD-Team-Research-Bot/1.0',
     },
   });

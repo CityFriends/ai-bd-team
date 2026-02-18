@@ -85,7 +85,7 @@ export async function getAgencySpending(params: {
     let spending: AgencySpending | null = null;
 
     if (overviewResponse.ok) {
-      const overviewData = await overviewResponse.json() as any;
+      const overviewData = (await overviewResponse.json()) as any;
       spending = {
         agencyName: overviewData.name || agencyName || 'Unknown',
         agencyCode: toptierCode,
@@ -200,12 +200,7 @@ export async function searchContractorSpending(params: {
           ],
           award_type_codes: ['A', 'B', 'C', 'D'], // Contracts only
         },
-        fields: [
-          'Award ID',
-          'Recipient Name',
-          'Award Amount',
-          'Awarding Agency',
-        ],
+        fields: ['Award ID', 'Recipient Name', 'Award Amount', 'Awarding Agency'],
         limit: 100,
       }),
     });
@@ -214,7 +209,7 @@ export async function searchContractorSpending(params: {
       throw new Error(`USASpending API error: ${response.status}`);
     }
 
-    const data = await response.json() as any;
+    const data = (await response.json()) as any;
     const results = data.results || [];
 
     // Aggregate by agency
@@ -264,7 +259,7 @@ async function findAgencyCode(agencyName: string): Promise<string | undefined> {
     });
 
     if (response.ok) {
-      const data = await response.json() as any;
+      const data = (await response.json()) as any;
       if (data.results && data.results.length > 0) {
         // Return the toptier agency code
         return data.results[0].toptier_agency?.toptier_code;
@@ -291,7 +286,7 @@ async function getSpendingByCategory(
 
     if (!response.ok) return [];
 
-    const data = await response.json() as any;
+    const data = (await response.json()) as any;
     const results = data.results || [];
 
     return results.slice(0, 5).map((item: any) => ({
@@ -341,7 +336,7 @@ async function getTopContractors(
 
     if (!response.ok) return [];
 
-    const data = await response.json() as any;
+    const data = (await response.json()) as any;
     const results = data.results || [];
 
     // Aggregate by recipient
@@ -396,21 +391,25 @@ async function cacheResult(cacheKey: string, result: any): Promise<void> {
   try {
     const supabase = getSupabase();
 
-    await supabase
-      .from('research_cache')
-      .upsert({
+    await supabase.from('research_cache').upsert(
+      {
         cache_key: cacheKey,
         source: 'usaspending',
         data: result,
         created_at: new Date().toISOString(),
-      }, { onConflict: 'cache_key' });
+      },
+      { onConflict: 'cache_key' }
+    );
   } catch (error) {
     console.warn('Failed to cache USASpending result:', error);
   }
 }
 
 // Format for agent response
-export function formatUSASpendingForAgent(spending: AgencySpending | null, trend?: { percentChange: number | null }): string {
+export function formatUSASpendingForAgent(
+  spending: AgencySpending | null,
+  trend?: { percentChange: number | null }
+): string {
   if (!spending) {
     return "Couldn't find USASpending data for this agency.";
   }

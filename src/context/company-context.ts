@@ -104,13 +104,14 @@ export async function loadCompanyContext(): Promise<CompanyContext> {
 
   try {
     // Load all data in parallel
-    const [profileResult, ppResult, partnersResult, personnelResult, caseStudiesResult] = await Promise.all([
-      getSupabase().from('company_profile').select('*').limit(1).single(),
-      getSupabase().from('past_performance').select('*').order('pop_end', { ascending: false }),
-      getSupabase().from('teaming_partners').select('*').eq('relationship_status', 'Active'),
-      getSupabase().from('key_personnel').select('*').eq('available', true),
-      getSupabase().from('case_studies').select('*').eq('public_releasable', true),
-    ]);
+    const [profileResult, ppResult, partnersResult, personnelResult, caseStudiesResult] =
+      await Promise.all([
+        getSupabase().from('company_profile').select('*').limit(1).single(),
+        getSupabase().from('past_performance').select('*').order('pop_end', { ascending: false }),
+        getSupabase().from('teaming_partners').select('*').eq('relationship_status', 'Active'),
+        getSupabase().from('key_personnel').select('*').eq('available', true),
+        getSupabase().from('case_studies').select('*').eq('public_releasable', true),
+      ]);
 
     const context: CompanyContext = {
       profile: profileResult.data || null,
@@ -125,7 +126,9 @@ export async function loadCompanyContext(): Promise<CompanyContext> {
     cachedContext = context;
     cacheTimestamp = Date.now();
 
-    console.log(`[CompanyContext] Loaded: profile=${!!context.profile}, pastPerf=${context.pastPerformance.length}, partners=${context.teamingPartners.length}, personnel=${context.keyPersonnel.length}, cases=${context.caseStudies.length}`);
+    console.log(
+      `[CompanyContext] Loaded: profile=${!!context.profile}, pastPerf=${context.pastPerformance.length}, partners=${context.teamingPartners.length}, personnel=${context.keyPersonnel.length}, cases=${context.caseStudies.length}`
+    );
 
     return context;
   } catch (error) {
@@ -171,28 +174,28 @@ ${profile.tagline ? `"${profile.tagline}"` : ''}
 ${profile.elevator_pitch ? `ELEVATOR PITCH:\n${profile.elevator_pitch}` : ''}
 
 CORE CAPABILITIES:
-${profile.capabilities?.map(c => `• ${c}`).join('\n') || '• Not specified'}
+${profile.capabilities?.map((c) => `• ${c}`).join('\n') || '• Not specified'}
 
 DIFFERENTIATORS (What sets us apart):
-${profile.differentiators?.map(d => `• ${d}`).join('\n') || '• Not specified'}
+${profile.differentiators?.map((d) => `• ${d}`).join('\n') || '• Not specified'}
 
 CERTIFICATIONS & SET-ASIDES:
-${[...(profile.certifications || []), ...(profile.set_asides || [])].map(c => `• ${c}`).join('\n') || '• None listed'}
+${[...(profile.certifications || []), ...(profile.set_asides || [])].map((c) => `• ${c}`).join('\n') || '• None listed'}
 
 NAICS CODES:
 ${profile.naics_codes?.join(', ') || 'Not specified'}
 
 CONTRACT VEHICLES:
-${profile.contract_vehicles?.map(v => `• ${v}`).join('\n') || '• None listed'}
+${profile.contract_vehicles?.map((v) => `• ${v}`).join('\n') || '• None listed'}
 
 AGENCY EXPERIENCE:
-${profile.agency_experience?.map(a => `• ${a}`).join('\n') || '• Not specified'}
+${profile.agency_experience?.map((a) => `• ${a}`).join('\n') || '• Not specified'}
 
 IDEAL OPPORTUNITY:
 ${profile.ideal_opportunity || 'Not defined'}
 
 NO-BID CRITERIA (Red flags that make us pass):
-${profile.no_bid_criteria?.map(c => `• ${c}`).join('\n') || '• None defined'}
+${profile.no_bid_criteria?.map((c) => `• ${c}`).join('\n') || '• None defined'}
 
 TEAM SIZE: ${profile.team_size || 'Unknown'}
 LOCATION: ${profile.location || 'Unknown'}
@@ -204,16 +207,16 @@ LOCATION: ${profile.location || 'Unknown'}
 === STRATEGIC CONTEXT (IMPORTANT) ===
 
 STRATEGIC GOALS (What we're building toward):
-${profile.strategic_goals?.map(g => `• ${g}`).join('\n') || '• Not defined'}
+${profile.strategic_goals?.map((g) => `• ${g}`).join('\n') || '• Not defined'}
 
 CAPABILITY GAPS (Be honest about these):
-${profile.capability_gaps?.map(g => `• ${g}`).join('\n') || '• None identified'}
+${profile.capability_gaps?.map((g) => `• ${g}`).join('\n') || '• None identified'}
 
 GROWTH AREAS (Where we want to build experience):
-${profile.growth_areas?.map(g => `• ${g}`).join('\n') || '• Not defined'}
+${profile.growth_areas?.map((g) => `• ${g}`).join('\n') || '• Not defined'}
 
 INNOVATION INITIATIVES:
-${profile.innovation_initiatives?.map(i => `• ${i}`).join('\n') || '• None'}
+${profile.innovation_initiatives?.map((i) => `• ${i}`).join('\n') || '• None'}
 
 RISK TOLERANCE:
 ${profile.risk_tolerance || 'Not specified'}
@@ -265,7 +268,7 @@ ${profile.risk_tolerance || 'Not specified'}
   // Add past performance for analysts/strategists
   if (['David', 'James', 'Rosa'].includes(agentRole) && context.pastPerformance.length > 0) {
     prompt += `\n\nPAST PERFORMANCE (Most Recent):\n`;
-    context.pastPerformance.slice(0, 5).forEach(pp => {
+    context.pastPerformance.slice(0, 5).forEach((pp) => {
       prompt += `
 • ${pp.contract_name} (${pp.agency}${pp.sub_agency ? ` - ${pp.sub_agency}` : ''})
   - Role: ${pp.our_role || 'Unknown'}
@@ -280,7 +283,7 @@ ${profile.risk_tolerance || 'Not specified'}
   // Add teaming partners for Rosa
   if (agentRole === 'Rosa' && context.teamingPartners.length > 0) {
     prompt += `\n\nACTIVE TEAMING PARTNERS:\n`;
-    context.teamingPartners.forEach(partner => {
+    context.teamingPartners.forEach((partner) => {
       prompt += `• ${partner.company_name}${partner.capabilities?.length ? ` - ${partner.capabilities.slice(0, 3).join(', ')}` : ''}${partner.set_asides?.length ? ` (${partner.set_asides.join(', ')})` : ''}\n`;
     });
   }
@@ -288,7 +291,7 @@ ${profile.risk_tolerance || 'Not specified'}
   // Add key personnel for Patricia
   if (agentRole === 'Patricia' && context.keyPersonnel.length > 0) {
     prompt += `\n\nKEY PERSONNEL:\n`;
-    context.keyPersonnel.forEach(person => {
+    context.keyPersonnel.forEach((person) => {
       prompt += `• ${person.name} - ${person.role || 'Team member'}${person.specialties?.length ? ` (${person.specialties.slice(0, 3).join(', ')})` : ''}\n`;
     });
   }
@@ -296,7 +299,7 @@ ${profile.risk_tolerance || 'Not specified'}
   // Add case studies for proposal/capture people
   if (['James', 'Patricia'].includes(agentRole) && context.caseStudies.length > 0) {
     prompt += `\n\nCASE STUDIES AVAILABLE:\n`;
-    context.caseStudies.slice(0, 3).forEach(cs => {
+    context.caseStudies.slice(0, 3).forEach((cs) => {
       prompt += `• "${cs.title}" (${cs.agency || cs.client || 'Client'})${cs.outcomes?.length ? ` - ${cs.outcomes[0]}` : ''}\n`;
     });
   }
@@ -367,8 +370,8 @@ export async function checkOpportunityFit(opportunity: {
 
   // Check NAICS match
   if (opportunity.naicsCodes && profile.naics_codes) {
-    const matchingNaics = opportunity.naicsCodes.filter(n =>
-      profile.naics_codes!.some(our => n.startsWith(our) || our.startsWith(n))
+    const matchingNaics = opportunity.naicsCodes.filter((n) =>
+      profile.naics_codes!.some((our) => n.startsWith(our) || our.startsWith(n))
     );
     if (matchingNaics.length > 0) {
       reasons.push(`NAICS match: ${matchingNaics.join(', ')}`);
@@ -379,9 +382,10 @@ export async function checkOpportunityFit(opportunity: {
 
   // Check set-aside match
   if (opportunity.setAside && profile.set_asides) {
-    const hasSetAside = profile.set_asides.some(s =>
-      opportunity.setAside!.toLowerCase().includes(s.toLowerCase()) ||
-      s.toLowerCase().includes(opportunity.setAside!.toLowerCase())
+    const hasSetAside = profile.set_asides.some(
+      (s) =>
+        opportunity.setAside!.toLowerCase().includes(s.toLowerCase()) ||
+        s.toLowerCase().includes(opportunity.setAside!.toLowerCase())
     );
     if (hasSetAside) {
       reasons.push(`Set-aside match: ${opportunity.setAside}`);
@@ -392,9 +396,10 @@ export async function checkOpportunityFit(opportunity: {
 
   // Check agency experience
   if (opportunity.agency && profile.agency_experience) {
-    const hasAgency = profile.agency_experience.some(a =>
-      opportunity.agency!.toLowerCase().includes(a.toLowerCase()) ||
-      a.toLowerCase().includes(opportunity.agency!.toLowerCase())
+    const hasAgency = profile.agency_experience.some(
+      (a) =>
+        opportunity.agency!.toLowerCase().includes(a.toLowerCase()) ||
+        a.toLowerCase().includes(opportunity.agency!.toLowerCase())
     );
     if (hasAgency) {
       reasons.push(`Agency experience: ${opportunity.agency}`);
@@ -403,10 +408,11 @@ export async function checkOpportunityFit(opportunity: {
 
   // Check no-bid criteria
   if (profile.no_bid_criteria && opportunity.keywords) {
-    const redFlags = profile.no_bid_criteria.filter(criterion =>
-      opportunity.keywords!.some(kw =>
-        kw.toLowerCase().includes(criterion.toLowerCase()) ||
-        criterion.toLowerCase().includes(kw.toLowerCase())
+    const redFlags = profile.no_bid_criteria.filter((criterion) =>
+      opportunity.keywords!.some(
+        (kw) =>
+          kw.toLowerCase().includes(criterion.toLowerCase()) ||
+          criterion.toLowerCase().includes(kw.toLowerCase())
       )
     );
     if (redFlags.length > 0) {

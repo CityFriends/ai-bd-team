@@ -13,7 +13,7 @@ async function main() {
   if (!process.env.MARCUS_BOT_TOKEN || !process.env.MARCUS_APP_TOKEN) {
     console.error('ERROR: Missing MARCUS_BOT_TOKEN or MARCUS_APP_TOKEN in .env');
     console.error('');
-    console.error('Please create Marcus\'s Slack app and add his tokens to .env:');
+    console.error("Please create Marcus's Slack app and add his tokens to .env:");
     console.error('  MARCUS_BOT_TOKEN=xoxb-...');
     console.error('  MARCUS_APP_TOKEN=xapp-...');
     process.exit(1);
@@ -21,7 +21,7 @@ async function main() {
 
   // Check for GitHub token (optional but recommended)
   if (!process.env.GITHUB_TOKEN) {
-    console.warn('WARNING: GITHUB_TOKEN not set. Marcus won\'t be able to analyze repos.');
+    console.warn("WARNING: GITHUB_TOKEN not set. Marcus won't be able to analyze repos.");
     console.warn('Add GITHUB_TOKEN to .env for GitHub repo analysis.');
     console.warn('');
   }
@@ -40,7 +40,6 @@ async function main() {
       await marcus.disconnect();
       process.exit(0);
     });
-
   } catch (error) {
     console.error('Failed to start Marcus:', error);
     process.exit(1);

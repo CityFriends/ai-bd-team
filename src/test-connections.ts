@@ -7,10 +7,7 @@ async function testSupabase(): Promise<boolean> {
     const supabase = getSupabase();
 
     // Try to query the opportunities table (even if empty)
-    const { data, error } = await supabase
-      .from('opportunities')
-      .select('id')
-      .limit(1);
+    const { data, error } = await supabase.from('opportunities').select('id').limit(1);
 
     if (error) {
       console.log('   ❌ Supabase error:', error.message);
@@ -114,8 +111,12 @@ async function testSamGov(): Promise<boolean> {
       return false;
     }
 
-    const data = await response.json() as { totalRecords?: number };
-    console.log('   ✅ SAM.gov connected! Found', data.totalRecords || 0, 'opportunities in last 7 days');
+    const data = (await response.json()) as { totalRecords?: number };
+    console.log(
+      '   ✅ SAM.gov connected! Found',
+      data.totalRecords || 0,
+      'opportunities in last 7 days'
+    );
     return true;
   } catch (err) {
     console.log('   ❌ SAM.gov failed:', (err as Error).message);
@@ -144,7 +145,7 @@ async function main() {
   console.log('  SAM.gov: ', results.samGov ? '✅ PASS' : '❌ FAIL');
   console.log('═══════════════════════════════════════\n');
 
-  const allPassed = Object.values(results).every(r => r);
+  const allPassed = Object.values(results).every((r) => r);
   process.exit(allPassed ? 0 : 1);
 }
 

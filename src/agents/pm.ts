@@ -1,8 +1,5 @@
 import { BaseAgent } from './base-agent.js';
-import {
-  PM_SYSTEM_PROMPT,
-  PM_RESPONSE_PROMPT,
-} from '../prompts/pm.js';
+import { PM_SYSTEM_PROMPT, PM_RESPONSE_PROMPT } from '../prompts/pm.js';
 import {
   getActiveOpportunities,
   getOutreachByOpportunity,
@@ -39,10 +36,7 @@ export class PMAgent extends BaseAgent {
         );
         break;
       case 'respond':
-        await this.respond(
-          payload.message as string,
-          payload.thread_ts as string | undefined
-        );
+        await this.respond(payload.message as string, payload.thread_ts as string | undefined);
         break;
       default:
         console.log(`PM: Unknown action ${action}`);
@@ -66,7 +60,9 @@ export class PMAgent extends BaseAgent {
       console.log('PM: Standup complete');
     } catch (error) {
       console.error('PM: Error running standup:', error);
-      await this.post(`Morning all. Hit a snag pulling the pipeline status - give me a sec to sort this out.`);
+      await this.post(
+        `Morning all. Hit a snag pulling the pipeline status - give me a sec to sort this out.`
+      );
     }
   }
 
@@ -117,12 +113,15 @@ export class PMAgent extends BaseAgent {
   }
 
   // Format the standup message - Patricia's style
-  private formatStandupMessage(pipeline: PipelineItem[]): { mainMessage: string; threadDetail: string | null } {
-    const pendingDecisions = pipeline.filter(p => p.needsDecision);
-    const urgentDeadlines = pipeline.filter(p => p.daysUntilDue !== null && p.daysUntilDue <= 14);
-    const pursuing = pipeline.filter(p => p.opportunity.status === 'pursuing');
-    const researching = pipeline.filter(p => p.opportunity.status === 'researching');
-    const newOpps = pipeline.filter(p => p.opportunity.status === 'new');
+  private formatStandupMessage(pipeline: PipelineItem[]): {
+    mainMessage: string;
+    threadDetail: string | null;
+  } {
+    const pendingDecisions = pipeline.filter((p) => p.needsDecision);
+    const urgentDeadlines = pipeline.filter((p) => p.daysUntilDue !== null && p.daysUntilDue <= 14);
+    const pursuing = pipeline.filter((p) => p.opportunity.status === 'pursuing');
+    const researching = pipeline.filter((p) => p.opportunity.status === 'researching');
+    const newOpps = pipeline.filter((p) => p.opportunity.status === 'new');
 
     // SHORT main message - Patricia's checklist style
     let mainMessage = `Morning all, here's where we are.\n\n`;
@@ -145,9 +144,9 @@ export class PMAgent extends BaseAgent {
     // Urgent deadlines
     if (urgentDeadlines.length > 0) {
       mainMessage += `\n⏰ *Deadlines in 2 weeks:* `;
-      mainMessage += urgentDeadlines.map(u =>
-        `${u.opportunity.agency} (${u.daysUntilDue}d)`
-      ).join(', ');
+      mainMessage += urgentDeadlines
+        .map((u) => `${u.opportunity.agency} (${u.daysUntilDue}d)`)
+        .join(', ');
       mainMessage += `\n`;
     }
 
@@ -232,7 +231,7 @@ export class PMAgent extends BaseAgent {
     }
 
     // Group by age
-    const old = pending.filter(p => {
+    const old = pending.filter((p) => {
       const created = new Date(p.created_at);
       const days = Math.floor((Date.now() - created.getTime()) / (1000 * 60 * 60 * 24));
       return days >= 2;

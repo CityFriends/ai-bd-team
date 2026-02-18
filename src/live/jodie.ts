@@ -47,7 +47,7 @@ Hard rules:
     // Check for proposal writing triggers
     const text = message.text.toLowerCase();
     const proposalTriggers = [
-      'let\'s start writing',
+      "let's start writing",
       'start the proposal',
       'compliance matrix',
       'begin drafting',
@@ -57,13 +57,13 @@ Hard rules:
       'technical approach',
       'past performance section',
       'management approach',
-      'we\'re going for this one',
+      "we're going for this one",
       'can you draft',
       'we need a proposal',
       'rfp is due',
     ];
 
-    const isProposalTrigger = proposalTriggers.some(trigger => text.includes(trigger));
+    const isProposalTrigger = proposalTriggers.some((trigger) => text.includes(trigger));
 
     if (isProposalTrigger && !message.isDirectMention) {
       // Add to active threads so Jodie follows the proposal discussion

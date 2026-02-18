@@ -67,7 +67,8 @@ export async function searchEntities(params: {
 
   // Build query
   const queryParts: string[] = [];
-  if (legalBusinessName) queryParts.push(`legalBusinessName:${encodeURIComponent(legalBusinessName)}`);
+  if (legalBusinessName)
+    queryParts.push(`legalBusinessName:${encodeURIComponent(legalBusinessName)}`);
   if (ueiSAM) queryParts.push(`ueiSAM:${ueiSAM}`);
   if (cageCode) queryParts.push(`cageCode:${cageCode}`);
 
@@ -86,13 +87,16 @@ export async function searchEntities(params: {
     url.searchParams.set('api_key', apiKey);
     url.searchParams.set('q', query);
     url.searchParams.set('registrationStatus', 'A'); // Active only
-    url.searchParams.set('includeSections', 'entityRegistration,coreData,assertions,certifications,pointsOfContact');
+    url.searchParams.set(
+      'includeSections',
+      'entityRegistration,coreData,assertions,certifications,pointsOfContact'
+    );
 
     console.log(`SAM Entity: Searching for "${legalBusinessName || ueiSAM || cageCode}"`);
 
     const response = await fetch(url.toString(), {
       headers: {
-        'Accept': 'application/json',
+        Accept: 'application/json',
       },
     });
 
@@ -102,7 +106,7 @@ export async function searchEntities(params: {
       throw new Error(`SAM API error: ${response.status}`);
     }
 
-    const data = await response.json() as any;
+    const data = (await response.json()) as any;
     const entities = parseEntities(data.entityData || []);
 
     const result: SAMSearchResult = {
@@ -200,10 +204,10 @@ export async function checkCertification(
 
   const certMap: Record<string, keyof SAMEntityCertifications> = {
     '8a': 'is8a',
-    'WOSB': 'isWOSB',
-    'SDVOSB': 'isSDVOSB',
-    'HUBZone': 'isHUBZone',
-    'EDWOSB': 'isEDWOSB',
+    WOSB: 'isWOSB',
+    SDVOSB: 'isSDVOSB',
+    HUBZone: 'isHUBZone',
+    EDWOSB: 'isEDWOSB',
   };
 
   const certKey = certMap[certification];
@@ -238,7 +242,10 @@ export async function findPartnersByNAICS(params: {
     url.searchParams.set('api_key', apiKey);
     url.searchParams.set('naicsCode', naicsCode);
     url.searchParams.set('registrationStatus', 'A');
-    url.searchParams.set('includeSections', 'entityRegistration,coreData,assertions,certifications');
+    url.searchParams.set(
+      'includeSections',
+      'entityRegistration,coreData,assertions,certifications'
+    );
 
     if (state) {
       url.searchParams.set('physicalAddressStateCode', state);
@@ -253,14 +260,14 @@ export async function findPartnersByNAICS(params: {
     }
 
     const response = await fetch(url.toString(), {
-      headers: { 'Accept': 'application/json' },
+      headers: { Accept: 'application/json' },
     });
 
     if (!response.ok) {
       throw new Error(`SAM API error: ${response.status}`);
     }
 
-    const data = await response.json() as any;
+    const data = (await response.json()) as any;
     const entities = parseEntities(data.entityData || []).slice(0, limit);
 
     return {
@@ -299,7 +306,8 @@ function parseEntities(entityData: any[]): SAMEntity[] {
       registrationExpirationDate: registration.registrationExpirationDate,
       activationDate: registration.activationDate,
       sbaBusinessTypes: assertions.sbaBusinessTypes,
-      isSmallBusiness: assertions.sizeMetrics?.averageAnnualRevenue?.averageAnnualRevenueAmount < 41500000,
+      isSmallBusiness:
+        assertions.sizeMetrics?.averageAnnualRevenue?.averageAnnualRevenueAmount < 41500000,
       certifications: {
         is8a: certifications.has8aCertification || hasSBAType(assertions, 'A4'),
         isWOSB: certifications.hasWOSBCertification || hasSBAType(assertions, 'XX'),
@@ -307,13 +315,15 @@ function parseEntities(entityData: any[]): SAMEntity[] {
         isHUBZone: certifications.hasHUBZoneCertification || hasSBAType(assertions, 'A2'),
         isEDWOSB: certifications.hasEDWOSBCertification,
       },
-      governmentBusinessPOC: pocs.governmentBusinessPOC ? {
-        firstName: pocs.governmentBusinessPOC.firstName,
-        lastName: pocs.governmentBusinessPOC.lastName,
-        title: pocs.governmentBusinessPOC.title,
-        email: pocs.governmentBusinessPOC.email,
-        phone: pocs.governmentBusinessPOC.phone,
-      } : undefined,
+      governmentBusinessPOC: pocs.governmentBusinessPOC
+        ? {
+            firstName: pocs.governmentBusinessPOC.firstName,
+            lastName: pocs.governmentBusinessPOC.lastName,
+            title: pocs.governmentBusinessPOC.title,
+            email: pocs.governmentBusinessPOC.email,
+            phone: pocs.governmentBusinessPOC.phone,
+          }
+        : undefined,
     };
   });
 }
@@ -350,14 +360,15 @@ async function cacheResult(cacheKey: string, result: any): Promise<void> {
   try {
     const supabase = getSupabase();
 
-    await supabase
-      .from('research_cache')
-      .upsert({
+    await supabase.from('research_cache').upsert(
+      {
         cache_key: cacheKey,
         source: 'sam-entity',
         data: result,
         created_at: new Date().toISOString(),
-      }, { onConflict: 'cache_key' });
+      },
+      { onConflict: 'cache_key' }
+    );
   } catch (error) {
     console.warn('Failed to cache SAM entity result:', error);
   }
@@ -383,7 +394,10 @@ export async function searchSAMEntities(params: {
     const url = new URL(SAM_API_BASE);
     url.searchParams.set('api_key', apiKey);
     url.searchParams.set('registrationStatus', 'A');
-    url.searchParams.set('includeSections', 'entityRegistration,coreData,assertions,certifications');
+    url.searchParams.set(
+      'includeSections',
+      'entityRegistration,coreData,assertions,certifications'
+    );
 
     if (naicsCode) {
       url.searchParams.set('naicsCode', naicsCode);
@@ -402,9 +416,9 @@ export async function searchSAMEntities(params: {
     if (certifications.length > 0) {
       const certCodes: Record<string, string> = {
         '8a': 'A4',
-        'WOSB': 'XX',
-        'SDVOSB': 'A5',
-        'HUBZone': 'A2',
+        WOSB: 'XX',
+        SDVOSB: 'A5',
+        HUBZone: 'A2',
       };
       const firstCert = certifications[0];
       if (certCodes[firstCert]) {
@@ -412,10 +426,12 @@ export async function searchSAMEntities(params: {
       }
     }
 
-    console.log(`SAM Entity Search: NAICS=${naicsCode}, type=${businessType}, certs=${certifications.join(',')}`);
+    console.log(
+      `SAM Entity Search: NAICS=${naicsCode}, type=${businessType}, certs=${certifications.join(',')}`
+    );
 
     const response = await fetch(url.toString(), {
-      headers: { 'Accept': 'application/json' },
+      headers: { Accept: 'application/json' },
     });
 
     if (!response.ok) {
@@ -423,7 +439,7 @@ export async function searchSAMEntities(params: {
       return { entities: [], totalRecords: 0 };
     }
 
-    const data = await response.json() as any;
+    const data = (await response.json()) as any;
     const entities = parseEntities(data.entityData || []).slice(0, limit);
 
     return {
@@ -445,7 +461,7 @@ export function formatSAMEntityForAgent(verification: {
   expirationWarning?: string;
 }): string {
   if (!verification.isRegistered || !verification.entity) {
-    return "Could not find this company in SAM.gov - they may not be registered or the name might be different.";
+    return 'Could not find this company in SAM.gov - they may not be registered or the name might be different.';
   }
 
   const e = verification.entity;

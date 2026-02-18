@@ -179,7 +179,8 @@ function parseNextgov(html: string, baseUrl: string): GovNewsItem[] {
       title,
       url,
       source: 'Nextgov',
-      summary: $el.find('.deck, .excerpt, .summary').first().text().trim().slice(0, 200) || undefined,
+      summary:
+        $el.find('.deck, .excerpt, .summary').first().text().trim().slice(0, 200) || undefined,
     });
   });
 
@@ -285,14 +286,29 @@ export function scoreNewsRelevance(item: GovNewsItem): { score: number; reasons:
 
   // High relevance keywords
   const highRelevance = [
-    'contract', 'procurement', 'rfp', 'rfi', 'solicitation',
-    'award', 'acquisition', 'vendor', 'contractor',
-    'small business', '8(a)', 'wosb', 'set-aside',
-    'modernization', 'digital transformation', 'it modernization',
-    'budget', 'funding', 'appropriation', 'spending',
+    'contract',
+    'procurement',
+    'rfp',
+    'rfi',
+    'solicitation',
+    'award',
+    'acquisition',
+    'vendor',
+    'contractor',
+    'small business',
+    '8(a)',
+    'wosb',
+    'set-aside',
+    'modernization',
+    'digital transformation',
+    'it modernization',
+    'budget',
+    'funding',
+    'appropriation',
+    'spending',
   ];
 
-  const highMatches = highRelevance.filter(kw => text.includes(kw));
+  const highMatches = highRelevance.filter((kw) => text.includes(kw));
   if (highMatches.length > 0) {
     score += highMatches.length * 15;
     reasons.push(`BD relevance: ${highMatches.slice(0, 2).join(', ')}`);
@@ -300,21 +316,44 @@ export function scoreNewsRelevance(item: GovNewsItem): { score: number; reasons:
 
   // Medium relevance - technology/service delivery
   const mediumRelevance = [
-    'technology', 'software', 'cloud', 'ai', 'artificial intelligence',
-    'cybersecurity', 'data', 'analytics', 'digital', 'website', 'portal',
-    'user experience', 'customer experience', 'service delivery',
-    'agile', 'devops', 'innovation',
+    'technology',
+    'software',
+    'cloud',
+    'ai',
+    'artificial intelligence',
+    'cybersecurity',
+    'data',
+    'analytics',
+    'digital',
+    'website',
+    'portal',
+    'user experience',
+    'customer experience',
+    'service delivery',
+    'agile',
+    'devops',
+    'innovation',
   ];
 
-  const mediumMatches = mediumRelevance.filter(kw => text.includes(kw));
+  const mediumMatches = mediumRelevance.filter((kw) => text.includes(kw));
   if (mediumMatches.length > 0) {
     score += mediumMatches.length * 8;
     reasons.push(`Tech focus: ${mediumMatches.slice(0, 2).join(', ')}`);
   }
 
   // Agency relevance
-  const priorityAgencies = ['va', 'veterans', 'hhs', 'cms', 'medicare', 'medicaid', 'labor', 'dol', 'education'];
-  if (priorityAgencies.some(a => text.includes(a))) {
+  const priorityAgencies = [
+    'va',
+    'veterans',
+    'hhs',
+    'cms',
+    'medicare',
+    'medicaid',
+    'labor',
+    'dol',
+    'education',
+  ];
+  if (priorityAgencies.some((a) => text.includes(a))) {
     score += 10;
     reasons.push('Priority agency');
   }
@@ -367,7 +406,7 @@ export async function scanAllNewsSources(): Promise<GovNewsItem[]> {
     }
 
     // Small delay between requests
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 500));
   }
 
   // Sort by relevance
@@ -384,9 +423,7 @@ export async function scanAllNewsSources(): Promise<GovNewsItem[]> {
 export async function getRelevantNews(minScore = 50, limit = 15): Promise<GovNewsItem[]> {
   const allNews = await scanAllNewsSources();
 
-  return allNews
-    .filter(item => (item.relevanceScore || 0) >= minScore)
-    .slice(0, limit);
+  return allNews.filter((item) => (item.relevanceScore || 0) >= minScore).slice(0, limit);
 }
 
 /**
@@ -395,11 +432,7 @@ export async function getRelevantNews(minScore = 50, limit = 15): Promise<GovNew
 async function isNewsAlreadySeen(url: string): Promise<boolean> {
   try {
     const supabase = getSupabase();
-    const { data } = await supabase
-      .from('seen_news')
-      .select('url')
-      .eq('url', url)
-      .single();
+    const { data } = await supabase.from('seen_news').select('url').eq('url', url).single();
     return !!data;
   } catch {
     return false;
@@ -454,12 +487,12 @@ export async function getNewRelevantNews(minScore = 50, limit = 10): Promise<Gov
  */
 export function formatNewsDigest(news: GovNewsItem[]): string {
   if (news.length === 0) {
-    return "Quiet news day - nothing significant to report from my usual sources.";
+    return 'Quiet news day - nothing significant to report from my usual sources.';
   }
 
   // Deduplicate by URL first
   const seenUrls = new Set<string>();
-  const uniqueNews = news.filter(item => {
+  const uniqueNews = news.filter((item) => {
     if (!item.url || seenUrls.has(item.url)) return false;
     seenUrls.add(item.url);
     return true;
@@ -470,31 +503,31 @@ export function formatNewsDigest(news: GovNewsItem[]): string {
   // Group by category (mutually exclusive - each item in only one category)
   const usedUrls = new Set<string>();
 
-  const procurement = uniqueNews.filter(n => {
-    if (n.reasons?.some(r => r.includes('BD relevance'))) {
+  const procurement = uniqueNews.filter((n) => {
+    if (n.reasons?.some((r) => r.includes('BD relevance'))) {
       usedUrls.add(n.url);
       return true;
     }
     return false;
   });
 
-  const tech = uniqueNews.filter(n => {
-    if (!usedUrls.has(n.url) && n.reasons?.some(r => r.includes('Tech'))) {
+  const tech = uniqueNews.filter((n) => {
+    if (!usedUrls.has(n.url) && n.reasons?.some((r) => r.includes('Tech'))) {
       usedUrls.add(n.url);
       return true;
     }
     return false;
   });
 
-  const policy = uniqueNews.filter(n => {
-    if (!usedUrls.has(n.url) && n.reasons?.some(r => r.includes('Policy'))) {
+  const policy = uniqueNews.filter((n) => {
+    if (!usedUrls.has(n.url) && n.reasons?.some((r) => r.includes('Policy'))) {
       usedUrls.add(n.url);
       return true;
     }
     return false;
   });
 
-  const other = uniqueNews.filter(n => !usedUrls.has(n.url));
+  const other = uniqueNews.filter((n) => !usedUrls.has(n.url));
 
   if (procurement.length > 0) {
     digest += `*Procurement & Contracts*\n`;
@@ -520,7 +553,7 @@ export function formatNewsDigest(news: GovNewsItem[]): string {
     digest += '\n';
   }
 
-  if (other.length > 0 && (procurement.length + tech.length + policy.length) < 8) {
+  if (other.length > 0 && procurement.length + tech.length + policy.length < 8) {
     digest += `*Other Agency News*\n`;
     for (const item of other.slice(0, 3)) {
       digest += `• <${item.url}|${item.title}> _(${item.source})_\n`;

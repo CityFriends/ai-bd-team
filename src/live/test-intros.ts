@@ -14,17 +14,17 @@ const intros: AgentIntro[] = [
   {
     name: 'Maya',
     botToken: process.env.MAYA_BOT_TOKEN || '',
-    message: "Hey team, Maya here. Ready to find some opportunities 👀",
+    message: 'Hey team, Maya here. Ready to find some opportunities 👀',
   },
   {
     name: 'David',
     botToken: process.env.DAVID_BOT_TOKEN || '',
-    message: "David checking in. Ready to dig into the details.",
+    message: 'David checking in. Ready to dig into the details.',
   },
   {
     name: 'Rosa',
     botToken: process.env.ROSA_BOT_TOKEN || '',
-    message: "Rosa here! Excited to connect some dots.",
+    message: 'Rosa here! Excited to connect some dots.',
   },
   {
     name: 'James',
@@ -39,7 +39,7 @@ const intros: AgentIntro[] = [
 ];
 
 function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function main() {

@@ -5,32 +5,34 @@ import { join } from 'path';
 import { getSupabase } from '../integrations/supabase.js';
 
 export interface FARSection {
-  section_number: string;  // e.g., "15.304"
-  title: string;           // e.g., "Evaluation factors and significant subfactors"
-  part: number;            // e.g., 15
-  subpart?: string;        // e.g., "15.3"
-  full_text: string;       // The complete text content
-  summary?: string;        // A shorter summary for quick reference
+  section_number: string; // e.g., "15.304"
+  title: string; // e.g., "Evaluation factors and significant subfactors"
+  part: number; // e.g., 15
+  subpart?: string; // e.g., "15.3"
+  full_text: string; // The complete text content
+  summary?: string; // A shorter summary for quick reference
 }
 
 // Parse DITA XML to extract text content
 function stripXmlTags(xml: string): string {
-  return xml
-    // Remove XML declaration and DOCTYPE
-    .replace(/<\?xml[^>]*\?>/g, '')
-    .replace(/<!DOCTYPE[^>]*>/g, '')
-    // Remove all XML tags but keep content
-    .replace(/<[^>]+>/g, ' ')
-    // Decode HTML entities
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&#xA0;/g, ' ')
-    // Clean up whitespace
-    .replace(/\s+/g, ' ')
-    .trim();
+  return (
+    xml
+      // Remove XML declaration and DOCTYPE
+      .replace(/<\?xml[^>]*\?>/g, '')
+      .replace(/<!DOCTYPE[^>]*>/g, '')
+      // Remove all XML tags but keep content
+      .replace(/<[^>]+>/g, ' ')
+      // Decode HTML entities
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/&#xA0;/g, ' ')
+      // Clean up whitespace
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
 }
 
 // Extract section number from DITA content
@@ -91,7 +93,7 @@ function parseDitaFile(content: string, filename: string): FARSection | null {
 // Load all FAR sections from DITA files
 export async function parseFARFiles(ditaDir: string): Promise<FARSection[]> {
   const files = await readdir(ditaDir);
-  const ditaFiles = files.filter(f => f.endsWith('.dita'));
+  const ditaFiles = files.filter((f) => f.endsWith('.dita'));
 
   console.log(`Found ${ditaFiles.length} DITA files to parse`);
 
@@ -155,7 +157,9 @@ export async function uploadToSupabase(sections: FARSection[]): Promise<void> {
       }
     } else {
       uploaded += batch.length;
-      console.log(`Uploaded batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(sections.length / batchSize)}`);
+      console.log(
+        `Uploaded batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(sections.length / batchSize)}`
+      );
     }
   }
 

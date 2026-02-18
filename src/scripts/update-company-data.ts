@@ -17,7 +17,8 @@ async function updateCompanyData() {
   const companyProfile = {
     company_name: 'Friends From The City',
     tagline: 'For Government That Works.',
-    elevator_pitch: 'A civic tech company working with state and federal partners to make public services easier to use.',
+    elevator_pitch:
+      'A civic tech company working with state and federal partners to make public services easier to use.',
     capabilities: [
       'Strategy',
       'Design',
@@ -54,19 +55,9 @@ async function updateCompanyData() {
       'IL W/MBE',
       'MA SDVOBE',
     ],
-    set_asides: [
-      '8(a)',
-      'WOSB',
-      'SDVOSB',
-    ],
-    naics_codes: [
-      '541511',
-      '541512',
-      '541519',
-    ],
-    contract_vehicles: [
-      'GSA MAS Schedule 47QTCA23D0076',
-    ],
+    set_asides: ['8(a)', 'WOSB', 'SDVOSB'],
+    naics_codes: ['541511', '541512', '541519'],
+    contract_vehicles: ['GSA MAS Schedule 47QTCA23D0076'],
     agency_experience: [
       'Department of Veterans Affairs',
       'Centers for Medicare & Medicaid Services (CMS)',
@@ -77,7 +68,8 @@ async function updateCompanyData() {
       'American Board of Family Medicine',
       'National Museum of African American History & Culture',
     ],
-    ideal_opportunity: 'Human-centered design, UX research, digital service delivery, accessibility, and product management for federal health and benefits agencies. Sweet spot is $500K-$5M task orders on existing vehicles.',
+    ideal_opportunity:
+      'Human-centered design, UX research, digital service delivery, accessibility, and product management for federal health and benefits agencies. Sweet spot is $500K-$5M task orders on existing vehicles.',
     no_bid_criteria: [
       'Requires Top Secret clearance',
       'Hardware procurement focus',
@@ -107,9 +99,7 @@ async function updateCompanyData() {
     if (error) console.error('Error updating profile:', error);
     else console.log('   Updated existing profile');
   } else {
-    const { error } = await supabase
-      .from('company_profile')
-      .insert(companyProfile);
+    const { error } = await supabase.from('company_profile').insert(companyProfile);
     if (error) console.error('Error inserting profile:', error);
     else console.log('   Created new profile');
   }
@@ -120,18 +110,66 @@ async function updateCompanyData() {
   console.log('\n2. Adding team members...');
 
   const teamMembers = [
-    { name: 'Lapedra Tolson', role: 'Chief Executive Officer', specialties: ['Business Development', 'Strategic Leadership', 'Federal Contracting'] },
-    { name: 'Tamara Tolson', role: 'Chief Operations Officer', specialties: ['Operations', 'Project Management', 'Contract Management'] },
-    { name: 'Andrew Morgan', role: 'Director of Product & UX', specialties: ['Product Management', 'UX Strategy', 'Design Leadership'] },
-    { name: 'Ben Nguyen', role: 'UX Researcher', specialties: ['User Research', 'Usability Testing', 'Research Synthesis'] },
-    { name: 'Christine Cereca', role: 'Senior Frontend Developer', specialties: ['Frontend Development', 'Accessibility', 'Design Systems'] },
-    { name: 'Evelyn Hilbrich Davis', role: 'Senior UX Researcher', specialties: ['User Research', 'Service Design', 'Qualitative Research'] },
-    { name: 'Joann Agnitti', role: 'Senior UX Researcher', specialties: ['User Research', 'Journey Mapping', 'Stakeholder Research'] },
-    { name: 'Joseph Lee', role: 'Senior Product Designer', specialties: ['Product Design', 'UI Design', 'Prototyping'] },
-    { name: 'Marcia Ortiz', role: 'Senior Product Manager', specialties: ['Product Management', 'Agile', 'Roadmapping'] },
-    { name: 'Mayene Kim', role: 'Senior Product Designer', specialties: ['Product Design', 'Design Systems', 'Accessibility'] },
-    { name: 'Paulina Fisher', role: 'Senior UX Researcher', specialties: ['User Research', 'Content Strategy', 'Information Architecture'] },
-    { name: 'Victoria Suwardiman', role: 'Senior UX Researcher', specialties: ['User Research', 'Service Design', 'Workshop Facilitation'] },
+    {
+      name: 'Lapedra Tolson',
+      role: 'Chief Executive Officer',
+      specialties: ['Business Development', 'Strategic Leadership', 'Federal Contracting'],
+    },
+    {
+      name: 'Tamara Tolson',
+      role: 'Chief Operations Officer',
+      specialties: ['Operations', 'Project Management', 'Contract Management'],
+    },
+    {
+      name: 'Andrew Morgan',
+      role: 'Director of Product & UX',
+      specialties: ['Product Management', 'UX Strategy', 'Design Leadership'],
+    },
+    {
+      name: 'Ben Nguyen',
+      role: 'UX Researcher',
+      specialties: ['User Research', 'Usability Testing', 'Research Synthesis'],
+    },
+    {
+      name: 'Christine Cereca',
+      role: 'Senior Frontend Developer',
+      specialties: ['Frontend Development', 'Accessibility', 'Design Systems'],
+    },
+    {
+      name: 'Evelyn Hilbrich Davis',
+      role: 'Senior UX Researcher',
+      specialties: ['User Research', 'Service Design', 'Qualitative Research'],
+    },
+    {
+      name: 'Joann Agnitti',
+      role: 'Senior UX Researcher',
+      specialties: ['User Research', 'Journey Mapping', 'Stakeholder Research'],
+    },
+    {
+      name: 'Joseph Lee',
+      role: 'Senior Product Designer',
+      specialties: ['Product Design', 'UI Design', 'Prototyping'],
+    },
+    {
+      name: 'Marcia Ortiz',
+      role: 'Senior Product Manager',
+      specialties: ['Product Management', 'Agile', 'Roadmapping'],
+    },
+    {
+      name: 'Mayene Kim',
+      role: 'Senior Product Designer',
+      specialties: ['Product Design', 'Design Systems', 'Accessibility'],
+    },
+    {
+      name: 'Paulina Fisher',
+      role: 'Senior UX Researcher',
+      specialties: ['User Research', 'Content Strategy', 'Information Architecture'],
+    },
+    {
+      name: 'Victoria Suwardiman',
+      role: 'Senior UX Researcher',
+      specialties: ['User Research', 'Service Design', 'Workshop Facilitation'],
+    },
   ];
 
   for (const member of teamMembers) {
@@ -150,9 +188,7 @@ async function updateCompanyData() {
       if (error) console.error(`   Error updating ${member.name}:`, error);
       else console.log(`   Updated: ${member.name}`);
     } else {
-      const { error } = await supabase
-        .from('key_personnel')
-        .insert({ ...member, available: true });
+      const { error } = await supabase.from('key_personnel').insert({ ...member, available: true });
       if (error) console.error(`   Error inserting ${member.name}:`, error);
       else console.log(`   Added: ${member.name}`);
     }
@@ -165,7 +201,7 @@ async function updateCompanyData() {
 
   const caseStudies = [
     {
-      title: 'When Search Doesn\'t Find',
+      title: "When Search Doesn't Find",
       agency: 'Department of Veterans Affairs',
       source_url: 'https://www.friendsfromthecity.com/work/case-study/when-search-doesnt-find',
       methods_used: ['User Research', 'Search UX', 'Content Strategy'],
@@ -174,7 +210,8 @@ async function updateCompanyData() {
     {
       title: 'Making Accessibility Harder to Miss',
       agency: 'Department of Veterans Affairs',
-      source_url: 'https://www.friendsfromthecity.com/work/case-study/making-accessibility-harder-to-miss',
+      source_url:
+        'https://www.friendsfromthecity.com/work/case-study/making-accessibility-harder-to-miss',
       methods_used: ['Accessibility', 'Design Systems', 'Frontend Development'],
       outcomes: ['Improved accessibility compliance across VA.gov'],
       public_releasable: true,
@@ -182,7 +219,8 @@ async function updateCompanyData() {
     {
       title: 'Translating the 526ez for PACT Act',
       agency: 'Department of Veterans Affairs',
-      source_url: 'https://www.friendsfromthecity.com/work/case-study/translating-the-526ez-for-pact-act',
+      source_url:
+        'https://www.friendsfromthecity.com/work/case-study/translating-the-526ez-for-pact-act',
       methods_used: ['Content Strategy', 'Plain Language', 'Form Design'],
       outcomes: ['2M+ veterans served'],
       public_releasable: true,
@@ -197,7 +235,8 @@ async function updateCompanyData() {
     {
       title: 'Faster Decisions for Clinicians',
       agency: 'Centers for Medicare & Medicaid Services',
-      source_url: 'https://www.friendsfromthecity.com/work/case-study/faster-decisions-for-clinicians',
+      source_url:
+        'https://www.friendsfromthecity.com/work/case-study/faster-decisions-for-clinicians',
       methods_used: ['Product Design', 'User Research', 'Dashboard Design'],
       outcomes: ['570K+ clinicians served'],
       public_releasable: true,
@@ -212,30 +251,34 @@ async function updateCompanyData() {
     {
       title: 'Untangling QPP for Clinicians',
       agency: 'Centers for Medicare & Medicaid Services',
-      source_url: 'https://www.friendsfromthecity.com/work/case-study/untangling-qpp-for-clinicians',
+      source_url:
+        'https://www.friendsfromthecity.com/work/case-study/untangling-qpp-for-clinicians',
       methods_used: ['Information Architecture', 'Content Strategy', 'Service Design'],
       public_releasable: true,
     },
     {
       title: 'Resolving Veteran Debt in Minutes',
       agency: 'Department of Veterans Affairs',
-      source_url: 'https://www.friendsfromthecity.com/work/case-study/resolving-veteran-debt-in-minutes',
+      source_url:
+        'https://www.friendsfromthecity.com/work/case-study/resolving-veteran-debt-in-minutes',
       methods_used: ['Service Design', 'Product Design', 'Debt Resolution'],
       outcomes: ['30K+ veterans helped resolve debt'],
       public_releasable: true,
     },
     {
-      title: 'Maryland\'s First User Research',
+      title: "Maryland's First User Research",
       agency: 'Maryland Digital Service',
       client: 'State of Maryland',
-      source_url: 'https://www.friendsfromthecity.com/work/case-study/marylands-first-user-research',
+      source_url:
+        'https://www.friendsfromthecity.com/work/case-study/marylands-first-user-research',
       methods_used: ['User Research', 'Research Operations', 'Capacity Building'],
       public_releasable: true,
     },
     {
       title: 'Designing Policy Through Workshops',
       agency: 'Centers for Medicare & Medicaid Services',
-      source_url: 'https://www.friendsfromthecity.com/work/case-study/designing-policy-through-workshops',
+      source_url:
+        'https://www.friendsfromthecity.com/work/case-study/designing-policy-through-workshops',
       methods_used: ['Workshop Facilitation', 'Policy Design', 'Stakeholder Engagement'],
       public_releasable: true,
     },
@@ -245,9 +288,7 @@ async function updateCompanyData() {
   await supabase.from('case_studies').delete().neq('id', '00000000-0000-0000-0000-000000000000');
 
   for (const cs of caseStudies) {
-    const { error } = await supabase
-      .from('case_studies')
-      .insert(cs);
+    const { error } = await supabase.from('case_studies').insert(cs);
     if (error) console.error(`   Error adding ${cs.title}:`, error);
     else console.log(`   Added: ${cs.title}`);
   }
@@ -261,25 +302,29 @@ async function updateCompanyData() {
     {
       content_type: 'news',
       title: 'Friends Qualified for New Jersey Resident Experience Initiative',
-      content: 'Friends From The City qualified for the New Jersey Resident Experience Initiative, expanding our state government portfolio.',
+      content:
+        'Friends From The City qualified for the New Jersey Resident Experience Initiative, expanding our state government portfolio.',
       tags: ['news', 'state', 'new-jersey', 'qualification'],
     },
     {
       content_type: 'news',
       title: 'Friends Joins CMS Enterprise AI Initiative',
-      content: 'Friends From The City joined the CMS Enterprise AI Initiative, bringing human-centered design to AI implementation in healthcare.',
+      content:
+        'Friends From The City joined the CMS Enterprise AI Initiative, bringing human-centered design to AI implementation in healthcare.',
       tags: ['news', 'federal', 'cms', 'ai', 'healthcare'],
     },
     {
       content_type: 'news',
       title: 'Friends Joins VA.gov Financial Management Team',
-      content: 'Friends From The City joined the VA.gov Financial Management Team, helping veterans resolve debt and manage benefits.',
+      content:
+        'Friends From The City joined the VA.gov Financial Management Team, helping veterans resolve debt and manage benefits.',
       tags: ['news', 'federal', 'va', 'financial-management'],
     },
     {
       content_type: 'news',
       title: 'Friends Leads First User Research for Maryland Digital Service',
-      content: 'Friends From The City led the first user research initiative for Maryland Digital Service, establishing research operations for the state.',
+      content:
+        'Friends From The City led the first user research initiative for Maryland Digital Service, establishing research operations for the state.',
       tags: ['news', 'state', 'maryland', 'user-research'],
     },
   ];
@@ -292,9 +337,7 @@ async function updateCompanyData() {
       .single();
 
     if (!existing) {
-      const { error } = await supabase
-        .from('proposal_content')
-        .insert(news);
+      const { error } = await supabase.from('proposal_content').insert(news);
       if (error) console.error(`   Error adding ${news.title}:`, error);
       else console.log(`   Added: ${news.title}`);
     } else {
@@ -309,10 +352,19 @@ async function updateCompanyData() {
   console.log('UPDATE COMPLETE');
   console.log('='.repeat(60));
 
-  const { data: profileCount } = await supabase.from('company_profile').select('id', { count: 'exact' });
-  const { data: personnelCount } = await supabase.from('key_personnel').select('id', { count: 'exact' });
-  const { data: caseStudyCount } = await supabase.from('case_studies').select('id', { count: 'exact' });
-  const { data: newsCount } = await supabase.from('proposal_content').select('id', { count: 'exact' }).eq('content_type', 'news');
+  const { data: profileCount } = await supabase
+    .from('company_profile')
+    .select('id', { count: 'exact' });
+  const { data: personnelCount } = await supabase
+    .from('key_personnel')
+    .select('id', { count: 'exact' });
+  const { data: caseStudyCount } = await supabase
+    .from('case_studies')
+    .select('id', { count: 'exact' });
+  const { data: newsCount } = await supabase
+    .from('proposal_content')
+    .select('id', { count: 'exact' })
+    .eq('content_type', 'news');
 
   console.log(`\nCompany Profile: ${profileCount?.length || 0} record`);
   console.log(`Key Personnel: ${personnelCount?.length || 0} team members`);

@@ -3,7 +3,11 @@
 
 import 'dotenv/config';
 import { WebClient } from '@slack/web-api';
-import { checkForNewAwards, formatAwardsForSlack, getAwardsSummary } from '../integrations/award-monitor.js';
+import {
+  checkForNewAwards,
+  formatAwardsForSlack,
+  getAwardsSummary,
+} from '../integrations/award-monitor.js';
 
 async function main() {
   console.log('Checking for new contract awards...\n');
@@ -18,13 +22,15 @@ async function main() {
   const summary = getAwardsSummary(newAwards);
   const formatted = formatAwardsForSlack(newAwards, 15); // Show up to 15 awards
 
-  console.log(`Found ${summary.totalCount} new awards totaling $${(summary.totalValue / 1000000).toFixed(1)}M\n`);
+  console.log(
+    `Found ${summary.totalCount} new awards totaling $${(summary.totalValue / 1000000).toFixed(1)}M\n`
+  );
   console.log(formatted);
 
   // Also log all awards to console for visibility
   if (newAwards.length > 15) {
     console.log('\n--- All awards ---');
-    newAwards.forEach(a => {
+    newAwards.forEach((a) => {
       const value = `$${(a.obligatedAmount / 1000000).toFixed(2)}M`;
       console.log(`${a.vendorName}: ${value} (${a.agencyAbbrev})`);
     });
@@ -39,9 +45,10 @@ async function main() {
 
     // Maya's voice for award announcements
     const totalValue = `$${(summary.totalValue / 1000000).toFixed(1)}M`;
-    const intro = newAwards.length === 1
-      ? `yo heads up, just spotted a new award drop`
-      : `okay so ${newAwards.length} new awards just dropped, ${totalValue} total`;
+    const intro =
+      newAwards.length === 1
+        ? `yo heads up, just spotted a new award drop`
+        : `okay so ${newAwards.length} new awards just dropped, ${totalValue} total`;
 
     const message = `${intro} 👀\n\n${formatted}\n\n_pulled fresh from FPDS_`;
 

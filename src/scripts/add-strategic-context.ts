@@ -61,7 +61,9 @@ ALTER TABLE company_profile ADD COLUMN IF NOT EXISTS risk_tolerance TEXT;
   // Verify the update
   const { data: profile } = await supabase
     .from('company_profile')
-    .select('strategic_goals, capability_gaps, growth_areas, innovation_initiatives, risk_tolerance')
+    .select(
+      'strategic_goals, capability_gaps, growth_areas, innovation_initiatives, risk_tolerance'
+    )
     .eq('company_name', 'Friends From The City')
     .single();
 

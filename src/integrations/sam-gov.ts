@@ -79,7 +79,9 @@ export async function searchOpportunities(options: SearchOptions = {}): Promise<
 
   const url = `${SAM_OPPORTUNITIES_URL}?${params.toString()}`;
 
-  console.log(`[SAM.gov] Querying: naics=${naics.join(',')}, from=${formatDate(from)}, to=${formatDate(to)}`);
+  console.log(
+    `[SAM.gov] Querying: naics=${naics.join(',')}, from=${formatDate(from)}, to=${formatDate(to)}`
+  );
 
   const response = await fetch(url, {
     headers: {
@@ -93,13 +95,13 @@ export async function searchOpportunities(options: SearchOptions = {}): Promise<
     throw new Error(`SAM.gov API error: ${response.status} - ${text}`);
   }
 
-  const data = await response.json() as SAMSearchResponse;
+  const data = (await response.json()) as SAMSearchResponse;
 
   // Log raw results for debugging
   console.log(`[SAM.gov] Raw response: ${data.totalRecords || 0} total records`);
 
   // Validate and filter opportunities - only return real ones
-  const validOpportunities = (data.opportunitiesData || []).filter(opp => {
+  const validOpportunities = (data.opportunitiesData || []).filter((opp) => {
     const { valid, errors } = validateOpportunity(opp);
     if (!valid) {
       console.warn(`[SAM.gov] Invalid opportunity skipped: ${errors.join(', ')}`);
@@ -108,7 +110,7 @@ export async function searchOpportunities(options: SearchOptions = {}): Promise<
   });
 
   // Add generated URL if uiLink is missing
-  const enrichedOpportunities = validOpportunities.map(opp => ({
+  const enrichedOpportunities = validOpportunities.map((opp) => ({
     ...opp,
     uiLink: opp.uiLink || getSAMOpportunityURL(opp.noticeId),
   }));
@@ -161,7 +163,7 @@ export async function getOpportunityByNoticeId(noticeId: string): Promise<SAMOpp
     throw new Error(`SAM.gov API error: ${response.status} - ${text}`);
   }
 
-  const data = await response.json() as SAMSearchResponse;
+  const data = (await response.json()) as SAMSearchResponse;
 
   if (data.opportunitiesData && data.opportunitiesData.length > 0) {
     return data.opportunitiesData[0];
@@ -223,7 +225,7 @@ export function extractAgencyAbbreviation(department?: string, office?: string):
   };
 
   for (const [abbrev, keywords] of Object.entries(agencies)) {
-    if (keywords.some(keyword => text.includes(keyword))) {
+    if (keywords.some((keyword) => text.includes(keyword))) {
       return abbrev;
     }
   }

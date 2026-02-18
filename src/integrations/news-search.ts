@@ -47,7 +47,7 @@ export async function searchNews(params: {
   // If searching for contract awards, use GovCon sites
   if (govconOnly) {
     // Use site: operator to search specific GovCon sources
-    const siteFilter = GOVCON_SITES.map(s => `site:${s}`).join(' OR ');
+    const siteFilter = GOVCON_SITES.map((s) => `site:${s}`).join(' OR ');
     searchQuery = `(${siteFilter}) ${searchQuery}`;
   } else {
     searchQuery += ' federal government';
@@ -71,7 +71,9 @@ export async function searchNews(params: {
   } else if (process.env.SERPAPI_KEY) {
     result = await searchSerpAPI(searchQuery, limit, daysBack);
   } else {
-    console.warn('No news search API configured. Set BING_SEARCH_API_KEY, GOOGLE_SEARCH_API_KEY/GOOGLE_SEARCH_CX, or SERPAPI_KEY');
+    console.warn(
+      'No news search API configured. Set BING_SEARCH_API_KEY, GOOGLE_SEARCH_API_KEY/GOOGLE_SEARCH_CX, or SERPAPI_KEY'
+    );
     result = {
       articles: [],
       query: searchQuery,
@@ -137,7 +139,11 @@ export async function searchContractAwards(params: {
 }
 
 // Bing News Search API
-async function searchBing(query: string, limit: number, daysBack: number = 30): Promise<NewsSearchResult> {
+async function searchBing(
+  query: string,
+  limit: number,
+  daysBack: number = 30
+): Promise<NewsSearchResult> {
   const apiKey = process.env.BING_SEARCH_API_KEY!;
 
   // Bing freshness: Day, Week, Month
@@ -160,7 +166,7 @@ async function searchBing(query: string, limit: number, daysBack: number = 30): 
       throw new Error(`Bing API error: ${response.status}`);
     }
 
-    const data = await response.json() as any;
+    const data = (await response.json()) as any;
 
     const articles: NewsArticle[] = (data.value || []).map((item: any) => ({
       title: item.name,
@@ -182,7 +188,11 @@ async function searchBing(query: string, limit: number, daysBack: number = 30): 
 }
 
 // Google Custom Search API
-async function searchGoogle(query: string, limit: number, daysBack: number = 30): Promise<NewsSearchResult> {
+async function searchGoogle(
+  query: string,
+  limit: number,
+  daysBack: number = 30
+): Promise<NewsSearchResult> {
   const apiKey = process.env.GOOGLE_SEARCH_API_KEY!;
   const cx = process.env.GOOGLE_SEARCH_CX!;
 
@@ -204,7 +214,7 @@ async function searchGoogle(query: string, limit: number, daysBack: number = 30)
       throw new Error(`Google API error: ${response.status}`);
     }
 
-    const data = await response.json() as any;
+    const data = (await response.json()) as any;
 
     const articles: NewsArticle[] = (data.items || []).map((item: any) => ({
       title: item.title,
@@ -226,7 +236,11 @@ async function searchGoogle(query: string, limit: number, daysBack: number = 30)
 }
 
 // SerpAPI (good for news aggregation)
-async function searchSerpAPI(query: string, limit: number, daysBack: number = 30): Promise<NewsSearchResult> {
+async function searchSerpAPI(
+  query: string,
+  limit: number,
+  daysBack: number = 30
+): Promise<NewsSearchResult> {
   const apiKey = process.env.SERPAPI_KEY!;
 
   // SerpAPI Google News uses 'when' parameter: 1d, 7d, 30d, 1y
@@ -251,7 +265,7 @@ async function searchSerpAPI(query: string, limit: number, daysBack: number = 30
       throw new Error(`SerpAPI error: ${response.status}`);
     }
 
-    const data = await response.json() as any;
+    const data = (await response.json()) as any;
 
     const articles: NewsArticle[] = (data.news_results || []).slice(0, limit).map((item: any) => ({
       title: item.title,
@@ -300,14 +314,15 @@ async function cacheResult(cacheKey: string, result: NewsSearchResult): Promise<
   try {
     const supabase = getSupabase();
 
-    await supabase
-      .from('research_cache')
-      .upsert({
+    await supabase.from('research_cache').upsert(
+      {
         cache_key: cacheKey,
         source: 'news',
         data: result,
         created_at: new Date().toISOString(),
-      }, { onConflict: 'cache_key' });
+      },
+      { onConflict: 'cache_key' }
+    );
   } catch (error) {
     console.warn('Failed to cache news result:', error);
   }
@@ -358,7 +373,8 @@ export async function searchCompetitorNews(params: {
     }),
   ];
 
-  const [protestResult, performanceResult, awardResult, generalResult] = await Promise.all(searches);
+  const [protestResult, performanceResult, awardResult, generalResult] =
+    await Promise.all(searches);
 
   // Build summary
   const summaryParts: string[] = [];
@@ -373,9 +389,10 @@ export async function searchCompetitorNews(params: {
     summaryParts.push(`${awardResult.articles.length} recent contract win(s)`);
   }
 
-  const summary = summaryParts.length > 0
-    ? summaryParts.join('. ') + '.'
-    : `No significant news found for ${companyName}.`;
+  const summary =
+    summaryParts.length > 0
+      ? summaryParts.join('. ') + '.'
+      : `No significant news found for ${companyName}.`;
 
   return {
     protests: protestResult.articles,
@@ -408,10 +425,10 @@ export async function searchAgencyContractNews(params: {
 // Format for agent response
 export function formatNewsForAgent(articles: NewsArticle[]): string {
   if (articles.length === 0) {
-    return "No recent news found for this search.";
+    return 'No recent news found for this search.';
   }
 
-  const summaries = articles.slice(0, 3).map(a => {
+  const summaries = articles.slice(0, 3).map((a) => {
     const date = a.publishedDate ? ` (${new Date(a.publishedDate).toLocaleDateString()})` : '';
     return `- ${a.title}${date} - ${a.source}`;
   });
