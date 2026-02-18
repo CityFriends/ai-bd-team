@@ -15,6 +15,12 @@ export function getSupabase(): SupabaseClient {
     }
 
     usingServiceKey = !!serviceKey;
+    // Log key info (safe - only shows prefix/suffix for debugging)
+    const keyPreview = key ? `${key.slice(0, 10)}...${key.slice(-4)}` : 'none';
+    console.log(
+      `[Database] Initialized with ${usingServiceKey ? 'SERVICE_KEY' : 'ANON_KEY'} (${keyPreview})`
+    );
+
     if (!usingServiceKey) {
       console.warn(
         '[Database] SUPABASE_SERVICE_KEY not set, using SUPABASE_ANON_KEY. ' +

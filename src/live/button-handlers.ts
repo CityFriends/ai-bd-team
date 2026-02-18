@@ -129,11 +129,23 @@ async function handlePass(
   }
 
   console.log(`[Action] User ${userId} clicked PASS on ${noticeId}`);
+  console.log(`[Action] Using service key: ${isUsingServiceKey()}`);
 
   try {
     const supabase = getSupabase();
     let workflowUpdated = false;
     let seenUpdated = false;
+
+    // First verify the record exists
+    const { data: existing, error: selectError } = await supabase
+      .from('opportunity_workflow')
+      .select('id, stage')
+      .eq('notice_id', noticeId)
+      .single();
+
+    console.log(
+      `[Action] Pre-update check for ${noticeId}: exists=${!!existing}, stage=${existing?.stage}, selectError=${selectError?.message || 'none'}`
+    );
 
     // Update workflow stage
     const { error: workflowError, count: workflowCount } = await supabase
@@ -150,7 +162,9 @@ async function handlePass(
     if (workflowError) {
       console.error(
         `[Action] Failed to update opportunity_workflow for ${noticeId}:`,
-        workflowError.message
+        workflowError.message,
+        workflowError.code,
+        workflowError.details
       );
     } else {
       workflowUpdated = true;
@@ -172,7 +186,9 @@ async function handlePass(
     if (seenError) {
       console.error(
         `[Action] Failed to update seen_opportunities for ${noticeId}:`,
-        seenError.message
+        seenError.message,
+        seenError.code,
+        seenError.details
       );
     } else {
       seenUpdated = true;
