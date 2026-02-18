@@ -1,5 +1,5 @@
 // Database client
-export { getSupabase } from './client.js';
+export { getSupabase, isUsingServiceKey } from './client.js';
 
 // User operations
 export {

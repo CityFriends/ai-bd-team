@@ -6,7 +6,7 @@
  */
 
 import type { App, BlockAction, ButtonAction } from '@slack/bolt';
-import { getSupabase } from '../integrations/supabase.js';
+import { getSupabase, isUsingServiceKey } from '../integrations/supabase.js';
 
 /**
  * Register all button action handlers with a Slack app
@@ -190,11 +190,15 @@ async function handlePass(
           text: `⏭️ <@${userId}> passed on this one. Removing from active pipeline.`,
         });
       } else if (!workflowUpdated && !seenUpdated) {
-        // Both updates failed - notify user
+        // Both updates failed - notify user with helpful diagnostic info
+        const usingServiceKey = isUsingServiceKey();
+        const diagnosticMsg = !usingServiceKey
+          ? ' (Database is using anon key - service key may not be configured)'
+          : '';
         await client.chat.postMessage({
           channel: body.channel.id,
           thread_ts: body.message.ts,
-          text: `⚠️ <@${userId}> tried to pass on this, but the database update failed. Please try again or contact support.`,
+          text: `⚠️ <@${userId}> tried to pass on this, but the database update failed${diagnosticMsg}. Please try again or contact support.`,
         });
       } else {
         // Partial success - still confirm but note the issue
