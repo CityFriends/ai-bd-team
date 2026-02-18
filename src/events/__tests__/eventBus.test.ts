@@ -9,6 +9,7 @@ const mockEq = vi.fn();
 const mockSingle = vi.fn();
 const mockOrder = vi.fn();
 const mockUpdate = vi.fn();
+const mockInsert = vi.fn();
 
 vi.mock('../../integrations/database/client.js', () => ({
   getSupabase: vi.fn(() => ({
@@ -33,7 +34,7 @@ describe('eventBus', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    // Setup chainable mocks
+    // Setup chainable mocks for SELECT queries
     mockSingle.mockResolvedValue({ data: null, error: null });
     mockOrder.mockResolvedValue({ data: [], error: null });
     mockEq.mockReturnValue({
@@ -47,9 +48,16 @@ describe('eventBus', () => {
       order: mockOrder,
       single: mockSingle,
     });
+    // Setup chainable mocks for INSERT
+    mockInsert.mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        single: mockSingle,
+      }),
+    });
     mockFrom.mockReturnValue({
       select: mockSelect,
       update: mockUpdate,
+      insert: mockInsert,
     });
   });
 
@@ -60,7 +68,16 @@ describe('eventBus', () => {
   describe('publishEvent', () => {
     it('should publish a valid event', async () => {
       const eventId = '123e4567-e89b-12d3-a456-426614174000';
-      mockRpc.mockResolvedValue({ data: eventId, error: null });
+      // Mock successful insert
+      mockInsert.mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          single: vi.fn().mockResolvedValue({ data: { id: eventId }, error: null }),
+        }),
+      });
+      // Mock successful update for root_event_id
+      mockUpdate.mockReturnValue({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      });
 
       const result = await publishEvent({
         eventType: EventTypes.NEW_OPPORTUNITY,
@@ -75,14 +92,8 @@ describe('eventBus', () => {
 
       expect(result.success).toBe(true);
       expect(result.eventId).toBe(eventId);
-      expect(mockRpc).toHaveBeenCalledWith(
-        'publish_event',
-        expect.objectContaining({
-          p_event_type: EventTypes.NEW_OPPORTUNITY,
-          p_source_agent: 'maya',
-          p_payload: expect.any(Object),
-        })
-      );
+      expect(mockFrom).toHaveBeenCalledWith('agent_events');
+      expect(mockInsert).toHaveBeenCalled();
     });
 
     it('should return error for invalid event type', async () => {
@@ -94,7 +105,7 @@ describe('eventBus', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('Invalid event type');
-      expect(mockRpc).not.toHaveBeenCalled();
+      expect(mockInsert).not.toHaveBeenCalled();
     });
 
     it('should return error for invalid payload', async () => {
@@ -112,9 +123,14 @@ describe('eventBus', () => {
     });
 
     it('should handle database errors', async () => {
-      mockRpc.mockResolvedValue({
-        data: null,
-        error: { message: 'Database error' },
+      // Mock insert error
+      mockInsert.mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          single: vi.fn().mockResolvedValue({
+            data: null,
+            error: { message: 'Database error' },
+          }),
+        }),
       });
 
       const result = await publishEvent({
@@ -134,10 +150,20 @@ describe('eventBus', () => {
 
     it('should include optional parameters', async () => {
       const eventId = '123e4567-e89b-12d3-a456-426614174000';
-      mockRpc.mockResolvedValue({ data: eventId, error: null });
+      let insertedData: Record<string, unknown> = {};
 
-      const processAfter = new Date('2024-12-01');
-      const expiresAt = new Date('2024-12-31');
+      // Capture the inserted data
+      mockInsert.mockImplementation((data: Record<string, unknown>) => {
+        insertedData = data;
+        return {
+          select: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({ data: { id: eventId }, error: null }),
+          }),
+        };
+      });
+      mockUpdate.mockReturnValue({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      });
 
       await publishEvent({
         eventType: EventTypes.NEW_OPPORTUNITY,
@@ -152,21 +178,16 @@ describe('eventBus', () => {
         priority: 2,
         channelId: 'C12345',
         threadTs: '1234567890.123',
-        processAfter,
-        expiresAt,
       });
 
-      expect(mockRpc).toHaveBeenCalledWith(
-        'publish_event',
-        expect.objectContaining({
-          p_target_agent: 'david',
-          p_priority: 2,
-          p_channel_id: 'C12345',
-          p_thread_ts: '1234567890.123',
-          p_process_after: processAfter.toISOString(),
-          p_expires_at: expiresAt.toISOString(),
-        })
-      );
+      expect(insertedData).toMatchObject({
+        event_type: EventTypes.NEW_OPPORTUNITY,
+        source_agent: 'maya',
+        target_agent: 'david',
+        priority: 2,
+        channel_id: 'C12345',
+        thread_ts: '1234567890.123',
+      });
     });
   });
 
