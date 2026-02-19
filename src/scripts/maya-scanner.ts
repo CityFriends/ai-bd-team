@@ -871,4 +871,9 @@ async function main() {
   }
 }
 
-main().catch(console.error);
+// Only run main() when this script is executed directly, not when imported
+// This prevents double execution when cron jobs import runDailyScan
+const isMainModule = import.meta.url === `file://${process.argv[1]}`;
+if (isMainModule) {
+  main().catch(console.error);
+}
