@@ -300,7 +300,8 @@ async function postToSlack(
 async function postOpportunityWithBlocks(
   app: App | null,
   opp: ScoredOpportunity,
-  opener?: string
+  opener?: string,
+  threadTs?: string
 ): Promise<string | undefined> {
   const blockData: OpportunityBlocks = {
     noticeId: opp.opportunity.noticeId,
@@ -324,6 +325,7 @@ async function postOpportunityWithBlocks(
       channel: CHANNEL_ID,
       text: fallbackText, // Fallback for notifications
       blocks: blocks,
+      thread_ts: threadTs, // Post in thread if provided
     });
     console.log('Posted opportunity with interactive buttons');
     return result.ts;
@@ -491,6 +493,9 @@ export async function runDailyScan() {
   // Track what we post THIS RUN to prevent double-posting within a single scan
   const postedThisRun = new Set<string>();
 
+  // Thread timestamp for grouping all opportunities under one parent message
+  let parentThreadTs: string | undefined;
+
   if (validToPost.length === 0) {
     // Quiet morning - but only post once per day to avoid duplicates
     const today = new Date().toISOString().split('T')[0];
@@ -502,8 +507,16 @@ export async function runDailyScan() {
       console.log('[SKIP] Already posted quiet message today, skipping duplicate');
     }
   } else {
-    // Post top opportunities (max 3) with interactive buttons
-    for (const opp of validToPost.slice(0, 3)) {
+    // Post parent message first to create thread
+    const topOpps = validToPost.slice(0, 3);
+    const parentMessage = `*Maya's Morning Scan* - Found ${topOpps.length} opportunities worth a look today. Check the thread for details.`;
+    parentThreadTs = await postToSlack(app, parentMessage);
+
+    // Small delay to ensure parent message is processed
+    await new Promise((r) => setTimeout(r, 500));
+
+    // Post top opportunities (max 3) with interactive buttons - in thread
+    for (const opp of topOpps) {
       // CRITICAL: Check if we already posted this in THIS RUN (prevents double-posting from same scan)
       const normalizedTitle = normalizeTitle(opp.opportunity.title || '');
       if (postedThisRun.has(opp.opportunity.noticeId) || postedThisRun.has(normalizedTitle)) {
@@ -603,9 +616,9 @@ export async function runDailyScan() {
         }
       }
 
-      // Post with interactive Block Kit buttons
+      // Post with interactive Block Kit buttons - in thread
       const fullOpener = forecastNote ? `${opener}${forecastNote}` : opener;
-      const messageTs = await postOpportunityWithBlocks(app, opp, fullOpener);
+      const messageTs = await postOpportunityWithBlocks(app, opp, fullOpener, parentThreadTs);
 
       // Queue notification for batching/tracking (parallel to Block Kit post)
       // This enables quiet hours, digests, and notification preferences
@@ -727,7 +740,7 @@ export async function runDailyScan() {
   // ============================================
   // GSA eBuy Email Scanning
   // ============================================
-  await scanAndPostEBuyOpportunities(app);
+  await scanAndPostEBuyOpportunities(app, parentThreadTs, postedThisRun);
 
   if (app) {
     await app.stop();
@@ -739,7 +752,11 @@ export async function runDailyScan() {
 /**
  * Scan GSA eBuy alert emails and post relevant opportunities
  */
-async function scanAndPostEBuyOpportunities(app: App | null): Promise<void> {
+async function scanAndPostEBuyOpportunities(
+  app: App | null,
+  threadTs?: string,
+  postedThisRun?: Set<string>
+): Promise<void> {
   // Check if Gmail credentials are configured
   if (!process.env.GMAIL_CLIENT_ID || !process.env.GMAIL_REFRESH_TOKEN) {
     console.log('[eBuy] Gmail credentials not configured, skipping eBuy scan');
@@ -761,6 +778,17 @@ async function scanAndPostEBuyOpportunities(app: App | null): Promise<void> {
     console.log(`[eBuy] Found ${ebuyOpportunities.length} new opportunities to post`);
 
     for (const opp of ebuyOpportunities) {
+      // Check for cross-source duplicates (same title already posted from SAM.gov)
+      const normalizedTitle = normalizeTitle(opp.title);
+      if (postedThisRun?.has(normalizedTitle)) {
+        console.log(`[eBuy SKIP] Already posted (title match): ${opp.title.slice(0, 50)}...`);
+        continue;
+      }
+
+      // Mark as posted to prevent further duplicates
+      postedThisRun?.add(normalizedTitle);
+      postedThisRun?.add(opp.requestId);
+
       const { score, reasons } = scoreEBuyOpportunity(opp);
 
       // Build message for eBuy opportunity
@@ -779,7 +807,7 @@ ${reasons.length > 0 ? `_Why flagged: ${reasons.join(', ')}_` : ''}
 
 Login to eBuy to view details and respond.`;
 
-      await postToSlack(app, message);
+      await postToSlack(app, message, threadTs);
 
       // Record that we posted it
       try {
