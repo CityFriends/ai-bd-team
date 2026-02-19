@@ -10,7 +10,6 @@
  *   npm run maya:schedule     # Run on schedule
  */
 import 'dotenv/config';
-import * as fs from 'fs';
 import { App } from '@slack/bolt';
 import {
   searchOpportunities,
@@ -22,11 +21,6 @@ import { loadCompanyContext } from '../context/company-context.js';
 import { matchForecastToSAM, linkForecastToSAM } from '../integrations/agency-forecasts.js';
 import { buildOpportunityBlocks, type OpportunityBlocks } from '../utils/slack-blocks.js';
 import {
-  addOpportunityToNotion,
-  logActivityToNotion,
-  NotionHubIds,
-} from '../integrations/notion-hub.js';
-import {
   OPPORTUNITY_FILTERS,
   scoreOpportunity,
   shouldPostOpportunity,
@@ -36,45 +30,6 @@ import { queueNotification } from '../coordination/notification-batcher.js';
 import { scanEBuyEmails, scoreEBuyOpportunity } from '../integrations/gsa-ebuy.js';
 import { publishEvent, EventTypes, type NewOpportunityPayload } from '../events/index.js';
 import type { SAMOpportunity } from '../types/index.js';
-
-// Load Notion hub IDs if available
-function loadHubIds(): NotionHubIds | null {
-  try {
-    const data = fs.readFileSync('notion-hub-ids.json', 'utf-8');
-    return JSON.parse(data);
-  } catch {
-    return null;
-  }
-}
-
-// Map agency to Notion select value
-function mapAgencyForNotion(dept?: string, office?: string): string {
-  const abbrev = extractAgencyAbbreviation(dept, office);
-  return abbrev || 'Other';
-}
-
-// Map set-aside to Notion select value
-function mapSetAsideForNotion(setAside?: string): string {
-  if (!setAside) return 'Unrestricted';
-  const lower = setAside.toLowerCase();
-  if (lower.includes('8(a)')) return '8(a)';
-  if (lower.includes('wosb') || lower.includes('women')) return 'WOSB';
-  if (lower.includes('sdvosb') || lower.includes('service-disabled')) return 'SDVOSB';
-  if (lower.includes('hubzone')) return 'HUBZone';
-  if (lower.includes('small')) return 'Small Business';
-  return 'Unrestricted';
-}
-
-// Map opportunity type to Notion select value
-function mapTypeForNotion(type?: string): string {
-  if (!type) return 'Other';
-  const lower = type.toLowerCase();
-  if (lower.includes('rfi')) return 'RFI';
-  if (lower.includes('source')) return 'Sources Sought';
-  if (lower.includes('rfp') || lower.includes('solicitation')) return 'RFP';
-  if (lower.includes('task')) return 'Task Order';
-  return 'Other';
-}
 
 const CHANNEL_ID = process.env.SLACK_CHANNEL_ID || '';
 
@@ -559,40 +514,9 @@ export async function runDailyScan() {
           console.log(`[DB] Recorded ${opp.opportunity.noticeId} in seen_opportunities`);
         }
 
-        // Also sync to Notion if hub is configured
-        const hubIds = loadHubIds();
-        if (hubIds) {
-          try {
-            notionPageId = await addOpportunityToNotion(hubIds.opportunitiesDbId, {
-              name: opp.opportunity.title,
-              status: 'New',
-              fitScore: opp.score,
-              strategicFit:
-                opp.score >= 70 && opp.reasons.some((r) => r.toLowerCase().includes('strategic')),
-              agency: mapAgencyForNotion(opp.opportunity.department, opp.opportunity.office),
-              subAgency: opp.opportunity.office,
-              dueDate: opp.opportunity.responseDeadLine?.split('T')[0],
-              postedDate: opp.opportunity.postedDate,
-              naics: opp.opportunity.naicsCode,
-              setAside: mapSetAsideForNotion(opp.opportunity.setAsideDescription),
-              type: mapTypeForNotion(opp.opportunity.type),
-              samLink: opp.samUrl,
-              mayasTake: `Score: ${opp.score}/100. ${opp.reasons.join(', ')}${opp.redFlags.length > 0 ? ` Concerns: ${opp.redFlags.join(', ')}` : ''}`,
-            });
-
-            // Log activity
-            await logActivityToNotion(hubIds.activityLogDbId, {
-              agent: 'Maya',
-              actionType: 'Found Opportunity',
-              summary: `Found: ${opp.opportunity.title?.slice(0, 100)} (Score: ${opp.score})`,
-              opportunityId: notionPageId,
-            });
-
-            console.log(`[NOTION] Synced to Notion: ${notionPageId}`);
-          } catch (notionErr) {
-            console.warn('[NOTION] Sync failed:', notionErr);
-          }
-        }
+        // NOTE: No longer auto-adding to Notion here
+        // Opportunities are only added to Notion when user clicks "Add to Pipeline" button
+        // This gives users control over what enters their pipeline
       } catch (err) {
         console.warn('[DB] Could not record opportunity:', err);
       }

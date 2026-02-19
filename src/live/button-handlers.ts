@@ -6,7 +6,23 @@
  */
 
 import type { App, BlockAction, ButtonAction } from '@slack/bolt';
+import * as fs from 'fs';
 import { getSupabase, isUsingServiceKey } from '../integrations/supabase.js';
+import {
+  addOpportunityToNotion,
+  logActivityToNotion,
+  type NotionHubIds,
+} from '../integrations/notion-hub.js';
+
+// Load Notion hub IDs if available
+function loadHubIds(): NotionHubIds | null {
+  try {
+    const data = fs.readFileSync('notion-hub-ids.json', 'utf-8');
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Register all button action handlers with a Slack app
@@ -310,6 +326,13 @@ async function handleAddToPipeline(
   try {
     const supabase = getSupabase();
 
+    // Get details from seen_opportunities
+    const { data: opp } = await supabase
+      .from('seen_opportunities')
+      .select('*')
+      .eq('notice_id', noticeId)
+      .single();
+
     // Ensure it's in the workflow table with 'watching' stage
     const { data: existing } = await supabase
       .from('opportunity_workflow')
@@ -318,13 +341,6 @@ async function handleAddToPipeline(
       .single();
 
     if (!existing) {
-      // Get details from seen_opportunities
-      const { data: opp } = await supabase
-        .from('seen_opportunities')
-        .select('*')
-        .eq('notice_id', noticeId)
-        .single();
-
       if (opp) {
         await supabase.from('opportunity_workflow').insert({
           notice_id: noticeId,
@@ -346,6 +362,39 @@ async function handleAddToPipeline(
           updated_at: new Date().toISOString(),
         })
         .eq('notice_id', noticeId);
+    }
+
+    // Sync to Notion if configured
+    const hubIds = loadHubIds();
+    if (hubIds && opp) {
+      try {
+        const notionPageId = await addOpportunityToNotion(hubIds.opportunitiesDbId, {
+          name: opp.title,
+          status: 'Watching',
+          fitScore: opp.score,
+          agency: opp.agency,
+          samLink: opp.sam_url,
+          mayasTake: `Added to pipeline by user. Score: ${opp.score}/100`,
+        });
+
+        // Log activity
+        await logActivityToNotion(hubIds.activityLogDbId, {
+          agent: 'Maya',
+          actionType: 'Added to Pipeline',
+          summary: `User added: ${opp.title?.slice(0, 100)}`,
+          opportunityId: notionPageId,
+        });
+
+        // Update seen_opportunities with notion_page_id
+        await supabase
+          .from('seen_opportunities')
+          .update({ notion_page_id: notionPageId })
+          .eq('notice_id', noticeId);
+
+        console.log(`[NOTION] Added to Notion: ${notionPageId}`);
+      } catch (notionErr) {
+        console.warn('[NOTION] Failed to add to Notion:', notionErr);
+      }
     }
 
     // Confirm in thread
