@@ -263,7 +263,7 @@ async function makeDecision(
       noticeId,
       title: cached.research.title,
       agency: original?.agency,
-      value: original?.value || cached.research.incumbent?.contractValue,
+      value: original?.value ?? cached.research.incumbent?.contractValue ?? undefined,
       daysToRespond: original?.deadline
         ? Math.ceil((new Date(original.deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
         : undefined,

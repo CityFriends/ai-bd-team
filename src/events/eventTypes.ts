@@ -134,14 +134,14 @@ export const ResearchCompletePayloadSchema = z.object({
     })
     .optional(),
 
-  // Incumbent analysis
+  // Incumbent analysis (fields can be null from Claude's JSON parsing)
   incumbent: z
     .object({
-      name: z.string().optional(),
-      contractNumber: z.string().optional(),
-      contractValue: z.number().optional(),
-      performanceRating: z.string().optional(),
-      incumbentAdvantage: z.enum(['high', 'medium', 'low', 'unknown']).optional(),
+      name: z.string().nullable().optional(),
+      contractNumber: z.string().nullable().optional(),
+      contractValue: z.number().nullable().optional(),
+      performanceRating: z.string().nullable().optional(),
+      incumbentAdvantage: z.enum(['high', 'medium', 'low', 'unknown']).nullable().optional(),
     })
     .optional(),
 
