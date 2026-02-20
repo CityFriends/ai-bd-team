@@ -98,6 +98,8 @@ const handleNewOpportunity: EventHandler = async (
         redFlagsFound: research.redFlags.length,
         greenFlagsFound: research.greenFlags.length,
         confidence: research.confidence,
+        // DEBUG: Include chain event result in the event result for inspection
+        chainEventResult: chainResult,
       },
     };
   } catch (err) {
