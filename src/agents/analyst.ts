@@ -267,7 +267,7 @@ Respond in JSON:
           : '🤷';
 
     if (analysis.recommendation === 'pass') {
-      mainMessage = `Here's the thing about *${opp.title}*...\n`;
+      mainMessage = `Look, about *${opp.title}*...\n`;
       mainMessage += `${recEmoji} *PASS* — ${analysis.reasoning}\n\n`;
       mainMessage += `I've seen this movie before. Details in thread. @Rosa, hold off on partners for now.`;
     } else if (analysis.recommendation === 'pursue' && analysis.confidence === 'high') {

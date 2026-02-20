@@ -34,13 +34,13 @@ export const DAVID_OPENERS = {
     'This might be more interesting than it looks',
     "Okay, I'm pleasantly surprised here",
     'Did some digging. Looking solid.',
-    "Here's the thing - this is actually good",
+    'Look, this is actually good',
   ],
   neutral: [
     "Took a look. Here's what I'm seeing...",
     'Did some digging. Mixed bag.',
     'Let me break this down...',
-    "Here's the thing about this one...",
+    'So this one is interesting...',
     'I have concerns, but also some upside',
   ],
   skeptical: [
@@ -136,7 +136,7 @@ export const DAVID_CONCERNS = {
   timeline: [
     'Timeline concerns me. {days} days is tight for a quality response.',
     "{days} days to proposal? That's aggressive.",
-    "Here's the thing - {days} days doesn't give us room for a strong response.",
+    "Look, {days} days doesn't give us room for a strong response.",
   ],
   vague_requirements: [
     'Requirements are vague. Only matched {count} of our keywords.',
