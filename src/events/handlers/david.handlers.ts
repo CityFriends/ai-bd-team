@@ -66,14 +66,29 @@ const handleNewOpportunity: EventHandler = async (
       }
     }
 
+    // DEBUG: Log the full payload before publishing
+    console.log(`[David:Handler] ========== CHAIN EVENT DEBUG ==========`);
+    console.log(`[David:Handler] About to publish RESEARCH_COMPLETE`);
+    console.log(`[David:Handler] Full researchPayload:`);
+    console.log(JSON.stringify(researchPayload, null, 2));
+
     // Publish chain event
     const chainResult = await publishChainEvent(
       EventTypes.RESEARCH_COMPLETE,
       researchPayload as unknown as Record<string, unknown>
     );
 
+    // DEBUG: Log complete result
+    console.log(`[David:Handler] publishChainEvent result:`);
+    console.log(JSON.stringify(chainResult, null, 2));
+    console.log(`[David:Handler] ========== END CHAIN EVENT DEBUG ==========`);
+
     if (!chainResult.success) {
-      console.error(`[David:Handler] Failed to publish RESEARCH_COMPLETE: ${chainResult.error}`);
+      console.error(`[David:Handler] ❌ FAILED to publish RESEARCH_COMPLETE: ${chainResult.error}`);
+    } else {
+      console.log(
+        `[David:Handler] ✓ Successfully published RESEARCH_COMPLETE (eventId: ${chainResult.eventId})`
+      );
     }
 
     return {

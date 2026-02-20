@@ -64,15 +64,26 @@ export async function publishEvent(options: PublishEventOptions): Promise<Publis
   }
 
   // Validate payload
+  console.log(`[EventBus:publishEvent] Validating payload for ${eventType}...`);
   const validation = validatePayload(eventType, payload);
   if (!validation.success) {
     const zodError = validation.error;
-    console.error(`[EventBus] Invalid payload for ${eventType}:`, zodError.errors);
+    // DEBUG: Log FULL validation error details
+    console.error(`[EventBus:publishEvent] ❌ VALIDATION FAILED for ${eventType}`);
+    console.error(`[EventBus:publishEvent] Full Zod errors:`);
+    for (const err of zodError.errors) {
+      console.error(
+        `  - Path: ${err.path.join('.')} | Code: ${err.code} | Message: ${err.message}`
+      );
+    }
+    console.error(`[EventBus:publishEvent] Payload that failed validation:`);
+    console.error(JSON.stringify(payload, null, 2));
     return {
       success: false,
-      error: `Invalid payload: ${zodError.errors.map((e) => e.message).join(', ')}`,
+      error: `Invalid payload: ${zodError.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')}`,
     };
   }
+  console.log(`[EventBus:publishEvent] ✓ Payload validation passed`);
 
   try {
     const supabase = getSupabase();
@@ -133,7 +144,14 @@ export async function publishEvent(options: PublishEventOptions): Promise<Publis
       .single();
 
     if (insertError) {
-      console.error(`[EventBus] Failed to insert ${eventType}:`, insertError);
+      // DEBUG: Log FULL DB error details
+      console.error(`[EventBus:publishEvent] ❌ DATABASE INSERT FAILED for ${eventType}`);
+      console.error(`[EventBus:publishEvent] Error code: ${insertError.code}`);
+      console.error(`[EventBus:publishEvent] Error message: ${insertError.message}`);
+      console.error(
+        `[EventBus:publishEvent] Error details: ${JSON.stringify(insertError.details)}`
+      );
+      console.error(`[EventBus:publishEvent] Error hint: ${insertError.hint}`);
       return { success: false, error: insertError.message };
     }
 
@@ -493,7 +511,15 @@ export async function publishChainEvent(
   parentEvent: ClaimedEvent,
   priority?: number
 ): Promise<PublishResult> {
-  return publishEvent({
+  // DEBUG: Log full payload BEFORE validation
+  console.log(`[EventBus:publishChainEvent] ========== DEBUG START ==========`);
+  console.log(`[EventBus:publishChainEvent] Event type: ${eventType}`);
+  console.log(`[EventBus:publishChainEvent] Source agent: ${sourceAgent}`);
+  console.log(`[EventBus:publishChainEvent] Parent event ID: ${parentEvent.id}`);
+  console.log(`[EventBus:publishChainEvent] Full payload BEFORE validation:`);
+  console.log(JSON.stringify(payload, null, 2));
+
+  const result = await publishEvent({
     eventType,
     sourceAgent,
     payload,
@@ -502,6 +528,12 @@ export async function publishChainEvent(
     channelId: parentEvent.channel_id || undefined,
     threadTs: parentEvent.thread_ts || undefined,
   });
+
+  // DEBUG: Log result
+  console.log(`[EventBus:publishChainEvent] Result: ${JSON.stringify(result)}`);
+  console.log(`[EventBus:publishChainEvent] ========== DEBUG END ==========`);
+
+  return result;
 }
 
 /**
