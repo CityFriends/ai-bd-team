@@ -28,9 +28,26 @@ async function runWithLogging(jobName: string, fn: () => Promise<void>): Promise
   }
 }
 
-// Note: Maya daily/weekly scan and David news digest are handled by Railway cron
-// See: src/cron/maya-daily.ts, src/cron/maya-weekly.ts, src/cron/david-news.ts
-// Patricia standup is also handled by Railway cron (src/cron/patricia-standup.ts)
+// Agent scan functions
+async function runMayaDailyScan() {
+  const { runDailyScan } = await import('./maya-scanner.js');
+  await runDailyScan();
+}
+
+async function runMayaWeeklySummary() {
+  const { runWeeklySummary } = await import('./maya-scanner.js');
+  await runWeeklySummary();
+}
+
+async function runDavidNewsDigest() {
+  const { runNewsDigest } = await import('./david-news-digest.js');
+  await runNewsDigest();
+}
+
+async function runPatriciaStandup() {
+  const { runMorningCheckin } = await import('./patricia-checkin.js');
+  await runMorningCheckin();
+}
 
 async function runActionScheduler() {
   const { checkAndExecuteActions } = await import('./action-scheduler.js');
@@ -87,15 +104,52 @@ async function main() {
   }
 
   // ============================================================
-  // SCHEDULED AGENTS - Handled by Railway external cron
+  // SCHEDULED AGENTS - Internal cron
   // ============================================================
-  // Maya daily/weekly: src/cron/maya-daily.ts, src/cron/maya-weekly.ts
-  // David news digest: src/cron/david-news.ts
-  // Patricia standup: src/cron/patricia-standup.ts
-  //
-  // Railway cron is more reliable than in-process cron and prevents
-  // duplicate posts when the process restarts or runs multiple instances.
-  // ============================================================
+
+  // Maya daily scan: 8:00 AM CST Mon-Fri (14:00 UTC)
+  cron.schedule('0 14 * * 1-5', async () => {
+    console.log(`[${new Date().toLocaleString()}] Maya: Running daily scan...`);
+    try {
+      await runWithLogging('maya-daily-scan', runMayaDailyScan);
+      console.log(`[${new Date().toLocaleString()}] Maya: Daily scan complete`);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Maya: Daily scan failed:`, err);
+    }
+  });
+
+  // Maya weekly summary: 8:30 AM CST Monday (14:30 UTC)
+  cron.schedule('30 14 * * 1', async () => {
+    console.log(`[${new Date().toLocaleString()}] Maya: Running weekly summary...`);
+    try {
+      await runWithLogging('maya-weekly-summary', runMayaWeeklySummary);
+      console.log(`[${new Date().toLocaleString()}] Maya: Weekly summary complete`);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Maya: Weekly summary failed:`, err);
+    }
+  });
+
+  // David news digest: 10:00 AM CST Mon/Wed/Fri (16:00 UTC)
+  cron.schedule('0 16 * * 1,3,5', async () => {
+    console.log(`[${new Date().toLocaleString()}] David: Running news digest...`);
+    try {
+      await runWithLogging('david-news-digest', runDavidNewsDigest);
+      console.log(`[${new Date().toLocaleString()}] David: News digest complete`);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] David: News digest failed:`, err);
+    }
+  });
+
+  // Patricia standup: 11:00 AM CST Mon-Fri (17:00 UTC)
+  cron.schedule('0 17 * * 1-5', async () => {
+    console.log(`[${new Date().toLocaleString()}] Patricia: Running standup...`);
+    try {
+      await runWithLogging('patricia-standup', runPatriciaStandup);
+      console.log(`[${new Date().toLocaleString()}] Patricia: Standup complete`);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Patricia: Standup failed:`, err);
+    }
+  });
 
   // Action Scheduler: Every 15 minutes check for agent commitments
   cron.schedule('*/15 * * * *', async () => {
@@ -150,17 +204,16 @@ async function main() {
 
   console.log('='.repeat(60));
   console.log('  All services running');
-  console.log('  In-Process Schedule (CST):');
+  console.log('  Schedule (CST):');
   console.log('    - Live agents: Always listening');
-  console.log('    - Action scheduler: Every 15 minutes');
-  console.log('    - Stale event cleanup: Every 5 minutes');
-  console.log('    - Pipeline health: Every 2 hours 9am-5pm CST Mon-Fri');
-  console.log('    - Patricia retrospective: First Monday of month 9am CST');
-  console.log('  Railway Cron (external - prevents duplicate posts):');
   console.log('    - Maya scan: 8:00 AM CST Mon-Fri');
   console.log('    - Maya weekly: 8:30 AM CST Monday');
   console.log('    - David news: 10:00 AM CST Mon/Wed/Fri');
   console.log('    - Patricia standup: 11:00 AM CST Mon-Fri');
+  console.log('    - Action scheduler: Every 15 minutes');
+  console.log('    - Stale event cleanup: Every 5 minutes');
+  console.log('    - Pipeline health: Every 2 hours 9am-5pm CST Mon-Fri');
+  console.log('    - Patricia retrospective: First Monday of month 9am CST');
   console.log('='.repeat(60));
 
   // Keep process alive
