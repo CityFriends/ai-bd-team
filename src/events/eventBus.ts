@@ -503,18 +503,21 @@ export async function publishNewOpportunity(
 
 /**
  * Publish a chain event (inherits parent context)
+ * @param targetAgent - Optional: target a specific agent instead of broadcast
  */
 export async function publishChainEvent(
   eventType: EventType,
   sourceAgent: AgentOrSystem,
   payload: Record<string, unknown>,
   parentEvent: ClaimedEvent,
-  priority?: number
+  priority?: number,
+  targetAgent?: LiveAgentName
 ): Promise<PublishResult> {
   // DEBUG: Log full payload BEFORE validation
   console.log(`[EventBus:publishChainEvent] ========== DEBUG START ==========`);
   console.log(`[EventBus:publishChainEvent] Event type: ${eventType}`);
   console.log(`[EventBus:publishChainEvent] Source agent: ${sourceAgent}`);
+  console.log(`[EventBus:publishChainEvent] Target agent: ${targetAgent || 'broadcast'}`);
   console.log(`[EventBus:publishChainEvent] Parent event ID: ${parentEvent.id}`);
   console.log(`[EventBus:publishChainEvent] Full payload BEFORE validation:`);
   console.log(JSON.stringify(payload, null, 2));
@@ -523,6 +526,7 @@ export async function publishChainEvent(
     eventType,
     sourceAgent,
     payload,
+    targetAgent,
     parentEventId: parentEvent.id,
     priority: priority || parentEvent.priority,
     channelId: parentEvent.channel_id || undefined,

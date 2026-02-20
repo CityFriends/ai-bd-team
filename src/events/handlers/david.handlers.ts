@@ -66,30 +66,33 @@ const handleNewOpportunity: EventHandler = async (
       }
     }
 
-    // DEBUG: Log the full payload before publishing
-    console.log(`[David:Handler] ========== CHAIN EVENT DEBUG ==========`);
-    console.log(`[David:Handler] About to publish RESEARCH_COMPLETE`);
-    console.log(`[David:Handler] Full researchPayload:`);
-    console.log(JSON.stringify(researchPayload, null, 2));
+    // Publish RESEARCH_COMPLETE to Marcus (tech assessment) and Rosa (relationships) in parallel
+    // James will wait for their outputs (TECH_ASSESSMENT_COMPLETE, RELATIONSHIP_CHECK_COMPLETE)
+    console.log(`[David:Handler] Publishing RESEARCH_COMPLETE to Marcus and Rosa...`);
 
-    // Publish chain event
-    const chainResult = await publishChainEvent(
-      EventTypes.RESEARCH_COMPLETE,
-      researchPayload as unknown as Record<string, unknown>
+    const [marcusResult, rosaResult] = await Promise.all([
+      publishChainEvent(
+        EventTypes.RESEARCH_COMPLETE,
+        researchPayload as unknown as Record<string, unknown>,
+        undefined, // priority
+        'marcus' // target Marcus for tech assessment
+      ),
+      publishChainEvent(
+        EventTypes.RESEARCH_COMPLETE,
+        researchPayload as unknown as Record<string, unknown>,
+        undefined, // priority
+        'rosa' // target Rosa for relationship check
+      ),
+    ]);
+
+    console.log(
+      `[David:Handler] Marcus event: ${marcusResult.success ? '✓' : '✗'} ${marcusResult.eventId || marcusResult.error}`
+    );
+    console.log(
+      `[David:Handler] Rosa event: ${rosaResult.success ? '✓' : '✗'} ${rosaResult.eventId || rosaResult.error}`
     );
 
-    // DEBUG: Log complete result
-    console.log(`[David:Handler] publishChainEvent result:`);
-    console.log(JSON.stringify(chainResult, null, 2));
-    console.log(`[David:Handler] ========== END CHAIN EVENT DEBUG ==========`);
-
-    if (!chainResult.success) {
-      console.error(`[David:Handler] ❌ FAILED to publish RESEARCH_COMPLETE: ${chainResult.error}`);
-    } else {
-      console.log(
-        `[David:Handler] ✓ Successfully published RESEARCH_COMPLETE (eventId: ${chainResult.eventId})`
-      );
-    }
+    const chainResults = { marcus: marcusResult, rosa: rosaResult };
 
     return {
       success: true,
@@ -98,8 +101,8 @@ const handleNewOpportunity: EventHandler = async (
         redFlagsFound: research.redFlags.length,
         greenFlagsFound: research.greenFlags.length,
         confidence: research.confidence,
-        // DEBUG: Include chain event result in the event result for inspection
-        chainEventResult: chainResult,
+        // Chain events published to Marcus and Rosa
+        chainEventResults: chainResults,
       },
     };
   } catch (err) {

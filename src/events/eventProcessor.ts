@@ -12,7 +12,8 @@ export interface EventHandlerContext {
   publishChainEvent: (
     eventType: EventType,
     payload: Record<string, unknown>,
-    priority?: number
+    priority?: number,
+    targetAgent?: LiveAgentName
   ) => Promise<{ success: boolean; eventId?: string; error?: string }>;
 }
 
@@ -179,8 +180,8 @@ export class EventProcessor {
       const context: EventHandlerContext = {
         event,
         agent: this.agent,
-        publishChainEvent: async (type, payload, priority) => {
-          return publishChainEvent(type, this.agent, payload, event, priority);
+        publishChainEvent: async (type, payload, priority, targetAgent) => {
+          return publishChainEvent(type, this.agent, payload, event, priority, targetAgent);
         },
       };
 
