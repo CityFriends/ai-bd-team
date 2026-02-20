@@ -118,8 +118,8 @@ async function main() {
     }
   });
 
-  // Maya weekly summary: 8:30 AM CST Monday (14:30 UTC)
-  cron.schedule('30 14 * * 1', async () => {
+  // Maya weekly summary: 8:30 AM CST Friday (14:30 UTC)
+  cron.schedule('30 14 * * 5', async () => {
     console.log(`[${new Date().toLocaleString()}] Maya: Running weekly summary...`);
     try {
       await runWithLogging('maya-weekly-summary', runMayaWeeklySummary);
@@ -207,7 +207,7 @@ async function main() {
   console.log('  Schedule (CST):');
   console.log('    - Live agents: Always listening');
   console.log('    - Maya scan: 8:00 AM CST Mon-Fri');
-  console.log('    - Maya weekly: 8:30 AM CST Monday');
+  console.log('    - Maya weekly: 8:30 AM CST Friday');
   console.log('    - David news: 10:00 AM CST Mon/Wed/Fri');
   console.log('    - Patricia standup: 11:00 AM CST Mon-Fri');
   console.log('    - Action scheduler: Every 15 minutes');
