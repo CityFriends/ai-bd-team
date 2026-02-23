@@ -21,13 +21,6 @@ const CHANNEL_ID = process.env.SLACK_CHANNEL_ID || '';
 
 // Slack IDs for tagging the humans
 const LAPEDRA_ID = 'U01SC2TNYKU';
-const _TAMARA_ID = 'U01RXBVUA0P';
-
-// Agent Slack IDs for tagging in standups
-const MAYA_ID = 'U0AC3RA4JVB';
-const DAVID_ID = 'U0AC0SVD3MH';
-const ROSA_ID = 'U0ACASZ36BW';
-const JAMES_ID = 'U0AC582GXBQ';
 
 // Initialize Patricia's Slack app
 async function getPatriciaApp(): Promise<App | null> {
@@ -199,15 +192,13 @@ TEAM ROLES:
 Write a morning standup message for #bd-team. Be conversational - you're a millennial PM, organized but chill. Include:
 1. Quick vibe check (acknowledge the day)
 2. Summarize pending items/opportunities if any
-3. Tag each team member for their update:
-   - <@${MAYA_ID}> (Maya) - any new opportunities?
-   - <@${DAVID_ID}> (David) - any research updates?
-   - <@${ROSA_ID}> (Rosa) - any partner conversations?
-   - <@${JAMES_ID}> (James) - any strategy decisions needed?
-4. Tag <@${LAPEDRA_ID}> and <@${_TAMARA_ID}> for priorities/blockers
+3. Ask the team for updates - but do NOT @mention the AI agents (Maya, David, Rosa, James). Just ask generally "any updates?" or "what's everyone working on?" The agents will respond if they have something to share.
+4. Tag <@${LAPEDRA_ID}> for any priorities or blockers (they're the only human who needs direct notification)
 5. ${isMonday ? 'Quick preview of the week' : 'Any deadlines coming up'}
 
-Use emoji naturally - you love them. Ask each person for a quick update.`;
+IMPORTANT: Do NOT use @mentions for Maya, David, Rosa, or James. They monitor the channel and will chime in if they have updates. Pinging them all creates noise.
+
+Use emoji naturally - you love them. Keep it to ONE message.`;
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
