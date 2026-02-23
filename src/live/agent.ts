@@ -1385,70 +1385,98 @@ Respond as ${this.displayName}.`;
     // Build warmup messages for natural conversation flow
     const warmupMessages = buildWarmupMessages(this.name);
 
-    try {
-      const response = await client.messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 800,
-        system: this.systemPrompt, // Personality lives here now
-        messages: [...warmupMessages, { role: 'user', content: operationalContext }],
-      });
+    // Retry logic for transient errors (429, 529)
+    const maxRetries = 3;
+    let lastError: unknown = null;
 
-      const textBlock = response.content.find((b) => b.type === 'text');
-      if (!textBlock || textBlock.type !== 'text') {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await client.messages.create({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 800,
+          system: this.systemPrompt, // Personality lives here now
+          messages: [...warmupMessages, { role: 'user', content: operationalContext }],
+        });
+
+        const textBlock = response.content.find((b) => b.type === 'text');
+        if (!textBlock || textBlock.type !== 'text') {
+          return {
+            text: '',
+            shouldRespond: false,
+            delayMs: 0,
+            confidence: 0,
+            sources: [],
+            confidenceLevel: 'LOW' as const,
+            reaction: null,
+          };
+        }
+
+        // Parse JSON response
+        let jsonText = textBlock.text;
+        const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          jsonText = jsonMatch[0];
+        }
+
+        const parsed = JSON.parse(jsonText);
+
+        // Extract reaction if present
+        const reaction = parsed.reaction || null;
+
+        // Calculate delay (2-8 seconds, randomized) - fast enough to feel responsive
+        const baseDelay = 2000 + Math.random() * 6000;
+        const delay = message.isDirectMention ? baseDelay * 0.5 : baseDelay; // Faster for direct mentions
+
+        // Normalize confidence level
+        const rawLevel = (parsed.confidenceLevel || 'LOW').toUpperCase();
+        const confidenceLevel = ['HIGH', 'MEDIUM', 'LOW'].includes(rawLevel)
+          ? (rawLevel as 'HIGH' | 'MEDIUM' | 'LOW')
+          : 'LOW';
+
         return {
-          text: '',
-          shouldRespond: false,
-          delayMs: 0,
-          confidence: 0,
-          sources: [],
-          confidenceLevel: 'LOW' as const,
-          reaction: null,
+          text: parsed.response || '',
+          shouldRespond: parsed.shouldRespond && parsed.response,
+          delayMs: Math.floor(delay),
+          confidence: parsed.confidence || 0.5,
+          sources: parsed.sources || [],
+          confidenceLevel,
+          reaction,
         };
+      } catch (error) {
+        lastError = error;
+
+        // Check if this is a retryable error (429 rate limit or 529 overloaded)
+        const isRetryable =
+          error instanceof Error &&
+          'status' in error &&
+          (error.status === 429 || error.status === 529);
+
+        if (isRetryable && attempt < maxRetries) {
+          // Exponential backoff: 2s, 4s, 8s
+          const backoffMs = Math.pow(2, attempt) * 1000;
+          console.log(
+            `${this.displayName}: Claude API overloaded (attempt ${attempt}/${maxRetries}), retrying in ${backoffMs / 1000}s...`
+          );
+          await this.sleep(backoffMs);
+          continue;
+        }
+
+        // Non-retryable error or max retries reached
+        break;
       }
-
-      // Parse JSON response
-      let jsonText = textBlock.text;
-      const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        jsonText = jsonMatch[0];
-      }
-
-      const parsed = JSON.parse(jsonText);
-
-      // Extract reaction if present
-      const reaction = parsed.reaction || null;
-
-      // Calculate delay (2-8 seconds, randomized) - fast enough to feel responsive
-      const baseDelay = 2000 + Math.random() * 6000;
-      const delay = message.isDirectMention ? baseDelay * 0.5 : baseDelay; // Faster for direct mentions
-
-      // Normalize confidence level
-      const rawLevel = (parsed.confidenceLevel || 'LOW').toUpperCase();
-      const confidenceLevel = ['HIGH', 'MEDIUM', 'LOW'].includes(rawLevel)
-        ? (rawLevel as 'HIGH' | 'MEDIUM' | 'LOW')
-        : 'LOW';
-
-      return {
-        text: parsed.response || '',
-        shouldRespond: parsed.shouldRespond && parsed.response,
-        delayMs: Math.floor(delay),
-        confidence: parsed.confidence || 0.5,
-        sources: parsed.sources || [],
-        confidenceLevel,
-        reaction,
-      };
-    } catch (error) {
-      console.error(`${this.displayName}: Error generating response:`, error);
-      return {
-        text: '',
-        shouldRespond: false,
-        delayMs: 0,
-        confidence: 0,
-        sources: [],
-        confidenceLevel: 'LOW' as const,
-        reaction: null,
-      };
     }
+
+    // All retries failed
+    console.error(`${this.displayName}: Error generating response:`, lastError);
+    return {
+      text: '',
+      shouldRespond: false,
+      delayMs: 0,
+      confidence: 0,
+      sources: [],
+      confidenceLevel: 'LOW' as const,
+      reaction: null,
+    };
   }
 
   // Load context from a thread
