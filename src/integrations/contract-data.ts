@@ -6,6 +6,28 @@ import { getSupabase } from './supabase.js';
 
 const USASPENDING_BASE_URL = 'https://api.usaspending.gov/api/v2';
 
+// Agency code to full name mapping for USASpending API
+// USASpending expects full agency names, not codes
+const AGENCY_CODE_TO_NAME: Record<string, string> = {
+  '036': 'Department of Veterans Affairs',
+  '075': 'Department of Health and Human Services',
+  '012': 'Department of Labor',
+  '097': 'Department of Defense',
+  '070': 'Department of Homeland Security',
+  '047': 'General Services Administration',
+  '015': 'Department of Justice',
+  '091': 'Department of Education',
+  '019': 'Department of State',
+  '073': 'Small Business Administration',
+  '068': 'Environmental Protection Agency',
+  '080': 'National Aeronautics and Space Administration',
+  '028': 'Social Security Administration',
+  '069': 'Department of Transportation',
+  '089': 'Department of Energy',
+  '020': 'Department of the Treasury',
+  '024': 'Office of Personnel Management',
+};
+
 // Keep interface compatible with old FPDS interface for easy migration
 export interface ContractAward {
   contractId: string;
@@ -69,11 +91,13 @@ export async function searchContracts(params: {
     };
 
     if (agencyCode) {
+      // USASpending expects full agency name for toptier_name filter
+      const agencyName = AGENCY_CODE_TO_NAME[agencyCode] || agencyCode;
       filters.agencies = [
         {
           type: 'awarding',
           tier: 'toptier',
-          toptier_name: agencyCode, // USASpending uses agency names
+          toptier_name: agencyName,
         },
       ];
     }
@@ -134,6 +158,14 @@ export async function searchContracts(params: {
       page_metadata?: { total?: number };
     };
     const contracts = parseUSASpendingResults(data.results || []);
+
+    // Debug logging when searches return empty
+    if (contracts.length === 0) {
+      const agencyName = agencyCode ? AGENCY_CODE_TO_NAME[agencyCode] || agencyCode : 'none';
+      console.log(
+        `[ContractData] No results for: agency=${agencyName}, keyword=${keyword || 'none'}, vendor=${vendorName || 'none'}`
+      );
+    }
 
     const result: ContractSearchResult = {
       contracts,
