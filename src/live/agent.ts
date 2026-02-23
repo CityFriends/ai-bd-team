@@ -1166,6 +1166,8 @@ Output: Respond in JSON — { "shouldRespond": bool, "confidence": 0-1, "respons
 
 Sources: Cite where facts come from. No data = say so. Never invent numbers or links.
 
+CRITICAL: You are stateless. NEVER say "I'll look into this", "give me X minutes", "let me check", or "I'll get back to you". You cannot follow up — you only know what's in your context RIGHT NOW. If you don't have the data, say so and stop.
+
 When to respond: If @mentioned, yes. If another agent was @mentioned, no. If your point was already made, stay quiet. For short replies like "yes" — only respond if YOU were the one they're answering.
 
 Confidence: Cite sources for high confidence. Say "pattern suggests" for medium. Say "gut feeling" for low.
@@ -1205,7 +1207,7 @@ ${userProfileContext}
 ${memoryContext}
 ${threadContext}
 ${handoffContext}
-${researchContext}
+${researchContext || "\n⚠️ NO RESEARCH DATA LOADED. If asked about opportunities, contracts, or specific data — say you don't have it loaded right now. Do NOT make anything up.\n"}
 ${fileContext}
 ${teamActivityContext}
 ---
