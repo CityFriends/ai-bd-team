@@ -145,6 +145,7 @@ Agent-specific strategic reasoning:
 - [x] `competitor_intel` - stored intel on competitors (protests, performance, wins)
 - [x] `system_feedback` - tracks bugs, issues, suggestions for agent improvement
 - [x] `agency_forecasts` - upcoming opportunities from agency forecast pages
+- [x] `agent_memories` - persistent memory for emergent agent behavior (see below)
 
 ### Database Security (Row Level Security) ✓
 All tables now have RLS enabled with service_role-only access:
@@ -267,11 +268,52 @@ Comprehensive docs for repeatable product deployment:
   - Run `npm run sync` for one-time manual sync
   - Safe to run continuously in background
 
-### Priority 3: Memory Persistence
+### Priority 3: Agent Memory System ✓
+Persistent memory for emergent, autonomous agent behavior. Agents remember past experiences, form insights, and reference history in their decisions.
+
+**Why this matters**: Without memory, each interaction is isolated. Agents can't learn from patterns, reference past outcomes, or develop institutional knowledge. This system enables agents to say "Based on past experience with HHS..." or "We've lost 3 similar bids this quarter—common theme: pricing."
+
+**Database**: `agent_memories` table with RLS
+- Memory types: `observation`, `reflection`, `insight`, `outcome`, `conversation`
+- Links to opportunities via `related_opportunity_id`
+- Importance scoring (1-10) for relevance ranking
+- Tag-based querying for patterns
+- Embedding support for semantic search
+
+**Agent Integration**:
+- [x] David stores observations after research (red/green flags, incumbent analysis)
+- [x] James stores decisions and queries memories before deciding
+- [x] Marcus stores tech assessments (compliance, blockers, fit)
+- [x] Rosa stores relationship checks (teaming recommendations, partners)
+- [x] Maya stores outcomes (win/loss/withdrawn with prediction accuracy)
+- [x] Patricia stores pursuit scheduling observations
+
+**Memory Retrieval**:
+- [x] James queries relevant memories before go/no-go decisions
+- [x] Retrieves insights from all agents + agency-specific observations
+- [x] Includes memories in decision prompts for context
+
+**Reflection System**:
+- [x] Daily reflection cron (2am) synthesizes insights from observations
+- [x] Generates patterns, insights, and recommendations per agent
+- [x] Stores as `insight` and `reflection` memory types
+- [x] Run manually: `npx tsx src/cron/memory-reflection.ts`
+
+**Semantic Search**:
+- [x] `searchMemoriesBySimilarity()` for natural language queries
+- [x] `storeMemoryWithEmbedding()` for high-importance memories
+- [x] Fallback search when RPC not available
+
+**Files**:
+- `src/memory/index.ts` - Core memory functions
+- `src/memory/types.ts` - TypeScript types
+- `src/cron/memory-reflection.ts` - Reflection job
+- `supabase/migrations/20260223_agent_memories.sql` - Schema
+
+**Future**:
 - [ ] Auto-save personal context when Lapedra/Tamara share something
-- [ ] Auto-save decision patterns after go/no-go decisions
-- [ ] Surface relevant memories in responses ("You mentioned last week...")
 - [ ] Inside jokes get referenced naturally over time
+- [ ] Cross-agent memory sharing for team-level insights
 
 ### Priority 4: Proactive Check-ins ✓
 - [x] Maya's automated SAM.gov scanner (`npm run maya:scan`)
