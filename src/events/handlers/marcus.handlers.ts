@@ -12,6 +12,7 @@ import {
 import { EventHandler, EventHandlerContext, EventHandlerResult } from '../eventProcessor.js';
 import { getAnthropic } from '../../integrations/claude.js';
 import { replyInThread } from '../../integrations/slack.js';
+import { storeMemory } from '../../memory/index.js';
 
 // ============================================================
 // RESEARCH_COMPLETE Handler
@@ -43,6 +44,9 @@ const handleResearchComplete: EventHandler = async (
       confidence: assessment.confidence,
       summary: assessment.summary,
     };
+
+    // Store tech assessment as memory for future reference
+    await storeTechAssessmentMemory(assessment, payload, event.id);
 
     // POST TO SLACK - Make the collaboration visible
     if (event.thread_ts) {
@@ -289,6 +293,78 @@ Respond in JSON format:
       confidence: 'low',
       summary: 'Unable to complete full technical assessment. Manual review recommended.',
     };
+  }
+}
+
+// ============================================================
+// Memory Storage
+// ============================================================
+async function storeTechAssessmentMemory(
+  assessment: TechAssessmentResult,
+  payload: ResearchCompletePayload,
+  eventId: string
+): Promise<void> {
+  try {
+    // Build descriptive memory content
+    const blockers = assessment.concerns.filter((c) => c.severity === 'blocker');
+    const blockerNote =
+      blockers.length > 0 ? `Blockers: ${blockers.map((b) => b.area).join(', ')}.` : 'No blockers.';
+
+    const strengthNote =
+      assessment.strengths.length > 0
+        ? `Strengths: ${assessment.strengths.map((s) => s.area).join(', ')}.`
+        : '';
+
+    const complianceNote = assessment.compliance.fedRampRequired
+      ? `FedRAMP ${assessment.compliance.fedRampLevel || 'required'}.`
+      : '';
+
+    const content =
+      `Tech assessment for "${payload.title}": ${assessment.recommendation.replace('_', ' ')}. ${assessment.summary} ${blockerNote} ${strengthNote} ${complianceNote}`.trim();
+
+    // Build tags for querying
+    const tags: string[] = [`tech-${assessment.recommendation.replace('_', '-')}`];
+
+    // Agency tag
+    if (payload.originalOpportunity?.agency) {
+      tags.push(payload.originalOpportunity.agency.toLowerCase().replace(/\s+/g, '-'));
+    }
+
+    // Compliance tags
+    if (assessment.compliance.fedRampRequired) {
+      tags.push('fedramp');
+    }
+    if (assessment.compliance.atoRequired) {
+      tags.push('ato-required');
+    }
+
+    // Blockers tag
+    if (blockers.length > 0) {
+      tags.push('has-blockers');
+    }
+
+    // Confidence
+    tags.push(`confidence-${assessment.confidence}`);
+
+    // Calculate importance
+    let importance = 5;
+    if (assessment.recommendation === 'strong_fit' || assessment.recommendation === 'good_fit')
+      importance += 2;
+    if (assessment.recommendation === 'no_fit') importance += 1;
+    if (blockers.length > 0) importance += 1;
+    if (assessment.confidence === 'high') importance += 1;
+    importance = Math.max(1, Math.min(10, importance));
+
+    await storeMemory('marcus', 'observation', content, {
+      relatedOpportunityId: payload.noticeId,
+      relatedEventId: eventId,
+      importance,
+      tags,
+    });
+
+    console.log(`[Marcus:Handler] Stored tech assessment memory for ${payload.noticeId}`);
+  } catch (err) {
+    console.warn(`[Marcus:Handler] Failed to store tech assessment memory:`, err);
   }
 }
 

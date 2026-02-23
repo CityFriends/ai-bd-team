@@ -21,6 +21,12 @@ import {
   recordRulesApplied,
   type RuleCheckResult,
 } from '../../playbook/index.js';
+import {
+  storeMemory,
+  getImportantMemories,
+  searchMemoriesByTags,
+  type AgentMemory,
+} from '../../memory/index.js';
 
 // Cache TTL: 2 hours (after which stale entries are cleaned up)
 const CACHE_TTL_MS = 2 * 60 * 60 * 1000;
@@ -277,12 +283,20 @@ async function makeDecision(
       );
     }
 
-    // Generate decision using Claude, including playbook context
+    // Retrieve relevant memories from past experiences
+    const agency = cached.research.originalOpportunity?.agency;
+    const memories = await getRelevantMemories(agency);
+    if (memories.length > 0) {
+      console.log(`[James:Handler] Retrieved ${memories.length} relevant memories for context`);
+    }
+
+    // Generate decision using Claude, including playbook and memory context
     const decision = await generateDecision(
       cached.research,
       cached.techAssessment,
       cached.relationshipCheck,
-      playbookCheck
+      playbookCheck,
+      memories
     );
 
     // Record which rules were applied to this opportunity
@@ -293,6 +307,9 @@ async function makeDecision(
         'james'
       );
     }
+
+    // Store decision as memory for future reference
+    await storeDecisionMemory(decision, cached.research, context.event.id);
 
     // Build the GO_NO_GO_DECISION payload
     const decisionPayload: GoNoGoDecisionPayload = {
@@ -375,6 +392,83 @@ interface DecisionResult {
 }
 
 // ============================================================
+// Memory Retrieval for Decision Context
+// ============================================================
+async function getRelevantMemories(agency?: string): Promise<AgentMemory[]> {
+  const memories: AgentMemory[] = [];
+
+  try {
+    // Get important insights from all agents
+    const [davidInsights, jamesInsights, marcusInsights, rosaInsights] = await Promise.all([
+      getImportantMemories('david', 7, 5),
+      getImportantMemories('james', 7, 5),
+      getImportantMemories('marcus', 7, 5),
+      getImportantMemories('rosa', 7, 5),
+    ]);
+
+    memories.push(...davidInsights, ...jamesInsights, ...marcusInsights, ...rosaInsights);
+
+    // If we have an agency, also search for agency-specific memories
+    if (agency) {
+      const agencyTag = agency.toLowerCase().replace(/\s+/g, '-');
+      const [davidAgency, jamesAgency] = await Promise.all([
+        searchMemoriesByTags('david', [agencyTag], 3),
+        searchMemoriesByTags('james', [agencyTag], 3),
+      ]);
+      memories.push(...davidAgency, ...jamesAgency);
+    }
+
+    // Deduplicate by ID
+    const seen = new Set<string>();
+    return memories.filter((m) => {
+      if (seen.has(m.id)) return false;
+      seen.add(m.id);
+      return true;
+    });
+  } catch (err) {
+    console.warn('[James:Handler] Failed to retrieve memories:', err);
+    return [];
+  }
+}
+
+function formatMemoriesForPrompt(memories: AgentMemory[]): string {
+  if (memories.length === 0) return '';
+
+  let section = '\n📚 TEAM MEMORY (past experiences & insights):\n';
+
+  // Group by type
+  const insights = memories.filter((m) => m.memory_type === 'insight');
+  const reflections = memories.filter((m) => m.memory_type === 'reflection');
+  const observations = memories.filter((m) => m.memory_type === 'observation');
+
+  if (insights.length > 0) {
+    section += '\n*Insights:*\n';
+    for (const m of insights.slice(0, 3)) {
+      section += `  • [${m.agent}] ${m.content.slice(0, 150)}${m.content.length > 150 ? '...' : ''}\n`;
+    }
+  }
+
+  if (reflections.length > 0) {
+    section += '\n*Patterns:*\n';
+    for (const m of reflections.slice(0, 2)) {
+      section += `  • [${m.agent}] ${m.content.slice(0, 150)}${m.content.length > 150 ? '...' : ''}\n`;
+    }
+  }
+
+  if (observations.length > 0) {
+    section += '\n*Recent Observations:*\n';
+    for (const m of observations.slice(0, 3)) {
+      section += `  • [${m.agent}] ${m.content.slice(0, 120)}${m.content.length > 120 ? '...' : ''}\n`;
+    }
+  }
+
+  section +=
+    '\nConsider these past experiences when making your decision, but weigh current data appropriately.\n';
+
+  return section;
+}
+
+// ============================================================
 // Format Playbook Results for Prompt
 // ============================================================
 function formatPlaybookForPrompt(playbookCheck: RuleCheckResult): string {
@@ -421,12 +515,16 @@ async function generateDecision(
   research: ResearchCompletePayload,
   techAssessment?: TechAssessmentCompletePayload,
   relationshipCheck?: RelationshipCheckCompletePayload,
-  playbookCheck?: RuleCheckResult
+  playbookCheck?: RuleCheckResult,
+  memories?: AgentMemory[]
 ): Promise<DecisionResult> {
   const client = getAnthropic();
 
   // Format playbook violations for the prompt
   const playbookSection = playbookCheck ? formatPlaybookForPrompt(playbookCheck) : '';
+
+  // Format memories for the prompt
+  const memorySection = memories ? formatMemoriesForPrompt(memories) : '';
 
   const prompt = `You are James, a strategic capture manager. Make a go/no-go recommendation for this opportunity.
 
@@ -470,7 +568,7 @@ Certification Gaps: ${relationshipCheck.certificationGaps.length}
 `
     : 'RELATIONSHIP CHECK: Not yet received'
 }
-${playbookSection}
+${playbookSection}${memorySection}
 Make a strategic go/no-go recommendation. Consider:
 - Win probability based on all factors
 - Resource investment vs likelihood of success
@@ -537,6 +635,75 @@ Respond in JSON format:
       rationale: 'Automated decision failed. Please review manually.',
       confidence: 'low',
     };
+  }
+}
+
+// ============================================================
+// Memory Storage
+// ============================================================
+async function storeDecisionMemory(
+  decision: DecisionResult,
+  research: ResearchCompletePayload,
+  eventId: string
+): Promise<void> {
+  try {
+    // Build descriptive memory content
+    const positiveFactors = decision.keyFactors
+      .filter((f) => f.impact === 'positive')
+      .map((f) => f.factor)
+      .slice(0, 3);
+    const negativeFactors = decision.keyFactors
+      .filter((f) => f.impact === 'negative')
+      .map((f) => f.factor)
+      .slice(0, 3);
+
+    const positiveNote =
+      positiveFactors.length > 0 ? `Positives: ${positiveFactors.join('; ')}.` : '';
+    const negativeNote =
+      negativeFactors.length > 0 ? `Concerns: ${negativeFactors.join('; ')}.` : '';
+
+    const content =
+      `Decision: ${decision.decision} for "${research.title}" (${research.originalOpportunity?.agency || 'unknown agency'}). Win probability: ${decision.winProbability}%. ${decision.rationale} ${positiveNote} ${negativeNote}`.trim();
+
+    // Build tags for querying
+    const tags: string[] = [`decision-${decision.decision.toLowerCase().replace('_', '-')}`];
+
+    // Agency tag
+    if (research.originalOpportunity?.agency) {
+      tags.push(research.originalOpportunity.agency.toLowerCase().replace(/\s+/g, '-'));
+    }
+
+    // Win probability buckets
+    if (decision.winProbability >= 70) {
+      tags.push('high-probability');
+    } else if (decision.winProbability >= 40) {
+      tags.push('medium-probability');
+    } else {
+      tags.push('low-probability');
+    }
+
+    // Confidence
+    tags.push(`confidence-${decision.confidence}`);
+
+    // Calculate importance based on decision type and probability
+    let importance = 6;
+    if (decision.decision === 'GO') importance += 2;
+    if (decision.decision === 'NO_GO') importance += 1; // Still valuable to remember why we passed
+    if (decision.winProbability >= 70) importance += 1;
+    if (decision.confidence === 'high') importance += 1;
+    importance = Math.max(1, Math.min(10, importance)); // Clamp to 1-10
+
+    await storeMemory('james', 'observation', content, {
+      relatedOpportunityId: research.noticeId,
+      relatedEventId: eventId,
+      importance,
+      tags,
+    });
+
+    console.log(`[James:Handler] Stored decision memory for ${research.noticeId}`);
+  } catch (err) {
+    // Don't fail the handler if memory storage fails
+    console.warn(`[James:Handler] Failed to store decision memory:`, err);
   }
 }
 

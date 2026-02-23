@@ -11,6 +11,7 @@ import {
 import { EventHandler, EventHandlerContext, EventHandlerResult } from '../eventProcessor.js';
 import { getAnthropic } from '../../integrations/claude.js';
 import { replyInThread } from '../../integrations/slack.js';
+import { storeMemory } from '../../memory/index.js';
 
 // ============================================================
 // RESEARCH_COMPLETE Handler
@@ -41,6 +42,9 @@ const handleResearchComplete: EventHandler = async (
       confidence: relationshipCheck.confidence,
       summary: relationshipCheck.summary,
     };
+
+    // Store relationship check as memory for future reference
+    await storeRelationshipMemory(relationshipCheck, payload, event.id);
 
     // POST TO SLACK - Make the collaboration visible
     if (event.thread_ts) {
@@ -212,6 +216,74 @@ Respond in JSON format:
       confidence: 'low',
       summary: 'Unable to complete full relationship analysis. Manual review recommended.',
     };
+  }
+}
+
+// ============================================================
+// Memory Storage
+// ============================================================
+async function storeRelationshipMemory(
+  check: RelationshipCheckResult,
+  payload: ResearchCompletePayload,
+  eventId: string
+): Promise<void> {
+  try {
+    // Build descriptive memory content
+    const partnerNote =
+      check.potentialPartners.length > 0
+        ? `${check.potentialPartners.length} potential partners identified.`
+        : 'No partners identified.';
+
+    const gapNote =
+      check.certificationGaps.filter((g) => g.importance === 'required').length > 0
+        ? `Has required certification gaps.`
+        : '';
+
+    const content =
+      `Relationship check for "${payload.title}": ${check.teamingRecommendation.replace('_', ' ')}. ${check.summary} ${partnerNote} ${gapNote}`.trim();
+
+    // Build tags for querying
+    const tags: string[] = [`teaming-${check.teamingRecommendation.replace('_', '-')}`];
+
+    // Agency tag
+    if (payload.originalOpportunity?.agency) {
+      tags.push(payload.originalOpportunity.agency.toLowerCase().replace(/\s+/g, '-'));
+    }
+
+    // Relationship strength
+    tags.push(`relationship-${check.relationshipStrength}`);
+
+    // Partner availability
+    if (check.potentialPartners.some((p) => p.relationship === 'existing')) {
+      tags.push('existing-partners');
+    }
+
+    // Certification gaps
+    if (check.certificationGaps.some((g) => g.importance === 'required' && !g.partnerCanFill)) {
+      tags.push('cert-gap-unfilled');
+    }
+
+    // Confidence
+    tags.push(`confidence-${check.confidence}`);
+
+    // Calculate importance
+    let importance = 5;
+    if (check.teamingRecommendation === 'prime') importance += 2;
+    if (check.teamingRecommendation === 'pass') importance += 1;
+    if (check.relationshipStrength === 'strong') importance += 1;
+    if (check.confidence === 'high') importance += 1;
+    importance = Math.max(1, Math.min(10, importance));
+
+    await storeMemory('rosa', 'observation', content, {
+      relatedOpportunityId: payload.noticeId,
+      relatedEventId: eventId,
+      importance,
+      tags,
+    });
+
+    console.log(`[Rosa:Handler] Stored relationship memory for ${payload.noticeId}`);
+  } catch (err) {
+    console.warn(`[Rosa:Handler] Failed to store relationship memory:`, err);
   }
 }
 

@@ -11,6 +11,7 @@ import {
 import { EventHandler, EventHandlerContext, EventHandlerResult } from '../eventProcessor.js';
 import { getAnthropic } from '../../integrations/claude.js';
 import { replyInThread } from '../../integrations/slack.js';
+import { storeMemory } from '../../memory/index.js';
 
 // ============================================================
 // NEW_OPPORTUNITY Handler
@@ -53,6 +54,9 @@ const handleNewOpportunity: EventHandler = async (
       sources: research.sources,
       summary: research.summary,
     };
+
+    // Store research findings as memory for future reference
+    await storeResearchMemory(research, payload, event.id);
 
     // POST TO SLACK - Make the collaboration visible
     if (event.thread_ts) {
@@ -240,6 +244,80 @@ Respond in JSON format:
       sources: ['Limited analysis'],
       summary: 'Unable to complete full analysis. Manual review recommended.',
     };
+  }
+}
+
+// ============================================================
+// Memory Storage
+// ============================================================
+async function storeResearchMemory(
+  research: ResearchResult,
+  payload: NewOpportunityPayload,
+  eventId: string
+): Promise<void> {
+  try {
+    // Build descriptive memory content
+    const redFlagSummary =
+      research.redFlags.length > 0
+        ? `Red flags: ${research.redFlags.map((f) => f.type).join(', ')}.`
+        : 'No red flags identified.';
+
+    const greenFlagSummary =
+      research.greenFlags.length > 0
+        ? `Green flags: ${research.greenFlags.map((f) => f.type).join(', ')}.`
+        : 'No green flags identified.';
+
+    const incumbentNote = research.incumbent?.name
+      ? `Incumbent: ${research.incumbent.name} (${research.incumbent.incumbentAdvantage || 'unknown'} advantage).`
+      : 'No incumbent identified.';
+
+    const content = `Researched "${payload.title}" for ${payload.agency || 'unknown agency'}. ${research.summary} ${incumbentNote} ${redFlagSummary} ${greenFlagSummary}`;
+
+    // Build tags for querying
+    const tags: string[] = [];
+
+    // Agency tag
+    if (payload.agency) {
+      tags.push(payload.agency.toLowerCase().replace(/\s+/g, '-'));
+    }
+
+    // Red flag types
+    for (const flag of research.redFlags) {
+      tags.push(`red-${flag.type.toLowerCase().replace(/\s+/g, '-')}`);
+    }
+
+    // Green flag types
+    for (const flag of research.greenFlags) {
+      tags.push(`green-${flag.type.toLowerCase().replace(/\s+/g, '-')}`);
+    }
+
+    // Confidence
+    tags.push(`confidence-${research.confidence}`);
+
+    // Set-aside if present
+    if (payload.setAside) {
+      tags.push(payload.setAside.toLowerCase().replace(/\s+/g, '-'));
+    }
+
+    // Calculate importance based on confidence and flag counts
+    let importance = 5;
+    if (research.confidence === 'high') importance += 2;
+    if (research.confidence === 'low') importance -= 1;
+    if (research.redFlags.some((f) => f.severity === 'high')) importance += 1;
+    if (research.greenFlags.length >= 3) importance += 1;
+    importance = Math.max(1, Math.min(10, importance)); // Clamp to 1-10
+
+    await storeMemory('david', 'observation', content, {
+      relatedOpportunityId: payload.noticeId,
+      relatedEventId: eventId,
+      importance,
+      tags,
+    });
+
+    console.log(`[David:Handler] Stored research memory for ${payload.noticeId}`);
+  } catch (err) {
+    // Don't fail the handler if memory storage fails
+    console.warn(`[David:Handler] Failed to store research memory:`, err);
   }
 }
 
