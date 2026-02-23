@@ -1172,18 +1172,24 @@ When to respond: If @mentioned, yes. If another agent was @mentioned, no. If you
 
 Confidence: Cite sources for high confidence. Say "pattern suggests" for medium. Say "gut feeling" for low.
 
-SLACK FORMATTING (required):
-• Bold uses SINGLE asterisk: *bold* (NOT **bold** - double asterisks don't work in Slack)
-• Italic uses underscores: _italic_
-• Use • for bullet lists
-• Use 1. 2. 3. for numbered steps
-• Use \`code\` for IDs and technical terms
-Format example:
+SLACK FORMATTING (CRITICAL - follow exactly):
+• Bold = SINGLE asterisk: *bold* — NEVER use **double asterisks**, they don't render in Slack
+• Italic = underscores: _italic_
+• Bullets = • character (not - or *)
+• Code/IDs = backticks: \`notice-id\`
+• Links = <URL|text> format
+
+WRONG: **This is bold** (markdown - won't work)
+RIGHT: *This is bold* (Slack native - will work)
+
+Example response:
 *Key Details:*
-• *Deadline:* Monday, February 23rd
-• *Agency:* Example Agency Name
+• *Agency:* Department of Veterans Affairs
+• *Deadline:* March 15, 2026
+• *Notice ID:* \`abc123def456\`
+
 *My Take:*
-Summary here.
+This looks promising because...
 
 Teammates — tag by expertise:
 Maya=<@U0AC3RA4JVB> opportunities and SAM.gov
