@@ -9,6 +9,7 @@ import {
   OutcomeRecordedPayload,
 } from '../eventTypes.js';
 import { EventHandler, EventHandlerContext, EventHandlerResult } from '../eventProcessor.js';
+import { storeMemory } from '../../memory/index.js';
 
 // ============================================================
 // PURSUIT_DECISION_FEEDBACK Handler
@@ -87,8 +88,8 @@ const handleOutcomeRecorded: EventHandler = async (
     // Analyze why we lost - was the initial scoring too optimistic?
   }
 
-  // TODO: Feed this back into scoring model
-  // await updateScoringModel(payload);
+  // Store outcome as memory for team learning
+  await storeOutcomeMemory(payload, event.id);
 
   return {
     success: true,
@@ -99,6 +100,53 @@ const handleOutcomeRecorded: EventHandler = async (
     },
   };
 };
+
+// ============================================================
+// Memory Storage
+// ============================================================
+async function storeOutcomeMemory(payload: OutcomeRecordedPayload, eventId: string): Promise<void> {
+  try {
+    // Build descriptive memory content
+    const outcomeVerb =
+      payload.outcome === 'won' ? 'Won' : payload.outcome === 'lost' ? 'Lost' : 'Withdrew from';
+    const awardNote =
+      payload.outcome === 'won' && payload.awardAmount
+        ? ` Award: $${payload.awardAmount.toLocaleString()}.`
+        : '';
+    const winnerNote =
+      payload.outcome === 'lost' && payload.winner ? ` Winner: ${payload.winner}.` : '';
+    const jamesNote = payload.jamesRecommendation
+      ? ` James recommended ${payload.jamesRecommendation} (${payload.wasCorrect ? 'correct' : 'incorrect'}).`
+      : '';
+
+    const content = `${outcomeVerb} "${payload.title}".${awardNote}${winnerNote}${jamesNote}`;
+
+    // Build tags for querying
+    const tags: string[] = [`outcome-${payload.outcome}`];
+
+    // Track prediction accuracy
+    if (payload.wasCorrect !== undefined) {
+      tags.push(payload.wasCorrect ? 'prediction-correct' : 'prediction-incorrect');
+    }
+
+    // Add agency if available (from related memories)
+    // Note: OutcomeRecordedPayload doesn't have agency, but we could look it up
+
+    // Higher importance for outcomes - these are valuable learning signals
+    const importance = payload.outcome === 'won' ? 9 : payload.outcome === 'lost' ? 8 : 6;
+
+    await storeMemory('maya', 'outcome', content, {
+      relatedOpportunityId: payload.noticeId,
+      relatedEventId: eventId,
+      importance,
+      tags,
+    });
+
+    console.log(`[Maya:Handler] Stored outcome memory for ${payload.noticeId}`);
+  } catch (err) {
+    console.warn(`[Maya:Handler] Failed to store outcome memory:`, err);
+  }
+}
 
 // ============================================================
 // Export Handler Map

@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { scout } from '../agents/scout.js';
 import { strategist } from '../agents/strategist.js';
+import { runMemoryReflection } from '../cron/memory-reflection.js';
 
 // Track scheduled jobs for cleanup
 const scheduledJobs: cron.ScheduledTask[] = [];
@@ -47,11 +48,33 @@ export function scheduleStrategistStandup(): void {
   console.log('Scheduled Strategist standup for 8:00 AM weekdays');
 }
 
+// Schedule Memory Reflection at 2am daily
+export function scheduleMemoryReflection(): void {
+  const job = cron.schedule(
+    '0 2 * * *',
+    async () => {
+      console.log('Running scheduled memory reflection...');
+      try {
+        await runMemoryReflection();
+      } catch (error) {
+        console.error('Error in memory reflection:', error);
+      }
+    },
+    {
+      timezone: 'America/New_York',
+    }
+  );
+
+  scheduledJobs.push(job);
+  console.log('Scheduled memory reflection for 2:00 AM daily');
+}
+
 // Start all scheduled jobs
 export function startScheduler(): void {
   console.log('Starting scheduler...');
   scheduleScoutDailyScan();
   scheduleStrategistStandup();
+  scheduleMemoryReflection();
   console.log('Scheduler started');
 }
 
@@ -75,4 +98,10 @@ export async function runScoutScanNow(): Promise<void> {
 export async function runStandupNow(): Promise<void> {
   console.log('Running standup immediately...');
   await strategist.handleAction('morning_standup', {});
+}
+
+// Run memory reflection immediately (for testing or manual trigger)
+export async function runMemoryReflectionNow(): Promise<void> {
+  console.log('Running memory reflection immediately...');
+  await runMemoryReflection();
 }

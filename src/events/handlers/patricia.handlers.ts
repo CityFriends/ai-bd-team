@@ -12,6 +12,7 @@ import {
 } from '../eventTypes.js';
 import { EventHandler, EventHandlerContext, EventHandlerResult } from '../eventProcessor.js';
 import { replyInThread } from '../../integrations/slack.js';
+import { storeMemory } from '../../memory/index.js';
 
 // ============================================================
 // GO_NO_GO_DECISION Handler
@@ -48,6 +49,9 @@ const handleGoNoGoDecision: EventHandler = async (
 
     // Build the PURSUIT_SCHEDULED payload
     const pursuitPayload: PursuitScheduledPayload = pursuitSchedule;
+
+    // Store pursuit as memory
+    await storePursuitMemory(payload, pursuitSchedule, event.id);
 
     // POST TO SLACK - Make the schedule visible
     if (event.thread_ts) {
@@ -204,6 +208,52 @@ const handlePipelineHealthCheck: EventHandler = async (
     chainEvents,
   };
 };
+
+// ============================================================
+// Memory Storage
+// ============================================================
+async function storePursuitMemory(
+  decision: GoNoGoDecisionPayload,
+  schedule: PursuitScheduledPayload,
+  eventId: string
+): Promise<void> {
+  try {
+    const milestonesCount = schedule.milestones.length;
+    const teamSize = schedule.teamAssignments.length;
+    const deadline = new Date(schedule.deadline).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+    });
+
+    const content = `Scheduled pursuit for "${decision.title}". Win probability: ${decision.winProbability}%. ${milestonesCount} milestones, ${teamSize} team members assigned. Deadline: ${deadline}.`;
+
+    // Build tags
+    const tags: string[] = ['pursuit-scheduled'];
+
+    // Win probability buckets
+    if (decision.winProbability >= 70) {
+      tags.push('high-probability');
+    } else if (decision.winProbability >= 40) {
+      tags.push('medium-probability');
+    } else {
+      tags.push('low-probability');
+    }
+
+    // Decision type
+    tags.push(`decision-${decision.decision.toLowerCase().replace('_', '-')}`);
+
+    await storeMemory('patricia', 'observation', content, {
+      relatedOpportunityId: decision.noticeId,
+      relatedEventId: eventId,
+      importance: 6,
+      tags,
+    });
+
+    console.log(`[Patricia:Handler] Stored pursuit memory for ${decision.noticeId}`);
+  } catch (err) {
+    console.warn(`[Patricia:Handler] Failed to store pursuit memory:`, err);
+  }
+}
 
 // ============================================================
 // Helper Functions
