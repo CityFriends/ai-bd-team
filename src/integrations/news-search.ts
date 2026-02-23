@@ -11,6 +11,103 @@ export interface NewsArticle {
   publishedDate?: string;
 }
 
+// ============================================================
+// Shared deduplication with gov-news.ts via seen_news table
+// ============================================================
+
+/**
+ * Check if a news article URL has already been seen/posted
+ */
+export async function isNewsAlreadySeen(url: string): Promise<boolean> {
+  if (!url) return false;
+  try {
+    const supabase = getSupabase();
+    // Normalize URL for comparison (remove trailing slashes, query params)
+    const normalizedUrl = normalizeUrl(url);
+    const { data } = await supabase
+      .from('seen_news')
+      .select('url')
+      .or(`url.eq.${url},url.eq.${normalizedUrl}`)
+      .limit(1);
+    return !!(data && data.length > 0);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Record a news article as seen (prevents future duplicates)
+ */
+export async function recordSeenNews(article: NewsArticle, relevanceScore?: number): Promise<void> {
+  if (!article.url) return;
+  try {
+    const supabase = getSupabase();
+    await supabase.from('seen_news').insert({
+      url: article.url,
+      title: article.title,
+      source: article.source,
+      relevance_score: relevanceScore,
+      seen_at: new Date().toISOString(),
+    });
+  } catch {
+    // Ignore duplicates or errors
+  }
+}
+
+/**
+ * Normalize URL for comparison (handles trailing slashes, some query params)
+ */
+function normalizeUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    // Remove trailing slash from pathname
+    parsed.pathname = parsed.pathname.replace(/\/$/, '');
+    // Remove common tracking params
+    parsed.searchParams.delete('utm_source');
+    parsed.searchParams.delete('utm_medium');
+    parsed.searchParams.delete('utm_campaign');
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Filter out articles that have already been seen
+ * Use this before posting news to Slack to prevent duplicates
+ */
+export async function filterSeenNews(articles: NewsArticle[]): Promise<NewsArticle[]> {
+  const newArticles: NewsArticle[] = [];
+
+  for (const article of articles) {
+    if (!article.url) continue;
+    const seen = await isNewsAlreadySeen(article.url);
+    if (!seen) {
+      newArticles.push(article);
+    }
+  }
+
+  return newArticles;
+}
+
+/**
+ * Filter and record articles as seen in one operation
+ * Returns only new (unseen) articles and marks them as seen
+ */
+export async function getAndMarkNewArticles(
+  articles: NewsArticle[],
+  relevanceScore?: number
+): Promise<NewsArticle[]> {
+  const newArticles = await filterSeenNews(articles);
+
+  // Mark new articles as seen
+  for (const article of newArticles) {
+    await recordSeenNews(article, relevanceScore);
+  }
+
+  return newArticles;
+}
+
 export interface NewsSearchResult {
   articles: NewsArticle[];
   query: string;
