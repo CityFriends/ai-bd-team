@@ -5,11 +5,23 @@
  * Analyzes past outcomes to discover patterns and proposes new playbook rules.
  */
 import 'dotenv/config';
-import { logJobStart, logJobComplete, logJobFailed } from '../integrations/supabase.js';
+import {
+  logJobStart,
+  logJobComplete,
+  logJobFailed,
+  acquireCronLock,
+} from '../integrations/supabase.js';
 import { runMonthlyRetrospective, formatRetrospectiveForSlack } from '../playbook/retrospective.js';
 import { postAsAgent } from '../integrations/slack.js';
 
 async function main() {
+  // Acquire distributed lock to prevent duplicate runs across replicas
+  const { acquired } = await acquireCronLock('patricia-retrospective', 30); // 30 min for monthly job
+  if (!acquired) {
+    console.log('[CRON] Patricia retrospective: Another instance already running, exiting');
+    process.exit(0);
+  }
+
   const runId = await logJobStart('patricia-retrospective');
 
   try {

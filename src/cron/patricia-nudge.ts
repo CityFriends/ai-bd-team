@@ -3,10 +3,22 @@
  * Schedule: 0 20 * * 1-5 (2pm CST Mon-Fri)
  */
 import 'dotenv/config';
-import { logJobStart, logJobComplete, logJobFailed } from '../integrations/supabase.js';
+import {
+  logJobStart,
+  logJobComplete,
+  logJobFailed,
+  acquireCronLock,
+} from '../integrations/supabase.js';
 import { runNudgeCheck } from '../scripts/patricia-checkin.js';
 
 async function main() {
+  // Acquire distributed lock to prevent duplicate runs across replicas
+  const { acquired } = await acquireCronLock('patricia-nudge', 10);
+  if (!acquired) {
+    console.log('[CRON] Patricia nudge: Another instance already running, exiting');
+    process.exit(0);
+  }
+
   const runId = await logJobStart('patricia-nudge');
 
   try {

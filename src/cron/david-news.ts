@@ -3,10 +3,22 @@
  * Schedule: 0 16 * * 1,3,5 (10am CST Mon/Wed/Fri)
  */
 import 'dotenv/config';
-import { logJobStart, logJobComplete, logJobFailed } from '../integrations/supabase.js';
+import {
+  logJobStart,
+  logJobComplete,
+  logJobFailed,
+  acquireCronLock,
+} from '../integrations/supabase.js';
 import { runNewsDigest } from '../scripts/david-news-digest.js';
 
 async function main() {
+  // Acquire distributed lock to prevent duplicate runs across replicas
+  const { acquired } = await acquireCronLock('david-news-digest', 10); // 10 min window
+  if (!acquired) {
+    console.log('[CRON] David news digest: Another instance already running, exiting');
+    process.exit(0);
+  }
+
   const runId = await logJobStart('david-news-digest');
 
   try {

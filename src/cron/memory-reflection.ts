@@ -8,7 +8,12 @@
  * Schedule: Daily (recommended to run during off-hours)
  */
 import 'dotenv/config';
-import { logJobStart, logJobComplete, logJobFailed } from '../integrations/database/cron.js';
+import {
+  logJobStart,
+  logJobComplete,
+  logJobFailed,
+  acquireCronLock,
+} from '../integrations/database/cron.js';
 import { getAnthropic } from '../integrations/claude.js';
 import {
   storeMemory,
@@ -238,6 +243,13 @@ export async function runMemoryReflection(): Promise<{
 // ============================================================
 
 export async function cronMemoryReflection(): Promise<void> {
+  // Acquire distributed lock to prevent duplicate runs across replicas
+  const { acquired } = await acquireCronLock('memory-reflection', 30);
+  if (!acquired) {
+    console.log('[Reflection] Another instance already running, exiting');
+    return;
+  }
+
   const runId = await logJobStart('memory-reflection');
 
   try {

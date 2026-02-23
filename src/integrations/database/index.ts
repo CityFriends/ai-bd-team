@@ -171,4 +171,7 @@ export {
   logJobFailed,
   getRecentJobRuns,
   getJobStats,
+  acquireCronLock,
+  releaseCronLock,
+  cleanupExpiredLocks,
 } from './cron.js';

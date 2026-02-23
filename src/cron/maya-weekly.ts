@@ -3,10 +3,22 @@
  * Schedule: 30 14 * * 1 (8:30am CST Monday)
  */
 import 'dotenv/config';
-import { logJobStart, logJobComplete, logJobFailed } from '../integrations/supabase.js';
+import {
+  logJobStart,
+  logJobComplete,
+  logJobFailed,
+  acquireCronLock,
+} from '../integrations/supabase.js';
 import { runWeeklySummary } from '../scripts/maya-scanner.js';
 
 async function main() {
+  // Acquire distributed lock to prevent duplicate runs across replicas
+  const { acquired } = await acquireCronLock('maya-weekly-summary', 15);
+  if (!acquired) {
+    console.log('[CRON] Maya weekly summary: Another instance already running, exiting');
+    process.exit(0);
+  }
+
   const runId = await logJobStart('maya-weekly-summary');
 
   try {

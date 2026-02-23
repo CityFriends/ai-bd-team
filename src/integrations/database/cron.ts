@@ -1,6 +1,90 @@
 import { getSupabase } from './client.js';
 
 // ============================================
+// DISTRIBUTED LOCK FOR CRON JOBS
+// Prevents duplicate runs when Railway has multiple replicas
+// ============================================
+
+/**
+ * Acquire a distributed lock for a cron job.
+ * Returns true if lock acquired, false if another instance already has it.
+ *
+ * Uses a time-window based lock key to prevent duplicate runs within a window.
+ * Default window is 5 minutes - jobs won't run twice within that window.
+ */
+export async function acquireCronLock(
+  jobName: string,
+  windowMinutes: number = 5
+): Promise<{ acquired: boolean; lockId?: string }> {
+  try {
+    // Create a lock key based on job name and time window
+    // e.g., "patricia-standup:2026-02-23T16:00" (rounded to 5-min window)
+    const now = new Date();
+    const windowMs = windowMinutes * 60 * 1000;
+    const windowStart = new Date(Math.floor(now.getTime() / windowMs) * windowMs);
+    const lockKey = `${jobName}:${windowStart.toISOString()}`;
+
+    // Try to insert the lock - will fail if duplicate
+    const { data, error } = await getSupabase()
+      .from('cron_locks')
+      .insert({
+        lock_key: lockKey,
+        job_name: jobName,
+        acquired_at: now.toISOString(),
+        expires_at: new Date(now.getTime() + windowMs).toISOString(),
+      })
+      .select('id')
+      .single();
+
+    if (error) {
+      // Check if it's a duplicate key error
+      if (error.code === '23505') {
+        console.log(`[LOCK] ${jobName}: Another instance already running (lock: ${lockKey})`);
+        return { acquired: false };
+      }
+      // Other error - log but allow job to proceed (fail open)
+      console.warn(`[LOCK] ${jobName}: Lock error (proceeding anyway):`, error.message);
+      return { acquired: true };
+    }
+
+    console.log(`[LOCK] ${jobName}: Lock acquired (${lockKey})`);
+    return { acquired: true, lockId: data.id };
+  } catch (err) {
+    // On any error, fail open - allow job to run
+    console.warn(`[LOCK] ${jobName}: Lock system error (proceeding anyway):`, err);
+    return { acquired: true };
+  }
+}
+
+/**
+ * Release a cron lock (optional - locks auto-expire)
+ */
+export async function releaseCronLock(lockId: string): Promise<void> {
+  try {
+    await getSupabase().from('cron_locks').delete().eq('id', lockId);
+  } catch {
+    // Ignore release errors
+  }
+}
+
+/**
+ * Clean up expired locks (run periodically)
+ */
+export async function cleanupExpiredLocks(): Promise<number> {
+  try {
+    const { data } = await getSupabase()
+      .from('cron_locks')
+      .delete()
+      .lt('expires_at', new Date().toISOString())
+      .select('id');
+
+    return data?.length || 0;
+  } catch {
+    return 0;
+  }
+}
+
+// ============================================
 // CRON JOB RUN LOGGING
 // ============================================
 
