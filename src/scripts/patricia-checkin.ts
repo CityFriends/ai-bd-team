@@ -17,6 +17,76 @@ import { getSupabase, getExtractedFacts } from '../integrations/supabase.js';
 import { getAnthropic } from '../integrations/claude.js';
 import { loadCompanyContext, formatCompanyContextForPrompt } from '../context/company-context.js';
 
+// Notion API for pipeline visibility
+const NOTION_API_KEY = process.env.NOTION_API_KEY || '';
+const PIPELINE_DATABASE_ID = '1bb07a7951ff80fe9e6dfd1284f99a48';
+
+interface PipelineItem {
+  name: string;
+  stage: string;
+  dueDate?: string;
+}
+
+// Get active opportunities from Notion pipeline
+async function getActivePipeline(): Promise<PipelineItem[]> {
+  if (!NOTION_API_KEY) return [];
+
+  try {
+    const response = await fetch(
+      `https://api.notion.com/v1/databases/${PIPELINE_DATABASE_ID}/query`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${NOTION_API_KEY}`,
+          'Notion-Version': '2022-06-28',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          filter: {
+            and: [
+              {
+                property: 'Stage',
+                status: {
+                  does_not_equal: 'Pass',
+                },
+              },
+              {
+                property: 'Stage',
+                status: {
+                  does_not_equal: 'No Bid',
+                },
+              },
+            ],
+          },
+          sorts: [{ property: 'Date Added', direction: 'descending' }],
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      console.warn('Could not fetch Notion pipeline:', response.status);
+      return [];
+    }
+
+    const data = (await response.json()) as { results?: any[] };
+    const items: PipelineItem[] = [];
+
+    for (const page of data.results || []) {
+      const props = page.properties;
+      const name = props.Name?.title?.[0]?.plain_text || 'Untitled';
+      const stage = props.Stage?.status?.name || 'Unknown';
+      const dueDate = props['Due Date']?.date?.start || undefined;
+
+      items.push({ name, stage, dueDate });
+    }
+
+    return items;
+  } catch (err) {
+    console.warn('Error fetching pipeline:', err);
+    return [];
+  }
+}
+
 const CHANNEL_ID = process.env.SLACK_CHANNEL_ID || '';
 
 // Slack IDs for tagging the humans
@@ -170,7 +240,8 @@ async function getRecentTeamFacts(): Promise<string[]> {
 async function generateMorningCheckin(
   pending: PendingItem[],
   recentActivity: RecentActivity[],
-  teamFacts: string[]
+  teamFacts: string[],
+  pipeline: PipelineItem[]
 ): Promise<string> {
   const client = getAnthropic();
   const companyData = await loadCompanyContext();
@@ -186,10 +257,19 @@ ${companyContext}
 Today is ${dayOfWeek}.
 ${isMonday ? "It's Monday, so do a quick week-ahead preview." : ''}
 
+ACTIVE PIPELINE (from Notion - this is what we're ACTUALLY working on):
+${
+  pipeline.length > 0
+    ? pipeline
+        .map((p) => `- "${p.name}" [${p.stage}]${p.dueDate ? ` - Due: ${p.dueDate}` : ''}`)
+        .join('\n')
+    : 'No active opportunities in the pipeline.'
+}
+
 THINGS YOU REMEMBER (from recent conversations):
 ${teamFacts.length > 0 ? teamFacts.map((f) => `- ${f}`).join('\n') : 'No recent notes.'}
 
-PENDING ITEMS (from database):
+NEW OPPORTUNITIES TO REVIEW (not yet decided):
 ${
   pending.length > 0
     ? pending
@@ -198,7 +278,7 @@ ${
             `- [${p.urgency.toUpperCase()}] ${p.type}: "${p.title}" (${p.daysOld} days old) ${p.context || ''}`
         )
         .join('\n')
-    : 'Nothing pending in the tracker.'
+    : 'No new opportunities needing review.'
 }
 
 RECENT CHANNEL ACTIVITY (last 24 hours):
@@ -282,16 +362,20 @@ export async function runMorningCheckin() {
 
   const app = await getPatriciaApp();
 
-  // Gather data
-  const pending = await getPendingItems();
-  const recentActivity = await getRecentChannelActivity(app);
-  const teamFacts = await getRecentTeamFacts();
+  // Gather data in parallel
+  const [pending, recentActivity, teamFacts, pipeline] = await Promise.all([
+    getPendingItems(),
+    getRecentChannelActivity(app),
+    getRecentTeamFacts(),
+    getActivePipeline(),
+  ]);
 
   console.log(`Found ${pending.length} pending items`);
   console.log(`Found ${recentActivity.length} recent agent messages`);
   console.log(`Found ${teamFacts.length} team facts from memory`);
+  console.log(`Found ${pipeline.length} active pipeline items`);
 
-  const message = await generateMorningCheckin(pending, recentActivity, teamFacts);
+  const message = await generateMorningCheckin(pending, recentActivity, teamFacts, pipeline);
   await postToSlack(app, message);
 
   if (app) {
