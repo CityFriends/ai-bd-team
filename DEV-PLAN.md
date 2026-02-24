@@ -209,16 +209,52 @@ Comprehensive docs for repeatable product deployment:
 
 ### Recent Fixes (Feb 2026)
 
+**Shared Context for All Agents** ✓ (NEW)
+All agents now have full visibility into what's happening:
+- [x] `src/live/shared-context.ts` - Central module for shared state
+- [x] Pipeline visibility: Agents query Notion for active opportunities (DoS Camp, Doorway, etc.)
+- [x] Recent decisions: Agents see pass/pursue decisions from last 14 days - won't mention passed opps
+- [x] Team facts: Agents load extracted facts (availability, preferences)
+- [x] Conversation memory: Agents recall recent discussion summaries
+- [x] All live agents load shared context before responding
+
+**David's Anti-Fabrication Rules** ✓ (STRENGTHENED)
+- [x] Explicit list of things David must NEVER invent: protests, CPAR, incumbents, company performance
+- [x] Emphasized statelessness: "You only know what's in your RESEARCH DATA section"
+- [x] Clear instruction: "I don't have [X] in my system right now. To get that, we'd need to [specific action]"
+- [x] Added credibility warning about trust destruction from making things up
+
+**Maya Pipeline Confirmation** ✓ (NEW)
+- [x] Maya now ASKS before adding opportunities to Notion: "📋 Add to pipeline?"
+- [x] User must confirm ("yes", "add it") or decline ("no", "skip")
+- [x] Prevents accidental adds from casual mentions like "worth tracking"
+- [x] `isUserConfirmation()` and `isUserDecline()` detect responses
+- [x] `findPendingOpportunityInThread()` searches thread for pending add request
+
+**Patricia's Standup Behavior** ✓ (IMPROVED)
+- [x] Patricia queries Notion pipeline - knows what's actively being worked on
+- [x] Filters out decided opportunities (only shows `decision IS NULL`)
+- [x] No longer mentions agent names in standup (CRITICAL instruction)
+- [x] Distinguishes "Active Pipeline" from "New Opportunities to Review"
+- [x] Loads memory context ("THINGS YOU REMEMBER")
+
+**Duplicate Response Prevention** ✓ (FIXED)
+- [x] ALL messages (including direct @mentions) now use distributed `claimMessage`
+- [x] Prevents multiple Railway instances from responding to same message
+- [x] Uses Supabase `message_claims` table with unique constraint
+
 **David's Research Context** ✓
 - [x] Fixed agency code→name mapping for USASpending API (was passing '036' instead of 'Department of Veterans Affairs')
 - [x] Added `AGENCY_CODE_TO_NAME` mapping for 17 agencies
 - [x] Added debug logging when contract searches return empty results
-- [x] Expanded FPDS trigger keywords with conversational phrases ('current contractor', 'recompete', 'task order', 'prime', 'who holds', etc.)
+- [x] Expanded FPDS trigger keywords with conversational phrases
 
-**Patricia's Standup Behavior** ✓
-- [x] Fixed multiple agent responses to standup - Patricia no longer @mentions agents (was triggering 4 pile-on responses)
-- [x] Patricia's standup cron now loads memory context ("THINGS YOU REMEMBER")
-- [x] Added Marcus to team roles in standup prompt
+**Past Performance Tracking** ✓ (NEW)
+- [x] Added `our_value` column to track FFTC's actual earnings vs total contract value
+- [x] Added `status` column: active, ending_soon, completed, terminated
+- [x] Updated 24 contracts with accurate values and roles (prime vs subcontractor)
+- [x] Active contracts: VA Financial Management, QPP, CMS SEAS-IT, HHS ACR-ORR, VA CDS Apps
+- [x] Total active contract value: $7.09M | Total historical: $14.88M
 
 ### Known Limitations
 - FPDS keyword search can't find contract vehicles by name (e.g., "SPRUCE IDIQ") - needs contract number
@@ -229,6 +265,11 @@ Comprehensive docs for repeatable product deployment:
 - Jodie (Writer) temporarily disabled - Slack app needs Socket Mode enabled and proper scopes configured
 - ~~Patricia's standup had no memory~~ - Fixed: now loads extracted facts from database
 - ~~Agents ignored each other's announcements~~ - Fixed: team-wide fact sharing via `subject: 'team'`
+- ~~Patricia didn't know about active pipeline~~ - Fixed: queries Notion for DoS Camp, Doorway, etc.
+- ~~David making up protest data~~ - Fixed: strengthened anti-fabrication rules
+- ~~Maya auto-adding random things to Notion~~ - Fixed: now asks for confirmation first
+- ~~Bots posting 2-3x~~ - Fixed: distributed message claiming for all messages
+- ~~Patricia mentioning passed opportunities~~ - Fixed: filters by `decision IS NULL`
 
 ---
 
