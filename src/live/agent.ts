@@ -45,6 +45,7 @@ import {
 } from './handoff.js';
 import { buildWarmupMessages, formatAgentMoodLine } from './warmups.js';
 import { parseActionFromResponse, createAction } from '../integrations/agent-actions.js';
+import { loadSharedContext, formatSharedContextForPrompt } from './shared-context.js';
 import {
   EventProcessor,
   createEventProcessor,
@@ -1160,7 +1161,8 @@ Only extract clear, specific facts. Don't infer or guess.`;
     handoffContext: string,
     fileContext: string,
     userProfileContext: string,
-    teamActivityContext: string
+    teamActivityContext: string,
+    sharedContext: string
   ): string {
     return `RULES (follow these but don't let them flatten your personality):
 
@@ -1210,6 +1212,7 @@ Current date/time: ${new Date().toLocaleDateString('en-US', { weekday: 'long', y
 The humans: Lapedra (CEO, founder) and Tamara Tolson (COO). Treat both with respect.
 
 ---
+${sharedContext}
 ${companyContext}
 ${userProfileContext}
 ${memoryContext}
@@ -1376,6 +1379,20 @@ Respond as ${this.displayName}.`;
     // Get personality texture for today's vibe
     const agentMoodLine = formatAgentMoodLine(this.name, message.threadTs);
 
+    // Load shared context (pipeline, decisions, team facts, conversations)
+    let sharedContext = '';
+    try {
+      const shared = await loadSharedContext();
+      sharedContext = formatSharedContextForPrompt(shared);
+      if (shared.pipeline.length > 0 || shared.decisions.length > 0) {
+        console.log(
+          `${this.displayName}: Loaded shared context (${shared.pipeline.length} pipeline, ${shared.decisions.length} decisions, ${shared.teamFacts.length} facts)`
+        );
+      }
+    } catch (err) {
+      console.warn(`${this.displayName}: Shared context failed:`, err);
+    }
+
     // Build compact operational context (goes in user message)
     const operationalContext = this.buildOperationalContext(
       message,
@@ -1389,7 +1406,8 @@ Respond as ${this.displayName}.`;
       handoffContext,
       fileContext,
       userProfileContext,
-      teamActivityContext
+      teamActivityContext,
+      sharedContext
     );
 
     // Build warmup messages for natural conversation flow
