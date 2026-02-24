@@ -678,13 +678,12 @@ export abstract class LiveAgent {
       }
     }
 
-    // For non-direct mentions, try to claim the message first (prevents pile-ons)
-    if (!message.isDirectMention) {
-      const claimed = await claimMessage(message.messageTs, this.name, message.threadTs);
-      if (!claimed) {
-        console.log(`${this.displayName}: Another agent claimed this message, skipping`);
-        return;
-      }
+    // Claim the message in Supabase to prevent duplicate responses across instances
+    // This is CRITICAL for distributed deployments where multiple instances may receive the same event
+    const claimed = await claimMessage(message.messageTs, this.name, message.threadTs);
+    if (!claimed) {
+      console.log(`${this.displayName}: Message already claimed by another instance, skipping`);
+      return;
     }
 
     // Check if another agent JUST responded in this thread (within last 20 seconds)
