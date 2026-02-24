@@ -3,7 +3,12 @@
 import { LiveAgent } from './agent.js';
 import type { LiveAgentName, IncomingMessage } from './types.js';
 import { getOpportunityByNoticeId, getSAMOpportunityURL } from '../integrations/sam-gov.js';
-import { addToBacklog, detectBacklogIntent } from './notion-actions.js';
+import {
+  addToBacklog,
+  isUserConfirmation,
+  isUserDecline,
+  findPendingOpportunityInThread,
+} from './notion-actions.js';
 
 export class MayaAgent extends LiveAgent {
   name: LiveAgentName = 'maya';
@@ -36,7 +41,22 @@ Hard rules:
 - Only cite opportunities that appear in your RESEARCH DATA section below
 - Never fabricate personal work experiences — you have a persona, not a resume
 - If someone asks you to search and you have no results, say "My SAM.gov search came back empty" — don't invent results
-- You are stateless — each message is independent, you cannot remember to do things later`;
+- You are stateless — each message is independent, you cannot remember to do things later
+
+Adding to Pipeline (IMPORTANT):
+- ONLY suggest adding real opportunities with actual SAM.gov data
+- When you find something worth tracking, ASK FIRST using this format:
+
+📋 **Looks like a good one. Add to pipeline?**
+**Title:** [exact opportunity title from SAM.gov]
+**Agency:** [agency name]
+**Type:** [RFP/RFQ/RFI/etc]
+**Due:** [response deadline]
+**Link:** [full SAM.gov URL]
+
+- ALWAYS ask permission first — never just announce you're adding something
+- Wait for the user to confirm ("yes", "add it", "do it") before it gets added
+- If they say no or don't respond, don't add it`;
 
   protected getBotToken(): string | undefined {
     return process.env.MAYA_BOT_TOKEN;
@@ -56,6 +76,12 @@ Hard rules:
       return; // Don't continue to normal processing
     }
 
+    // Check if user is confirming/declining a pipeline add
+    if (message.threadTs) {
+      const handled = await this.handlePipelineConfirmation(message);
+      if (handled) return;
+    }
+
     // Generate response (don't post yet)
     const response = await this.generateResponse(message);
 
@@ -70,28 +96,57 @@ Hard rules:
 
       // Post the response
       await this.postMessage(response.text, message.threadTs || message.messageTs);
-
-      // Check if Maya indicated she wants to add to backlog
-      const backlogItem = detectBacklogIntent(response.text, message.text, message.fileContent);
-
-      if (backlogItem) {
-        console.log(`Maya: Detected backlog intent for "${backlogItem.name}"`);
-        const result = await addToBacklog(backlogItem, 'Maya');
-
-        if (result.success) {
-          // Post a follow-up confirming the add
-          await this.postMessage(
-            `✅ Added "${backlogItem.name}" to the Notion backlog`,
-            message.threadTs || message.messageTs
-          );
-        } else {
-          console.warn(`Maya: Failed to add to Notion: ${result.error}`);
-        }
-      }
     } else if (response.reaction) {
       // Just add reaction without responding
       await this.addReaction(response.reaction, message.messageTs);
     }
+  }
+
+  // Handle user confirming or declining a pipeline add
+  async handlePipelineConfirmation(message: IncomingMessage): Promise<boolean> {
+    const userText = message.text;
+
+    // Check if this looks like a confirmation or decline
+    const isConfirm = isUserConfirmation(userText);
+    const isDecline = isUserDecline(userText);
+
+    if (!isConfirm && !isDecline) {
+      return false; // Not a confirmation/decline, continue normal processing
+    }
+
+    // Load thread context to find Maya's pending opportunity
+    const threadContext = await this.loadThreadContext(message.threadTs!, this.channelId);
+
+    const pendingOpportunity = findPendingOpportunityInThread(threadContext.messages);
+
+    if (!pendingOpportunity) {
+      return false; // No pending opportunity found, continue normal processing
+    }
+
+    if (isDecline) {
+      console.log(`Maya: User declined to add "${pendingOpportunity.name}"`);
+      await this.postMessage(`Got it, not adding that one.`, message.threadTs);
+      return true;
+    }
+
+    // User confirmed - add to Notion
+    console.log(`Maya: User confirmed adding "${pendingOpportunity.name}"`);
+    const result = await addToBacklog(pendingOpportunity, 'Maya');
+
+    if (result.success) {
+      await this.postMessage(
+        `✅ Added "${pendingOpportunity.name}" to the pipeline.`,
+        message.threadTs
+      );
+    } else {
+      console.warn(`Maya: Failed to add to Notion: ${result.error}`);
+      await this.postMessage(
+        `Hmm, had trouble adding that to Notion. Try again?`,
+        message.threadTs
+      );
+    }
+
+    return true;
   }
 
   // Handle "verify that opportunity" requests

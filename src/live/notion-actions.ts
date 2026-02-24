@@ -173,57 +173,83 @@ export async function addToBacklog(
 }
 
 /**
- * Parse agent response to detect if they want to add something to backlog
- * Returns opportunity details if detected, null otherwise
- *
- * Enhanced to extract structured data from Maya's formatted backlog entries:
- * 📋 **Adding to Pipeline**
- * **Title:** [name]
- * **Agency:** [agency]
- * **Type:** [RFP/RFQ/etc]
- * **Due:** [date]
- * **Link:** [url]
+ * Check if user is confirming a pipeline add
  */
-export function detectBacklogIntent(
-  agentResponse: string,
-  originalMessage: string,
-  fileContent?: string
-): OpportunityToAdd | null {
-  const lowerResponse = agentResponse.toLowerCase();
-
-  // Check for backlog/tracking intent
-  const trackingPhrases = [
-    'add this to',
-    'adding to',
-    'track this',
-    'tracking this',
-    'put this in',
-    'adding it to',
-    'flag this',
-    'flagging this',
-    'worth tracking',
-    'backlog',
-    'pipeline',
-    'adding it to the backlog',
-    'add to our pipeline',
-    '📋', // Maya uses this emoji when logging
-    'adding to pipeline',
+export function isUserConfirmation(userMessage: string): boolean {
+  const confirmPhrases = [
+    'yes',
+    'yeah',
+    'yep',
+    'yup',
+    'sure',
+    'do it',
+    'add it',
+    'go ahead',
+    'please add',
+    'add that',
+    'add this',
+    'sounds good',
+    "let's do it",
+    'go for it',
+    'approved',
+    'confirm',
+    'absolutely',
+    'definitely',
   ];
+  const lower = userMessage.toLowerCase().trim();
+  return confirmPhrases.some((phrase) => lower.includes(phrase));
+}
 
-  const hasIntent = trackingPhrases.some((phrase) => lowerResponse.includes(phrase));
-  if (!hasIntent) return null;
+/**
+ * Check if user is declining a pipeline add
+ */
+export function isUserDecline(userMessage: string): boolean {
+  const declinePhrases = [
+    'no',
+    'nope',
+    'nah',
+    "don't add",
+    'skip',
+    'pass',
+    'not now',
+    'hold off',
+    'wait',
+    'not yet',
+    'nevermind',
+    'never mind',
+    'cancel',
+  ];
+  const lower = userMessage.toLowerCase().trim();
+  return declinePhrases.some((phrase) => lower.includes(phrase));
+}
 
-  const combinedText = `${agentResponse} ${originalMessage} ${fileContent || ''}`;
+/**
+ * Extract opportunity details from Maya's "Add to pipeline?" message
+ * Returns opportunity details if found, null otherwise
+ */
+export function extractOpportunityFromMessage(mayaMessage: string): OpportunityToAdd | null {
+  // Must have the structured format with 📋 and "Add to pipeline?"
+  const hasAskFormat =
+    mayaMessage.includes('📋') &&
+    /add to pipeline\??/i.test(mayaMessage) &&
+    /\*\*Title[:*]/i.test(mayaMessage);
 
-  // Try to extract opportunity details
+  if (!hasAskFormat) return null;
+
+  return parseOpportunityDetails(mayaMessage);
+}
+
+/**
+ * Parse opportunity details from a structured message
+ */
+function parseOpportunityDetails(text: string): OpportunityToAdd | null {
   let name = '';
   let agency = '';
   let type = '';
   let samLink = '';
   let dueDate = '';
 
-  // First, try to parse Maya's structured format (if she used it)
-  // Format: **Title:** value or **Agency:** value
+  // Parse Maya's structured format: **Title:** value, **Agency:** value, etc.
   const structuredPatterns = {
     title: /\*\*(?:Title|Name|Opportunity)[:*]*\*?\s*(.+?)(?:\n|\*\*|$)/i,
     agency: /\*\*Agency[:*]*\*?\s*(.+?)(?:\n|\*\*|$)/i,
@@ -232,111 +258,43 @@ export function detectBacklogIntent(
     samLink: /\*\*(?:SAM Link|Link|URL)[:*]*\*?\s*(https?:\/\/[^\s\n]+)/i,
   };
 
-  // Try structured extraction first
-  const titleMatch = agentResponse.match(structuredPatterns.title);
+  const titleMatch = text.match(structuredPatterns.title);
   if (titleMatch) name = titleMatch[1].trim();
 
-  const agencyMatch = agentResponse.match(structuredPatterns.agency);
+  const agencyMatch = text.match(structuredPatterns.agency);
   if (agencyMatch) agency = agencyMatch[1].trim();
 
-  const typeMatch = agentResponse.match(structuredPatterns.type);
+  const typeMatch = text.match(structuredPatterns.type);
   if (typeMatch) type = typeMatch[1].trim();
 
-  const dueDateMatch = agentResponse.match(structuredPatterns.dueDate);
+  const dueDateMatch = text.match(structuredPatterns.dueDate);
   if (dueDateMatch) dueDate = dueDateMatch[1].trim();
 
-  const samLinkMatch = agentResponse.match(structuredPatterns.samLink);
+  const samLinkMatch = text.match(structuredPatterns.samLink);
   if (samLinkMatch) samLink = samLinkMatch[1].trim();
 
-  // Fall back to general extraction if structured didn't work
+  // Fall back to finding SAM link anywhere in text
   if (!samLink) {
     const samLinkPattern = /https?:\/\/sam\.gov\/opp\/[a-f0-9-]+\/view/i;
-    const match = combinedText.match(samLinkPattern);
+    const match = text.match(samLinkPattern);
     if (match) samLink = match[0];
   }
 
-  // Extract opportunity type if not found
-  if (!type) {
-    const typePatterns = [/\b(RFP|RFQ|RFI|BPA|IDIQ|Task Order|Sources Sought|Pre-Solicitation)\b/i];
-    for (const pattern of typePatterns) {
-      const match = combinedText.match(pattern);
-      if (match) {
-        type = match[1].toUpperCase();
-        if (type === 'SOURCES SOUGHT') type = 'SSN';
-        if (type === 'TASK ORDER') type = 'RFQ';
-        break;
-      }
-    }
-  }
-
-  // Extract name if not found from structured
-  if (!name) {
-    const namePatterns = [
-      // GSA TTS specific patterns
-      /GSA\s+TTS\s+[\w\s-]+(?:BPA|RFP|RFI|contract|solicitation)/i,
-      /TTS\s+[\w\s-]+(?:BPA|IDIQ)/i,
-      // General patterns
-      /this is (?:the |a )?([A-Z][A-Za-z0-9\s-]+(?:BPA|RFP|RFI|contract|solicitation|opportunity))/i,
-      /([A-Z][A-Z\s-]+(?:BPA|IDIQ|contract))/,
-      /([A-Z]{2,}\s+[A-Za-z\s-]+(?:modernization|services|support))/i,
-      // Title-like patterns from documents
-      /title[:\s]+["']?([^"'\n]+)["']?/i,
-      /subject[:\s]+["']?([^"'\n]+)["']?/i,
-    ];
-
-    for (const pattern of namePatterns) {
-      const match = combinedText.match(pattern);
-      if (match) {
-        name = match[1] || match[0];
-        break;
-      }
-    }
-  }
-
-  // Extract agency if not found
-  if (!agency) {
-    const agencyPatterns = [
-      /\b(GSA|VA|HHS|DOL|DHS|DOD|DOE|DOT|HUD|USDA|DOJ|State|Treasury|Commerce|Interior|EPA|NASA|SBA|OPM|CMS|ED|SSA)\b/i,
-    ];
-
-    for (const pattern of agencyPatterns) {
-      const match = combinedText.match(pattern);
-      if (match) {
-        agency = match[1].toUpperCase();
-        break;
-      }
-    }
-  }
-
-  // Try to extract due date from various formats if not found
-  if (!dueDate) {
-    const datePatterns = [
-      /(?:due|deadline|closes?|response date)[:\s]+(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
-      /(?:due|deadline|closes?|response date)[:\s]+(\w+\s+\d{1,2},?\s+\d{4})/i,
-      /(?:due|deadline|closes?|response date)[:\s]+(\d{4}-\d{2}-\d{2})/i,
-    ];
-    for (const pattern of datePatterns) {
-      const match = combinedText.match(pattern);
-      if (match) {
-        dueDate = match[1];
-        break;
-      }
-    }
-  }
-
-  // If we still don't have a name, create one from agency and type
-  if (!name) {
-    if (agency && type) {
-      name = `${agency} ${type}`;
-    } else if (agency) {
-      name = `${agency} Opportunity`;
-    } else {
-      name = 'New Opportunity';
-    }
+  // VALIDATION: Require a real opportunity title
+  if (!name || name.length < 10) {
+    console.log('[Notion] Skipping - no valid title found');
+    return null;
   }
 
   // Clean up the name
   name = name.trim().substring(0, 200);
+
+  // Reject generic names
+  const invalidNames = ['new opportunity', 'opportunity', 'untitled', 'n/a', 'tbd'];
+  if (invalidNames.includes(name.toLowerCase())) {
+    console.log(`[Notion] Skipping - generic name rejected: "${name}"`);
+    return null;
+  }
 
   return {
     name,
@@ -344,7 +302,43 @@ export function detectBacklogIntent(
     type: type || undefined,
     samLink: samLink || undefined,
     dueDate: dueDate || undefined,
-    description: agentResponse.substring(0, 500),
     source: 'Slack conversation',
   };
+}
+
+/**
+ * Search thread messages for Maya's "Add to pipeline?" message and extract opportunity
+ */
+export function findPendingOpportunityInThread(
+  threadMessages: Array<{ author: string; text: string }>
+): OpportunityToAdd | null {
+  // Look backwards through thread for Maya's ask
+  for (let i = threadMessages.length - 1; i >= 0; i--) {
+    const msg = threadMessages[i];
+    if (msg.author.toLowerCase() === 'maya') {
+      const opportunity = extractOpportunityFromMessage(msg.text);
+      if (opportunity) {
+        console.log(`[Notion] Found pending opportunity in thread: "${opportunity.name}"`);
+        return opportunity;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * DEPRECATED - Use the new confirmation flow instead:
+ * 1. Maya asks with extractOpportunityFromMessage format
+ * 2. User confirms with isUserConfirmation
+ * 3. Find opportunity with findPendingOpportunityInThread
+ */
+export function detectBacklogIntent(
+  _agentResponse: string,
+  _originalMessage: string,
+  _fileContent?: string
+): OpportunityToAdd | null {
+  // This function is deprecated - Maya now asks for confirmation
+  // Keeping for backwards compatibility but always returns null
+  console.log('[Notion] detectBacklogIntent is deprecated - using confirmation flow');
+  return null;
 }
