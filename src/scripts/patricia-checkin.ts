@@ -13,7 +13,7 @@
 import 'dotenv/config';
 import cron from 'node-cron';
 import { App } from '@slack/bolt';
-import { getSupabase } from '../integrations/supabase.js';
+import { getSupabase, getExtractedFacts } from '../integrations/supabase.js';
 import { getAnthropic } from '../integrations/claude.js';
 import { loadCompanyContext, formatCompanyContextForPrompt } from '../context/company-context.js';
 
@@ -146,9 +146,29 @@ async function getPendingItems(): Promise<PendingItem[]> {
   return pending;
 }
 
+// Get recent team facts from memory (things Patricia should remember)
+async function getRecentTeamFacts(): Promise<string[]> {
+  try {
+    // Get facts from last 7 days that are still relevant
+    const facts = await getExtractedFacts({ limit: 20 });
+
+    // Filter to recent facts (within 7 days) and format them
+    const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const recentFacts = facts
+      .filter((f) => f.created_at && new Date(f.created_at).getTime() > oneWeekAgo)
+      .map((f) => f.content);
+
+    return recentFacts;
+  } catch (err) {
+    console.warn('Could not load team facts:', err);
+    return [];
+  }
+}
+
 async function generateMorningCheckin(
   pending: PendingItem[],
-  recentActivity: RecentActivity[]
+  recentActivity: RecentActivity[],
+  teamFacts: string[]
 ): Promise<string> {
   const client = getAnthropic();
   const companyData = await loadCompanyContext();
@@ -163,6 +183,9 @@ ${companyContext}
 
 Today is ${dayOfWeek}.
 ${isMonday ? "It's Monday, so do a quick week-ahead preview." : ''}
+
+THINGS YOU REMEMBER (from recent conversations):
+${teamFacts.length > 0 ? teamFacts.map((f) => `- ${f}`).join('\n') : 'No recent notes.'}
 
 PENDING ITEMS (from database):
 ${
@@ -188,15 +211,17 @@ TEAM ROLES:
 - David: Researches agencies, incumbents, risks
 - Rosa: Partner outreach and teaming
 - James: Strategy and go/no-go decisions
+- Marcus: Engineering lead (technical reviews, architecture)
 
 Write a morning standup message for #bd-team. Be conversational - you're a millennial PM, organized but chill. Include:
 1. Quick vibe check (acknowledge the day)
-2. Summarize pending items/opportunities if any
-3. Ask the team for updates - but do NOT @mention the AI agents (Maya, David, Rosa, James). Just ask generally "any updates?" or "what's everyone working on?" The agents will respond if they have something to share.
-4. Tag <@${LAPEDRA_ID}> for any priorities or blockers (they're the only human who needs direct notification)
-5. ${isMonday ? 'Quick preview of the week' : 'Any deadlines coming up'}
+2. Reference anything relevant from "THINGS YOU REMEMBER" - if someone is offline, on vacation, or there's context you should acknowledge
+3. Summarize pending items/opportunities if any
+4. Ask the team for updates - but do NOT @mention the AI agents (Maya, David, Rosa, James, Marcus). Just ask generally "any updates?" or "what's everyone working on?" The agents will respond if they have something to share.
+5. Tag <@${LAPEDRA_ID}> for any priorities or blockers (they're the only human who needs direct notification)
+6. ${isMonday ? 'Quick preview of the week' : 'Any deadlines coming up'}
 
-IMPORTANT: Do NOT use @mentions for Maya, David, Rosa, or James. They monitor the channel and will chime in if they have updates. Pinging them all creates noise.
+IMPORTANT: Do NOT use @mentions for Maya, David, Rosa, James, or Marcus. They monitor the channel and will chime in if they have updates. Pinging them all creates noise.
 
 Use emoji naturally - you love them. Keep it to ONE message.`;
 
@@ -266,11 +291,13 @@ export async function runMorningCheckin() {
   // Gather data
   const pending = await getPendingItems();
   const recentActivity = await getRecentChannelActivity(app);
+  const teamFacts = await getRecentTeamFacts();
 
   console.log(`Found ${pending.length} pending items`);
   console.log(`Found ${recentActivity.length} recent agent messages`);
+  console.log(`Found ${teamFacts.length} team facts from memory`);
 
-  const message = await generateMorningCheckin(pending, recentActivity);
+  const message = await generateMorningCheckin(pending, recentActivity, teamFacts);
   await postToSlack(app, message);
 
   if (app) {
