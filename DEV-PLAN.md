@@ -207,6 +207,19 @@ Comprehensive docs for repeatable product deployment:
 - [x] Keep citations specific: "FAR 9.505-2(b)(1)" not "the FAR says..."
 - [x] Created `src/scripts/update-far.ts` to refresh FAR data when GSA publishes changes
 
+### Recent Fixes (Feb 2026)
+
+**David's Research Context** ✓
+- [x] Fixed agency code→name mapping for USASpending API (was passing '036' instead of 'Department of Veterans Affairs')
+- [x] Added `AGENCY_CODE_TO_NAME` mapping for 17 agencies
+- [x] Added debug logging when contract searches return empty results
+- [x] Expanded FPDS trigger keywords with conversational phrases ('current contractor', 'recompete', 'task order', 'prime', 'who holds', etc.)
+
+**Patricia's Standup Behavior** ✓
+- [x] Fixed multiple agent responses to standup - Patricia no longer @mentions agents (was triggering 4 pile-on responses)
+- [x] Patricia's standup cron now loads memory context ("THINGS YOU REMEMBER")
+- [x] Added Marcus to team roles in standup prompt
+
 ### Known Limitations
 - FPDS keyword search can't find contract vehicles by name (e.g., "SPRUCE IDIQ") - needs contract number
 - ~~News sources are general~~ - Now includes GovCon sources: OrangeSlices, GovConWire, WashTech, FCW, Nextgov
@@ -214,6 +227,8 @@ Comprehensive docs for repeatable product deployment:
 - ~~Maya hallucinating fake URLs~~ - Fixed: strict validation + verification command
 - Agency forecast HTML parsing is generic - may need agency-specific parsers for complex pages
 - Jodie (Writer) temporarily disabled - Slack app needs Socket Mode enabled and proper scopes configured
+- ~~Patricia's standup had no memory~~ - Fixed: now loads extracted facts from database
+- ~~Agents ignored each other's announcements~~ - Fixed: team-wide fact sharing via `subject: 'team'`
 
 ---
 
@@ -273,6 +288,13 @@ Persistent memory for emergent, autonomous agent behavior. Agents remember past 
 
 **Why this matters**: Without memory, each interaction is isolated. Agents can't learn from patterns, reference past outcomes, or develop institutional knowledge. This system enables agents to say "Based on past experience with HHS..." or "We've lost 3 similar bids this quarter—common theme: pricing."
 
+**Team-Wide Fact Sharing** ✓
+- [x] Facts with `subject: 'team'` are shared across ALL agents (e.g., "Marcus is offline")
+- [x] Memory manager ALWAYS loads team announcements regardless of semantic search
+- [x] Team updates shown first in agent prompts under "TEAM UPDATES (important - act on these)"
+- [x] Fact extraction recognizes availability/status info and saves with `subject: 'team'`
+- [x] Patricia's standup loads team facts from memory ("THINGS YOU REMEMBER")
+
 **Database**: `agent_memories` table with RLS
 - Memory types: `observation`, `reflection`, `insight`, `outcome`, `conversation`
 - Links to opportunities via `related_opportunity_id`
@@ -313,7 +335,7 @@ Persistent memory for emergent, autonomous agent behavior. Agents remember past 
 **Future**:
 - [ ] Auto-save personal context when Lapedra/Tamara share something
 - [ ] Inside jokes get referenced naturally over time
-- [ ] Cross-agent memory sharing for team-level insights
+- [x] Cross-agent memory sharing for team-level insights (via `subject: 'team'`)
 
 ### Priority 4: Proactive Check-ins ✓
 - [x] Maya's automated SAM.gov scanner (`npm run maya:scan`)
