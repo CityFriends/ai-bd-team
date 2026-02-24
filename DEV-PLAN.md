@@ -243,6 +243,16 @@ All agents now have full visibility into what's happening:
 - [x] Prevents multiple Railway instances from responding to same message
 - [x] Uses Supabase `message_claims` table with unique constraint
 
+**Shared Context Hardening** ✓ (NEW)
+Defensive programming to prevent edge cases and improve reliability:
+- [x] Timeout wrapper: 5-second timeout on all external API calls (Notion, Supabase)
+- [x] Graceful degradation: agents get empty data instead of hanging forever
+- [x] TTL cache: 10-second cache prevents 28 API calls when 7 agents respond to same thread
+- [x] Notion post-filter: JavaScript filter ensures Pass/No Bid exclusion even if Notion filter fails
+- [x] Word boundary regex: `isUserConfirmation()` uses `\b` to prevent "Yesterday" matching "yes"
+- [x] Deduplication check: Maya verifies opportunity doesn't exist before adding to Notion
+- [x] `opportunityExistsInPipeline()` searches by name and SAM link before inserting
+
 **David's Research Context** ✓
 - [x] Fixed agency code→name mapping for USASpending API (was passing '036' instead of 'Department of Veterans Affairs')
 - [x] Added `AGENCY_CODE_TO_NAME` mapping for 17 agencies
@@ -270,6 +280,9 @@ All agents now have full visibility into what's happening:
 - ~~Maya auto-adding random things to Notion~~ - Fixed: now asks for confirmation first
 - ~~Bots posting 2-3x~~ - Fixed: distributed message claiming for all messages
 - ~~Patricia mentioning passed opportunities~~ - Fixed: filters by `decision IS NULL`
+- ~~Confirmation regex false positives~~ - Fixed: word boundary regex prevents "Yesterday" matching "yes"
+- ~~Duplicate Notion entries~~ - Fixed: deduplication check before adding opportunities
+- ~~API hangs blocking all agents~~ - Fixed: 5-second timeout with graceful fallback
 
 ---
 
