@@ -39,8 +39,9 @@ export interface PastPerformance {
   contract_vehicle?: string;
   pop_start?: string;
   pop_end?: string;
-  contract_value?: number;
-  our_role?: string;
+  contract_value?: number; // Total contract value (full contract)
+  our_value?: number; // FFTC's actual earnings/portion (may differ when subcontracting)
+  our_role?: string; // 'prime' or 'subcontractor'
   description?: string;
   key_accomplishments?: string[];
   relevant_naics?: string[];
@@ -269,10 +270,21 @@ ${profile.risk_tolerance || 'Not specified'}
   if (['David', 'James', 'Rosa'].includes(agentRole) && context.pastPerformance.length > 0) {
     prompt += `\n\nPAST PERFORMANCE (Most Recent):\n`;
     context.pastPerformance.slice(0, 5).forEach((pp) => {
+      // Format value: show our_value vs total when subcontracting, otherwise just the value
+      let valueStr = 'Unknown';
+      if (pp.our_value && pp.contract_value && pp.our_value !== pp.contract_value) {
+        // Subcontractor: show our portion vs total
+        valueStr = `$${pp.our_value.toLocaleString()} (of $${pp.contract_value.toLocaleString()} total)`;
+      } else if (pp.our_value) {
+        valueStr = `$${pp.our_value.toLocaleString()}`;
+      } else if (pp.contract_value) {
+        valueStr = `$${pp.contract_value.toLocaleString()}`;
+      }
+
       prompt += `
 • ${pp.contract_name} (${pp.agency}${pp.sub_agency ? ` - ${pp.sub_agency}` : ''})
   - Role: ${pp.our_role || 'Unknown'}
-  - Value: ${pp.contract_value ? `$${pp.contract_value.toLocaleString()}` : 'Unknown'}
+  - Value: ${valueStr}
   - Period: ${pp.pop_start || '?'} to ${pp.pop_end || 'ongoing'}
   ${pp.key_accomplishments?.length ? `- Key wins: ${pp.key_accomplishments.slice(0, 2).join('; ')}` : ''}
   ${pp.cpar_rating ? `- CPAR: ${pp.cpar_rating}` : ''}
