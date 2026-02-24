@@ -7,6 +7,30 @@
 
 import { getSupabase, getExtractedFacts } from '../integrations/supabase.js';
 
+// ============================================================
+// TIMEOUT UTILITY - Prevents API calls from hanging forever
+// ============================================================
+
+/**
+ * Wrap a promise with a timeout, returning a fallback value if it takes too long
+ */
+async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
+const CONTEXT_TIMEOUT_MS = 5000; // 5 second timeout for external API calls
+
+// ============================================================
+// CACHING - Prevents redundant API calls when multiple agents respond
+// ============================================================
+
+let cachedContext: SharedContext | null = null;
+let cacheTimestamp = 0;
+const CACHE_TTL_MS = 10000; // 10 second cache - prevents 28 API calls for 7 agents
+
 // Notion API
 const NOTION_API_KEY = process.env.NOTION_API_KEY || '';
 const PIPELINE_DATABASE_ID = '1bb07a7951ff80fe9e6dfd1284f99a48';
@@ -64,11 +88,22 @@ export async function getActivePipeline(): Promise<PipelineOpportunity[]> {
     const data = (await response.json()) as { results?: any[] };
     const items: PipelineOpportunity[] = [];
 
+    // Post-filter to ensure Pass/No Bid are excluded
+    // (Notion API filter with two conditions on same property may not work reliably)
+    const excludedStages = ['Pass', 'No Bid'];
+
     for (const page of data.results || []) {
       const props = page.properties;
+      const stage = props.Stage?.status?.name || 'Unknown';
+
+      // Skip excluded stages (defensive post-filter)
+      if (excludedStages.includes(stage)) {
+        continue;
+      }
+
       items.push({
         name: props.Name?.title?.[0]?.plain_text || 'Untitled',
-        stage: props.Stage?.status?.name || 'Unknown',
+        stage,
         agency: props.Agency?.select?.name || undefined,
         dueDate: props['Due Date']?.date?.start || undefined,
         type: props['Solicitation Type']?.select?.name || undefined,
@@ -280,17 +315,31 @@ export interface SharedContext {
 }
 
 /**
- * Load all shared context in parallel
+ * Load all shared context in parallel with timeout protection and caching
+ * - Each call has a 5 second timeout - if any hangs, we get empty data instead of blocking
+ * - Results are cached for 10 seconds to prevent redundant API calls when multiple agents respond
  */
 export async function loadSharedContext(): Promise<SharedContext> {
+  // Return cached context if still fresh
+  const now = Date.now();
+  if (cachedContext && now - cacheTimestamp < CACHE_TTL_MS) {
+    return cachedContext;
+  }
+
   const [pipeline, decisions, teamFacts, conversations] = await Promise.all([
-    getActivePipeline(),
-    getRecentDecisions(),
-    getTeamFacts(),
-    getRecentConversations(),
+    withTimeout(getActivePipeline(), CONTEXT_TIMEOUT_MS, []),
+    withTimeout(getRecentDecisions(), CONTEXT_TIMEOUT_MS, []),
+    withTimeout(getTeamFacts(), CONTEXT_TIMEOUT_MS, []),
+    withTimeout(getRecentConversations(), CONTEXT_TIMEOUT_MS, []),
   ]);
 
-  return { pipeline, decisions, teamFacts, conversations };
+  const context = { pipeline, decisions, teamFacts, conversations };
+
+  // Cache the result
+  cachedContext = context;
+  cacheTimestamp = now;
+
+  return context;
 }
 
 /**

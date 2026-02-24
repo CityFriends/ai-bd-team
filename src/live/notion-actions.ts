@@ -46,6 +46,57 @@ export interface OpportunityToAdd {
 }
 
 /**
+ * Check if an opportunity already exists in the pipeline by name or SAM link
+ * Returns true if a duplicate is found
+ */
+export async function opportunityExistsInPipeline(
+  name: string,
+  samLink?: string
+): Promise<boolean> {
+  if (!NOTION_API_KEY) {
+    return false; // Can't check, allow add
+  }
+
+  try {
+    // Search for opportunities with matching name (case-insensitive)
+    const response = await notionRequest(`/databases/${PIPELINE_DATABASE_ID}/query`, 'POST', {
+      filter: {
+        property: 'Name',
+        title: {
+          contains: name.substring(0, 50), // First 50 chars to match partial titles
+        },
+      },
+      page_size: 5,
+    });
+
+    if (response.results && response.results.length > 0) {
+      // Check for exact or near-exact match
+      for (const page of response.results) {
+        const existingName = page.properties?.Name?.title?.[0]?.plain_text || '';
+        const existingUrl = page.properties?.['Solicitation URL']?.url || '';
+
+        // Exact name match (case-insensitive)
+        if (existingName.toLowerCase() === name.toLowerCase()) {
+          console.log(`[Notion] Duplicate found by name: "${name}"`);
+          return true;
+        }
+
+        // SAM link match (if provided)
+        if (samLink && existingUrl && existingUrl === samLink) {
+          console.log(`[Notion] Duplicate found by SAM link: ${samLink}`);
+          return true;
+        }
+      }
+    }
+
+    return false;
+  } catch (error) {
+    console.warn('[Notion] Could not check for duplicates:', error);
+    return false; // Allow add if check fails
+  }
+}
+
+/**
  * Add an opportunity to the Friends From The City Pipeline in Notion
  * Uses "Under Review" stage by default
  *
@@ -174,53 +225,25 @@ export async function addToBacklog(
 
 /**
  * Check if user is confirming a pipeline add
+ * Uses word boundaries to prevent false positives (e.g., "Yesterday" matching "yes")
  */
 export function isUserConfirmation(userMessage: string): boolean {
-  const confirmPhrases = [
-    'yes',
-    'yeah',
-    'yep',
-    'yup',
-    'sure',
-    'do it',
-    'add it',
-    'go ahead',
-    'please add',
-    'add that',
-    'add this',
-    'sounds good',
-    "let's do it",
-    'go for it',
-    'approved',
-    'confirm',
-    'absolutely',
-    'definitely',
-  ];
-  const lower = userMessage.toLowerCase().trim();
-  return confirmPhrases.some((phrase) => lower.includes(phrase));
+  // Word boundary regex to prevent substring matches
+  // "Yesterday's meeting" won't match "yes", but "yes please" will
+  const confirmPattern =
+    /\b(yes|yeah|yep|yup|sure|do it|add it|go ahead|please add|add that|add this|sounds good|let's do it|go for it|approved|confirm|absolutely|definitely)\b/i;
+  return confirmPattern.test(userMessage);
 }
 
 /**
  * Check if user is declining a pipeline add
+ * Uses word boundaries to prevent false positives
  */
 export function isUserDecline(userMessage: string): boolean {
-  const declinePhrases = [
-    'no',
-    'nope',
-    'nah',
-    "don't add",
-    'skip',
-    'pass',
-    'not now',
-    'hold off',
-    'wait',
-    'not yet',
-    'nevermind',
-    'never mind',
-    'cancel',
-  ];
-  const lower = userMessage.toLowerCase().trim();
-  return declinePhrases.some((phrase) => lower.includes(phrase));
+  // Word boundary regex to prevent substring matches
+  const declinePattern =
+    /\b(no|nope|nah|don't add|skip|pass|not now|hold off|wait|not yet|nevermind|never mind|cancel)\b/i;
+  return declinePattern.test(userMessage);
 }
 
 /**

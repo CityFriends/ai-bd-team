@@ -8,6 +8,7 @@ import {
   isUserConfirmation,
   isUserDecline,
   findPendingOpportunityInThread,
+  opportunityExistsInPipeline,
 } from './notion-actions.js';
 
 export class MayaAgent extends LiveAgent {
@@ -129,8 +130,24 @@ Adding to Pipeline (IMPORTANT):
       return true;
     }
 
-    // User confirmed - add to Notion
+    // User confirmed - check for duplicates first
     console.log(`Maya: User confirmed adding "${pendingOpportunity.name}"`);
+
+    // Deduplication check - prevent adding the same opportunity twice
+    const alreadyExists = await opportunityExistsInPipeline(
+      pendingOpportunity.name,
+      pendingOpportunity.samLink
+    );
+
+    if (alreadyExists) {
+      console.log(`Maya: Opportunity already exists in pipeline: "${pendingOpportunity.name}"`);
+      await this.postMessage(
+        `Looks like "${pendingOpportunity.name}" is already in the pipeline!`,
+        message.threadTs
+      );
+      return true;
+    }
+
     const result = await addToBacklog(pendingOpportunity, 'Maya');
 
     if (result.success) {
