@@ -97,10 +97,12 @@ async function getPendingItems(): Promise<PendingItem[]> {
   const supabase = getSupabase();
   const pending: PendingItem[] = [];
 
-  // Check for opportunities we've seen but not actioned
+  // Check for opportunities we've seen but not yet decided on
+  // Filter out any that have a decision (pass, no-bid, pursuing, etc.)
   const { data: seenOpps } = await supabase
     .from('seen_opportunities')
     .select('*')
+    .is('decision', null) // Only show opportunities without a decision
     .order('posted_at', { ascending: false })
     .limit(10);
 
