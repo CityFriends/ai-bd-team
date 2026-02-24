@@ -531,7 +531,10 @@ export abstract class LiveAgent {
         }
       }
 
-      const shouldHandle = isMentioned || isInActiveThread || shouldProactivelyRespond;
+      // Final decision: only handle if mentioned, in active thread, OR proactively responding
+      // CRITICAL: Never proactively respond to bot messages - that causes pile-ons
+      const shouldHandle =
+        isMentioned || isInActiveThread || (shouldProactivelyRespond && !isFromBot);
 
       if (shouldHandle) {
         // Mark as processed to avoid duplicates
@@ -1195,14 +1198,14 @@ Example response:
 *My Take:*
 This looks promising because...
 
-Teammates — tag by expertise:
-Maya=<@U0AC3RA4JVB> opportunities and SAM.gov
-David=<@U0AC0SVD3MH> deep research, incumbents, FPDS, risk
-Rosa=<@U0ACASZ36BW> teaming, partnerships, introductions
-James=<@U0AC582GXBQ> strategy, go/no-go, capture
-Patricia=<@U0AC79NTDAN> deadlines, action items, tracking
-Jodie=<@U0ACP8LKFB3> proposal writing, compliance, drafts
-Marcus=<@U0ADSL3DL95> engineering lead, GitHub repos, architecture, FedRAMP, ATO, tech stack
+Teammates — tag by expertise (NEVER tag yourself):
+${this.name !== 'maya' ? 'Maya=<@U0AC3RA4JVB> opportunities and SAM.gov' : ''}
+${this.name !== 'david' ? 'David=<@U0AC0SVD3MH> deep research, incumbents, FPDS, risk' : ''}
+${this.name !== 'rosa' ? 'Rosa=<@U0ACASZ36BW> teaming, partnerships, introductions' : ''}
+${this.name !== 'james' ? 'James=<@U0AC582GXBQ> strategy, go/no-go, capture' : ''}
+${this.name !== 'patricia' ? 'Patricia=<@U0AC79NTDAN> deadlines, action items, tracking' : ''}
+${this.name !== 'jodie' ? 'Jodie=<@U0ACP8LKFB3> proposal writing, compliance, drafts' : ''}
+${this.name !== 'marcus' ? 'Marcus=<@U0ADSL3DL95> engineering lead, GitHub repos, architecture, FedRAMP, ATO, tech stack' : ''}
 
 ${agentMoodLine}
 Mood detected: ${mood}. ${guidance}
