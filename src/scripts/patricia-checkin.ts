@@ -206,22 +206,14 @@ ${
     : 'No agent messages in the last 24 hours.'
 }
 
-TEAM ROLES:
-- Maya: Scans SAM.gov for opportunities
-- David: Researches agencies, incumbents, risks
-- Rosa: Partner outreach and teaming
-- James: Strategy and go/no-go decisions
-- Marcus: Engineering lead (technical reviews, architecture)
-
 Write a morning standup message for #bd-team. Be conversational - you're a millennial PM, organized but chill. Include:
 1. Quick vibe check (acknowledge the day)
-2. Reference anything relevant from "THINGS YOU REMEMBER" - if someone is offline, on vacation, or there's context you should acknowledge
-3. Summarize pending items/opportunities if any
-4. Ask the team for updates - but do NOT @mention the AI agents (Maya, David, Rosa, James, Marcus). Just ask generally "any updates?" or "what's everyone working on?" The agents will respond if they have something to share.
-5. Tag <@${LAPEDRA_ID}> for any priorities or blockers (they're the only human who needs direct notification)
-6. ${isMonday ? 'Quick preview of the week' : 'Any deadlines coming up'}
+2. Summarize pending items/opportunities if any
+3. Ask the team for updates generally - "any updates?" or "what's everyone working on?"
+4. Tag <@${LAPEDRA_ID}> for any priorities or blockers
+5. ${isMonday ? 'Quick preview of the week' : 'Any deadlines coming up'}
 
-IMPORTANT: Do NOT use @mentions for Maya, David, Rosa, James, or Marcus. They monitor the channel and will chime in if they have updates. Pinging them all creates noise.
+CRITICAL: Do NOT mention any agent names (Maya, David, Rosa, James, Marcus, Jodie) in your message. Don't say "Maya found..." or "waiting on David" or "Marcus is offline" - just speak to the team as a whole. The agents will respond if they have something to share. Only tag Lapedra by name.
 
 Use emoji naturally - you love them. Keep it to ONE message.`;
 
