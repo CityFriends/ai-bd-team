@@ -33,6 +33,8 @@ export interface LongTermMemory {
   companyPatterns: ExtractedFact[];
   // Relationship knowledge
   relationships: ExtractedFact[];
+  // Team-wide announcements (e.g., "Marcus is offline this week")
+  teamAnnouncements: ExtractedFact[];
 }
 
 export interface EpisodicMemory {
@@ -112,11 +114,16 @@ export class MemoryManager {
     message: string,
     useSemanticSearch: boolean
   ): Promise<LongTermMemory> {
+    // ALWAYS fetch team announcements regardless of semantic search
+    // These are important team-wide facts that all agents need to know
+    const teamAnnouncementsPromise = getExtractedFacts({ subject: 'team', limit: 10 });
+
     if (useSemanticSearch) {
       // Use semantic search to find relevant preferences and patterns
-      const [userContextResults, factsResults] = await Promise.all([
+      const [userContextResults, factsResults, teamAnnouncements] = await Promise.all([
         searchUserContext(message, { threshold: 0.6, limit: 5 }),
         searchExtractedFacts(message, { threshold: 0.6, limit: 10 }),
+        teamAnnouncementsPromise,
       ]);
 
       const userPreferences = userContextResults.map((r) => r.data as UserContext);
@@ -127,21 +134,23 @@ export class MemoryManager {
         (f) => f.fact_type === 'pattern' || f.subject === 'company'
       );
       const relationships = allFacts.filter(
-        (f) => f.fact_type === 'context' && f.subject !== 'company'
+        (f) => f.fact_type === 'context' && f.subject !== 'company' && f.subject !== 'team'
       );
 
-      return { userPreferences, companyPatterns, relationships };
+      return { userPreferences, companyPatterns, relationships, teamAnnouncements };
     } else {
       // Fallback to keyword-based retrieval
-      const [userContext, facts] = await Promise.all([
+      const [userContext, facts, teamAnnouncements] = await Promise.all([
         getUserContext('lapedra', 5),
         getExtractedFacts({ limit: 10 }),
+        teamAnnouncementsPromise,
       ]);
 
       return {
         userPreferences: userContext,
         companyPatterns: facts.filter((f) => f.fact_type === 'pattern'),
-        relationships: facts.filter((f) => f.fact_type === 'context'),
+        relationships: facts.filter((f) => f.fact_type === 'context' && f.subject !== 'team'),
+        teamAnnouncements,
       };
     }
   }
@@ -183,9 +192,17 @@ export class MemoryManager {
   formatForPrompt(memory: FullMemoryContext): string {
     const sections: string[] = [];
 
+    // Team announcements - ALWAYS show these first (important context for all agents)
+    if (memory.longTerm.teamAnnouncements.length > 0) {
+      sections.push('TEAM UPDATES (important - act on these):');
+      memory.longTerm.teamAnnouncements.forEach((announcement) => {
+        sections.push(`- ${announcement.content}`);
+      });
+    }
+
     // Short-term memory section
     if (memory.shortTerm.activeTopics.length > 0) {
-      sections.push(`CURRENT TOPICS: ${memory.shortTerm.activeTopics.join(', ')}`);
+      sections.push(`\nCURRENT TOPICS: ${memory.shortTerm.activeTopics.join(', ')}`);
     }
     if (memory.shortTerm.userMood) {
       sections.push(`USER MOOD: ${memory.shortTerm.userMood}`);

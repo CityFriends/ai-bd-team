@@ -843,13 +843,16 @@ Look for:
 - Decisions made ("Let's go with...", "Pass on this", "We're pursuing...")
 - Important context ("We worked with X before", "Our NAICS is...", "We're 8(a) certified")
 - Patterns ("We always...", "We never...", "Typically we...")
+- TEAM ANNOUNCEMENTS (someone is offline, on vacation, unavailable, out sick, traveling, busy with something)
 
 Return JSON array of facts (empty array if none found):
 {
   "facts": [
-    {"type": "preference|decision|context|pattern", "subject": "lapedra|tamara|company", "content": "the fact"}
+    {"type": "preference|decision|context|pattern", "subject": "lapedra|tamara|company|team", "content": "the fact"}
   ]
 }
+
+IMPORTANT: Use subject "team" for anything about team member availability or status (offline, vacation, unavailable, busy, etc). These are shared with ALL agents.
 
 Only extract clear, specific facts. Don't infer or guess.`;
 
