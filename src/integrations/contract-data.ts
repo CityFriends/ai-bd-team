@@ -91,27 +91,33 @@ export async function searchContracts(params: {
     };
 
     if (agencyCode) {
-      // USASpending expects full agency name for toptier_name filter
+      // USASpending expects 'name' not 'toptier_name' for agency filter
       const agencyName = AGENCY_CODE_TO_NAME[agencyCode] || agencyCode;
       filters.agencies = [
         {
           type: 'awarding',
           tier: 'toptier',
-          toptier_name: agencyName,
+          name: agencyName,
         },
       ];
     }
 
     if (vendorName) {
-      filters.recipient_search_text = vendorName;
+      // recipient_search_text must be an array
+      filters.recipient_search_text = [vendorName];
     }
 
     if (naicsCode) {
       filters.naics_codes = [naicsCode];
     }
 
+    // NOTE: Removed 'keywords' filter - it causes API timeouts (504 errors)
+    // USASpending keyword search is very slow. Use NAICS codes or agency filters instead.
+    // If keyword search is critical, consider using SAM.gov contract opportunities API
     if (keyword) {
-      filters.keywords = [keyword];
+      console.log(
+        `[ContractData] Note: keyword "${keyword}" ignored - use NAICS codes for filtering`
+      );
     }
 
     const requestBody = {
