@@ -1588,7 +1588,10 @@ Respond as ${this.displayName}.`;
         name: emoji,
       });
     } catch (error) {
-      // Ignore reaction errors
+      const slackError = error as { data?: { error?: string } };
+      console.warn(
+        `${this.displayName}: Failed to add reaction: ${slackError?.data?.error || error}`
+      );
     }
   }
 
