@@ -73,17 +73,17 @@ const jodieTextures = [
   'Jodie had a productive writing session this morning',
 ];
 
-// Marcus personality textures
+// Marcus personality textures - moods only, not activities (he was narrating these)
 const marcusTextures = [
-  'Marcus just got back from a bike ride — mind is clear',
-  'Marcus is on his second cup of coffee, ready to review some code',
+  'Marcus is feeling clear-headed today',
+  'Marcus is caffeinated and focused',
   'Marcus has chess.com open in another tab (procrastinating)',
-  "Marcus is thinking about his mom's griot and wishing it was lunch",
-  'Kernel just demanded attention, Marcus had to pet the dog',
-  'Marcus finished a deep-dive on an ATO checklist — in the zone',
-  'Marcus is slightly annoyed at an overengineered architecture he saw yesterday',
-  'Marcus is feeling good after a morning code review',
-  'Marcus is itching to explain why the simple solution is better',
+  "Marcus is hungry — thinking about his mom's griot",
+  'Kernel is being needy today',
+  'Marcus is in the zone',
+  'Marcus is slightly annoyed at overengineered code in general',
+  'Marcus is in a good mood',
+  'Marcus is ready to cut through complexity',
   'Marcus is in focus mode — Kernel is napping',
 ];
 
