@@ -215,7 +215,7 @@ const KNOWN_COMPETITORS = [
 function detectCompetitorMention(text: string): string | null {
   const lowerText = text.toLowerCase();
 
-  // Check for known competitors first
+  // Check for known competitors first - these are trusted
   for (const company of KNOWN_COMPETITORS) {
     if (lowerText.includes(company.toLowerCase())) {
       return company;
@@ -223,24 +223,90 @@ function detectCompetitorMention(text: string): string | null {
   }
 
   // Look for patterns that indicate a company being discussed
+  // Use tighter regex: only match 1-4 capitalized words (company names)
   const competitorPatterns = [
-    /incumbent (?:is |was )?([A-Z][A-Za-z\s&]+?)(?:\s|,|\.|\?|$)/i,
-    /([A-Z][A-Za-z\s&]+?) (?:is |was )(?:the )?incumbent/i,
-    /([A-Z][A-Za-z\s&]+?) (?:has|had|won) (?:the |this )?contract/i,
-    /competing (?:against|with) ([A-Z][A-Za-z\s&]+?)(?:\s|,|\.|\?|$)/i,
-    /(?:what about|research|look into|dig into) ([A-Z][A-Za-z\s&]+?)(?:\s|,|\.|\?|$)/i,
-    /([A-Z][A-Za-z\s&]+?) protest/i,
-    /protest (?:by |from )?([A-Z][A-Za-z\s&]+?)(?:\s|,|\.|\?|$)/i,
+    /incumbent (?:is |was )?([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,3})(?:\s|,|\.|\?|$)/i,
+    /([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,3}) (?:is |was )(?:the )?incumbent/i,
+    /([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,3}) (?:has|had|won) (?:the |this )?contract/i,
+    /competing (?:against|with) ([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,3})(?:\s|,|\.|\?|$)/i,
+    /(?:research|look into|dig into) ([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,3})(?:\s|,|\.|\?|$)/i,
+    /([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,3}) protest/i,
+    /protest (?:by |from )?([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,3})(?:\s|,|\.|\?|$)/i,
+  ];
+
+  // Common words that aren't company names
+  const falsePositives = [
+    'the',
+    'a',
+    'an',
+    'this',
+    'that',
+    'they',
+    'we',
+    'you',
+    'how',
+    'what',
+    'when',
+    'where',
+    'why',
+    'who',
+    'which',
+    'there',
+    'here',
+    'have',
+    'has',
+    'had',
+    'will',
+    'would',
+    'could',
+    'should',
+    'can',
+    'may',
+    'might',
+    'must',
+    'shall',
+    'did',
+    'does',
+    'do',
+    'been',
+    'being',
+    'be',
+    'are',
+    'is',
+    'was',
+    'were',
+    'am',
+    'their',
+    'our',
+    'your',
+    'its',
+    'his',
+    'her',
+    'my',
+    'pull',
+    'get',
+    'find',
   ];
 
   for (const pattern of competitorPatterns) {
     const match = text.match(pattern);
     if (match) {
       const company = match[1].trim();
-      // Filter out common false positives
+      const words = company.split(/\s+/);
+
+      // Validation checks:
+      // 1. Must be 1-4 words
+      // 2. Max 40 characters total
+      // 3. First word must start with capital (real company name)
+      // 4. No common false positive words
+      // 5. At least one word > 3 chars
       if (
-        company.length > 2 &&
-        !['the', 'a', 'an', 'this', 'that'].includes(company.toLowerCase())
+        words.length >= 1 &&
+        words.length <= 4 &&
+        company.length <= 40 &&
+        /^[A-Z]/.test(company) &&
+        !falsePositives.includes(words[0].toLowerCase()) &&
+        words.some((w) => w.length > 3)
       ) {
         return company;
       }

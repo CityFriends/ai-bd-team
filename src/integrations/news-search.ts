@@ -114,24 +114,13 @@ export interface NewsSearchResult {
   source: 'bing' | 'google' | 'serpapi' | 'mock';
 }
 
-// GovCon news sources for contract award searches
-const GOVCON_SITES = [
-  'orangeslices.com',
-  'govconwire.com',
-  'washingtontechnology.com',
-  'federalnewsnetwork.com',
-  'nextgov.com',
-  'fcw.com',
-  'executivegov.com',
-];
-
 // Main search function - uses whichever API is configured
 export async function searchNews(params: {
   query: string;
   agencyName?: string;
   limit?: number;
   daysBack?: number; // How many days of news to search (default 30)
-  govconOnly?: boolean; // Search only GovCon news sources
+  govconOnly?: boolean; // Focus on federal/government contract news (adds context, no site restriction)
 }): Promise<NewsSearchResult> {
   const { query, agencyName, limit = 5, daysBack = 30, govconOnly = false } = params;
 
@@ -141,11 +130,11 @@ export async function searchNews(params: {
     searchQuery = `${agencyName} ${query}`;
   }
 
-  // If searching for contract awards, use GovCon sites
+  // Add federal/government context to focus results
+  // NOTE: Removed site: restrictions - they were too limiting and caused empty results
+  // Google News works better with broader queries
   if (govconOnly) {
-    // Use site: operator to search specific GovCon sources
-    const siteFilter = GOVCON_SITES.map((s) => `site:${s}`).join(' OR ');
-    searchQuery = `(${siteFilter}) ${searchQuery}`;
+    searchQuery += ' federal contract';
   } else {
     searchQuery += ' federal government';
   }
