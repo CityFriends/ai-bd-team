@@ -2,6 +2,7 @@
 // Marcus listens for: RESEARCH_COMPLETE, GO_NO_GO_DECISION
 // Marcus publishes: TECH_ASSESSMENT_COMPLETE
 
+import { WebClient } from '@slack/web-api';
 import {
   EventType,
   EventTypes,
@@ -11,8 +12,27 @@ import {
 } from '../eventTypes.js';
 import { EventHandler, EventHandlerContext, EventHandlerResult } from '../eventProcessor.js';
 import { getAnthropic } from '../../integrations/claude.js';
-import { replyInThread } from '../../integrations/slack.js';
 import { storeMemory } from '../../memory/index.js';
+
+// Use Marcus's own tokens for posting to Slack
+async function postAsMarcus(message: string, threadTs: string): Promise<void> {
+  const botToken = process.env.MARCUS_BOT_TOKEN;
+  const channelId = process.env.SLACK_CHANNEL_ID;
+
+  if (!botToken || !channelId) {
+    throw new Error('Missing MARCUS_BOT_TOKEN or SLACK_CHANNEL_ID');
+  }
+
+  const client = new WebClient(botToken);
+  await client.chat.postMessage({
+    channel: channelId,
+    text: message,
+    thread_ts: threadTs,
+    username: 'Marcus',
+    icon_url:
+      'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/Marcus.jpeg',
+  });
+}
 
 // ============================================================
 // RESEARCH_COMPLETE Handler
@@ -48,11 +68,11 @@ const handleResearchComplete: EventHandler = async (
     // Store tech assessment as memory for future reference
     await storeTechAssessmentMemory(assessment, payload, event.id);
 
-    // POST TO SLACK - Make the collaboration visible
+    // POST TO SLACK - Make the collaboration visible (using Marcus's own tokens)
     if (event.thread_ts) {
       try {
         const slackMessage = formatTechAssessmentForSlack(assessment);
-        await replyInThread('engineer', slackMessage, event.thread_ts);
+        await postAsMarcus(slackMessage, event.thread_ts);
         console.log(`[Marcus:Handler] Posted tech assessment to thread ${event.thread_ts}`);
       } catch (slackErr) {
         console.warn(`[Marcus:Handler] Failed to post to Slack:`, slackErr);
