@@ -624,6 +624,53 @@ async function postToSlack(
   }
 }
 
+// Team member Slack IDs
+const TEAM_MEMBERS = {
+  maya: '<@U0AC3RA4JVB>', // Opportunities, SAM.gov
+  rosa: '<@U0ACASZ36BW>', // Teaming, partnerships
+  james: '<@U0AC582GXBQ>', // Strategy, go/no-go
+  patricia: '<@U0AC79NTDAN>', // Deadlines, tracking
+  marcus: '<@U0ADSL3DL95>', // Engineering, tech stack
+  jodie: '<@U0ACP8LKFB3>', // Proposals, compliance
+};
+
+// Determine which team members to tag based on news topics
+function getRelevantTeamTags(newsIntel: NewsIntelItem[]): string[] {
+  const tags: Set<string> = new Set();
+
+  for (const item of newsIntel) {
+    // High-scoring items warrant tags
+    if (item.score < 65) continue;
+
+    switch (item.type) {
+      case 'budget':
+      case 'policy':
+        // Strategy decisions - tag James
+        tags.add(TEAM_MEMBERS.james);
+        break;
+      case 'tech':
+      case 'ai':
+        // Technical news - tag Marcus
+        tags.add(TEAM_MEMBERS.marcus);
+        break;
+      case 'hcd':
+        // HCD/UX news - relevant to proposals
+        tags.add(TEAM_MEMBERS.jodie);
+        break;
+      case 'congressional':
+        // Legislative changes - strategy + compliance
+        tags.add(TEAM_MEMBERS.james);
+        break;
+      case 'performance':
+        // Performance issues might be opportunities
+        tags.add(TEAM_MEMBERS.maya);
+        break;
+    }
+  }
+
+  return Array.from(tags);
+}
+
 // Main daily scan - runs all three phases + pattern analysis
 export async function runDailyScan() {
   console.log('\n' + '='.repeat(60));
@@ -674,13 +721,26 @@ export async function runDailyScan() {
   // Generate and post
   if (brief.hasSignificantNews) {
     const message = await generateMorningBrief(brief);
-    await postToSlack(app, message);
+    const mainThreadTs = await postToSlack(app, message);
 
-    // Post high-value news separately if score is very high
-    const topNews = newsIntel.filter((n) => n.score >= 75);
-    if (topNews.length > 0 && topNews.length <= 3) {
-      const hotNewsMessage = `🔥 *Hot GovCon Intel*\n\n${topNews.map((n) => `• *${n.topic}*: ${n.summary}\n  _Score: ${n.score} | ${n.reasons.slice(0, 2).join(', ')}_`).join('\n\n')}`;
-      await postToSlack(app, hotNewsMessage);
+    // Thread high-value news with links under the main brief
+    const topNews = newsIntel.filter((n) => n.score >= 70);
+    if (topNews.length > 0 && mainThreadTs) {
+      // Build threaded detail message with links
+      const detailLines = topNews.map((n) => {
+        const linkLine = n.url ? `\n  ${n.url}` : '';
+        return `• *${n.topic}* (score: ${n.score})\n  ${n.summary}${linkLine}`;
+      });
+
+      // Get relevant team member tags
+      const teamTags = getRelevantTeamTags(topNews);
+      const tagLine =
+        teamTags.length > 0
+          ? `\n\n${teamTags.join(' ')} - FYI, this may be relevant to your work.`
+          : '';
+
+      const threadedMessage = `📎 *Article Details*\n\n${detailLines.join('\n\n')}${tagLine}`;
+      await postToSlack(app, threadedMessage, mainThreadTs);
     }
 
     // Log to database
@@ -732,7 +792,25 @@ export async function runMorningBrief() {
       patterns,
     };
     const message = await generateMorningBrief(brief);
-    await postToSlack(app, message);
+    const mainThreadTs = await postToSlack(app, message);
+
+    // Thread high-value news with links under the main brief
+    const topNews = newsIntel.filter((n) => n.score >= 70);
+    if (topNews.length > 0 && mainThreadTs) {
+      const detailLines = topNews.map((n) => {
+        const linkLine = n.url ? `\n  ${n.url}` : '';
+        return `• *${n.topic}* (score: ${n.score})\n  ${n.summary}${linkLine}`;
+      });
+
+      const teamTags = getRelevantTeamTags(topNews);
+      const tagLine =
+        teamTags.length > 0
+          ? `\n\n${teamTags.join(' ')} - FYI, this may be relevant to your work.`
+          : '';
+
+      const threadedMessage = `📎 *Article Details*\n\n${detailLines.join('\n\n')}${tagLine}`;
+      await postToSlack(app, threadedMessage, mainThreadTs);
+    }
   } else {
     await postToSlack(app, getQuietMorningMessage());
   }
