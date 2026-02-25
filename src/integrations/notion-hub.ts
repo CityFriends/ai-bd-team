@@ -612,8 +612,7 @@ export async function createNotionHub(parentPageId: string): Promise<NotionHubId
         rich_text: [
           {
             text: {
-              content:
-                'David (Analyst): Researches incumbents, agencies, risks using FPDS/USASpending',
+              content: 'David (Analyst): Researches incumbents, agencies, risks using USASpending',
             },
           },
         ],

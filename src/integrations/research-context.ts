@@ -758,13 +758,13 @@ export async function gatherResearchContext(
         try {
           // Priority 1: Direct contract number lookup
           if (topics.contractNumbers.length > 0) {
-            console.log(`Research: Fetching FPDS for contract number ${topics.contractNumbers[0]}`);
+            console.log(`Research: Fetching contract data for ${topics.contractNumbers[0]}`);
             const result = await searchByContractNumber(topics.contractNumbers[0]);
             if (result.contracts.length > 0) {
               context.fpds = {
                 contracts: result.contracts,
                 incumbent: result.contracts[0]?.vendorName || undefined,
-                source: `FPDS (contract ${topics.contractNumbers[0]})`,
+                source: `USASpending (contract ${topics.contractNumbers[0]})`,
               };
               return;
             }
@@ -773,7 +773,7 @@ export async function gatherResearchContext(
           // Priority 2: Agency code + keywords (much more precise)
           if (topics.agency) {
             console.log(
-              `Research: Fetching FPDS for ${topics.agency.name} (code: ${topics.agency.code})`
+              `Research: Fetching contract data for ${topics.agency.name} (code: ${topics.agency.code})`
             );
             const result = await findIncumbent({
               agencyCode: topics.agency.code,
@@ -789,7 +789,7 @@ export async function gatherResearchContext(
             }
           }
         } catch (err) {
-          console.warn('FPDS fetch failed:', err);
+          console.warn('Contract data fetch failed:', err);
         }
       })()
     );
@@ -1057,7 +1057,7 @@ export function formatResearchContext(context: ResearchContext): string {
   }
 
   if (context.fpds && context.fpds.contracts.length > 0) {
-    parts.push('\nFPDS CONTRACT DATA:');
+    parts.push('\nCONTRACT AWARD DATA (USASpending):');
     if (context.fpds.incumbent) {
       parts.push(`Likely incumbent: ${context.fpds.incumbent}`);
     }

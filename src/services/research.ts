@@ -82,10 +82,10 @@ export async function researchOpportunity(params: {
       ? `$${(incumbentResult.contractValue / 1000000).toFixed(1)}M`
       : 'unknown value';
     summaryParts.push(
-      `FPDS shows ${incumbentResult.incumbent} as likely incumbent (${value}, ${incumbentResult.confidence} confidence)`
+      `USASpending shows ${incumbentResult.incumbent} as likely incumbent (${value}, ${incumbentResult.confidence} confidence)`
     );
   } else {
-    summaryParts.push('Could not identify incumbent from FPDS');
+    summaryParts.push('Could not identify incumbent from USASpending');
   }
 
   // Budget summary
@@ -164,10 +164,10 @@ export async function researchPartner(companyName: string): Promise<PartnerResea
   if (historyResult.totalContracts > 0) {
     const value = (historyResult.totalValue / 1000000).toFixed(1);
     summaryParts.push(
-      `FPDS: ${historyResult.totalContracts} contracts totaling $${value}M with ${historyResult.agencies.slice(0, 3).join(', ')}`
+      `USASpending: ${historyResult.totalContracts} contracts totaling $${value}M with ${historyResult.agencies.slice(0, 3).join(', ')}`
     );
   } else {
-    summaryParts.push('FPDS: No federal contract history found');
+    summaryParts.push('USASpending: No federal contract history found');
   }
 
   return {
@@ -182,7 +182,7 @@ export async function researchPartner(companyName: string): Promise<PartnerResea
       totalContracts: historyResult.totalContracts,
       totalValue: historyResult.totalValue,
       agencies: historyResult.agencies,
-      source: 'FPDS',
+      source: 'USASpending',
     },
     summary: summaryParts.join('\n'),
   };
@@ -202,9 +202,9 @@ export async function quickIncumbentLookup(params: {
     const value = result.contractValue
       ? `$${(result.contractValue / 1000000).toFixed(1)}M`
       : 'unknown value';
-    return `FPDS shows ${result.incumbent} as incumbent (${value}, ${result.confidence} confidence)`;
+    return `USASpending shows ${result.incumbent} as incumbent (${value}, ${result.confidence} confidence)`;
   }
-  return "Couldn't find incumbent data in FPDS for this search";
+  return "Couldn't find incumbent data in USASpending for this search";
 }
 
 // Quick partner verification (for Rosa's fast responses)

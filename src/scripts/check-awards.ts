@@ -50,7 +50,7 @@ async function main() {
         ? `yo heads up, just spotted a new award drop`
         : `okay so ${newAwards.length} new awards just dropped, ${totalValue} total`;
 
-    const message = `${intro} 👀\n\n${formatted}\n\n_pulled fresh from FPDS_`;
+    const message = `${intro} 👀\n\n${formatted}\n\n_pulled from USASpending_`;
 
     try {
       await slack.chat.postMessage({

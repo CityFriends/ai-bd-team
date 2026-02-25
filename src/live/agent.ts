@@ -1200,7 +1200,7 @@ This looks promising because...
 
 Teammates — tag by expertise (NEVER tag yourself):
 ${this.name !== 'maya' ? 'Maya=<@U0AC3RA4JVB> opportunities and SAM.gov' : ''}
-${this.name !== 'david' ? 'David=<@U0AC0SVD3MH> deep research, incumbents, FPDS, risk' : ''}
+${this.name !== 'david' ? 'David=<@U0AC0SVD3MH> deep research, incumbents, USASpending, risk' : ''}
 ${this.name !== 'rosa' ? 'Rosa=<@U0ACASZ36BW> teaming, partnerships, introductions' : ''}
 ${this.name !== 'james' ? 'James=<@U0AC582GXBQ> strategy, go/no-go, capture' : ''}
 ${this.name !== 'patricia' ? 'Patricia=<@U0AC79NTDAN> deadlines, action items, tracking' : ''}
