@@ -2,12 +2,16 @@
  * David's Proactive Intelligence Scanner
  *
  * Daily Schedule (CST):
- *   7:00am - Competitor intel scan (Booz, Deloitte, Accenture wins/losses, news)
- *   7:30am - GAO protest database check for target agencies
+ *   7:00am - GovCon news scan (budgets, policy, tech, AI, HCD)
+ *   7:30am - Agency-specific news for target agencies
  *   8:00am - Auto-research Maya's recent opportunities (incumbents, red flags)
  *
- * Auto-Trigger:
- *   When Maya posts a 70+ opportunity, David auto-researches within 30 minutes
+ * News is filtered using relevance scoring to surface what matters for FFTC:
+ * - Agency budget and spending news
+ * - Policy and regulatory changes
+ * - Technology and modernization initiatives
+ * - AI in government
+ * - HCD/UX in government
  *
  * Usage:
  *   npm run david:scan         # Run full scan now
@@ -19,7 +23,7 @@ import cron from 'node-cron';
 import { App } from '@slack/bolt';
 import { getAnthropic } from '../integrations/claude.js';
 import { getSupabase } from '../integrations/supabase.js';
-import { searchNews, searchCompetitorNews } from '../integrations/news-search.js';
+import { searchNews } from '../integrations/news-search.js';
 import { findIncumbent } from '../integrations/fpds.js';
 import { loadCompanyContext, formatCompanyContextForPrompt } from '../context/company-context.js';
 import {
@@ -27,33 +31,13 @@ import {
   getCompetitorIntelByAgency,
   getRecentCompetitorIntel,
 } from '../integrations/supabase.js';
+import {
+  NEWS_TOPICS,
+  TARGET_AGENCIES,
+  filterRelevantArticles,
+} from '../config/david-news-criteria.js';
 
 const CHANNEL_ID = process.env.SLACK_CHANNEL_ID || '';
-
-// Target agencies to monitor
-const TARGET_AGENCIES = [
-  { code: '036', name: 'VA', fullName: 'Department of Veterans Affairs' },
-  { code: '075', name: 'HHS', fullName: 'Department of Health and Human Services' },
-  { code: '012', name: 'DOL', fullName: 'Department of Labor' },
-  { code: '073', name: 'SBA', fullName: 'Small Business Administration' },
-  { code: '028', name: 'SSA', fullName: 'Social Security Administration' },
-];
-
-// Key competitors to watch
-const COMPETITORS = [
-  'Booz Allen Hamilton',
-  'Deloitte',
-  'Accenture Federal',
-  'SAIC',
-  'Leidos',
-  'GDIT',
-  'ManTech',
-  'CACI',
-  'Peraton',
-  'ICF',
-  'Maximus',
-  'Guidehouse',
-];
 
 // Initialize David's Slack app
 async function getDavidApp(): Promise<App | null> {
@@ -76,9 +60,9 @@ async function getDavidApp(): Promise<App | null> {
 }
 
 const QUIET_MORNING_MESSAGES = [
-  'Did my morning scan - nothing significant on the competitor front. Quiet day so far.',
+  'Did my morning scan - nothing significant in govcon news today. Quiet day so far.',
   "Checked the usual sources. It's quiet out there today. I'll keep watching.",
-  'Morning scan complete - no major moves from our competitors. Sometimes no news is good news.',
+  'Morning scan complete - no major policy changes or budget news. Sometimes no news is good news.',
   'Ran through everything. Nothing worth flagging right now. Will update if that changes.',
 ];
 
@@ -86,11 +70,12 @@ function getQuietMorningMessage(): string {
   return QUIET_MORNING_MESSAGES[Math.floor(Math.random() * QUIET_MORNING_MESSAGES.length)];
 }
 
-interface CompetitorIntelItem {
-  company: string;
-  type: 'win' | 'loss' | 'protest' | 'news';
+interface NewsIntelItem {
+  topic: string;
+  type: 'budget' | 'policy' | 'tech' | 'ai' | 'hcd' | 'congressional' | 'performance';
   summary: string;
-  agency?: string;
+  score: number;
+  reasons: string[];
   source?: string;
   url?: string;
 }
@@ -106,7 +91,7 @@ interface IncumbentResearch {
 }
 
 interface MorningBrief {
-  competitorIntel: CompetitorIntelItem[];
+  newsIntel: NewsIntelItem[];
   incumbentResearch: IncumbentResearch[];
   redFlags: string[];
   hasSignificantNews: boolean;
@@ -219,29 +204,36 @@ async function analyzeCompetitorPatterns(): Promise<PatternInsight[]> {
   return insights;
 }
 
-// Save intel to database for future pattern analysis
-async function saveIntelToDatabase(intel: CompetitorIntelItem[]): Promise<void> {
-  // Map local types to database types
+// Save news intel to database for future tracking (optional)
+// Note: This maps news topics to the competitor_intel table schema
+// In the future, consider creating a dedicated news_intel table
+async function saveNewsIntelToDatabase(intel: NewsIntelItem[]): Promise<void> {
+  // Map topic types to database intel types
   const typeMap: Record<string, 'protest' | 'performance' | 'award' | 'debarment' | 'general'> = {
-    win: 'award',
-    loss: 'general',
-    protest: 'protest',
-    news: 'general',
+    budget: 'general',
+    policy: 'general',
+    tech: 'general',
+    ai: 'general',
+    hcd: 'general',
+    congressional: 'general',
+    performance: 'performance',
   };
 
   for (const item of intel) {
+    // Only save high-scoring items
+    if (item.score < 60) continue;
+
     try {
       await saveCompetitorIntel({
-        company_name: item.company,
+        company_name: item.topic, // Use topic as company_name for now
         intel_type: typeMap[item.type] || 'general',
         summary: item.summary,
-        agency_code: item.agency,
         source_url: item.url,
         source_name: item.source,
-        confidence: 'MEDIUM', // Default to medium for news-sourced intel
+        confidence: item.score >= 75 ? 'HIGH' : 'MEDIUM',
         discovered_by: 'david',
       });
-    } catch (err) {
+    } catch {
       // Ignore duplicates or errors
     }
   }
@@ -280,97 +272,73 @@ async function checkForAlerts(): Promise<PatternInsight[]> {
   return alerts;
 }
 
-// Scan competitor news
-async function scanCompetitorNews(): Promise<CompetitorIntelItem[]> {
-  console.log('Scanning competitor news...');
-  const intel: CompetitorIntelItem[] = [];
+// Map topic keys to display types
+const TOPIC_TO_TYPE: Record<string, NewsIntelItem['type']> = {
+  budgetSpending: 'budget',
+  policyChanges: 'policy',
+  techModernization: 'tech',
+  aiGovernment: 'ai',
+  hcdUx: 'hcd',
+  congressional: 'congressional',
+  performanceIssues: 'performance',
+};
 
-  for (const competitor of COMPETITORS.slice(0, 6)) {
-    // Top 6 to avoid rate limits
-    try {
-      console.log(`  Checking ${competitor}...`);
-      const result = await searchCompetitorNews({
-        companyName: competitor,
-        daysBack: 2, // Last 2 days for morning brief
-      });
+// Scan news by topic with relevance scoring
+async function scanNewsTopics(): Promise<NewsIntelItem[]> {
+  console.log('Scanning govcon news by topic...');
+  const intel: NewsIntelItem[] = [];
 
-      // Process wins
-      for (const article of result.awards.slice(0, 2)) {
-        intel.push({
-          company: competitor,
-          type: 'win',
-          summary: article.title,
-          source: article.source,
-          url: article.url,
+  for (const [topicKey, topicConfig] of Object.entries(NEWS_TOPICS)) {
+    console.log(`  Checking ${topicConfig.name}...`);
+
+    for (const query of topicConfig.queries.slice(0, 2)) {
+      // Limit queries per topic
+      try {
+        const result = await searchNews({
+          query,
+          limit: topicConfig.limit,
+          daysBack: topicConfig.daysBack,
+          govconOnly: true,
         });
-      }
 
-      // Process protests
-      for (const article of result.protests.slice(0, 2)) {
-        intel.push({
-          company: competitor,
-          type: 'protest',
-          summary: article.title,
-          source: article.source,
-          url: article.url,
-        });
-      }
+        // Apply relevance scoring
+        const scoredArticles = filterRelevantArticles(
+          result.articles.map((a) => ({
+            title: a.title,
+            snippet: a.snippet,
+            url: a.url,
+            source: a.source,
+            publishedDate: a.publishedDate,
+          })),
+          topicConfig.name,
+          50 // Minimum score threshold
+        );
 
-      // Process performance issues
-      for (const article of result.performance.slice(0, 1)) {
-        intel.push({
-          company: competitor,
-          type: 'news',
-          summary: article.title,
-          source: article.source,
-          url: article.url,
-        });
-      }
-
-      await new Promise((r) => setTimeout(r, 500)); // Rate limit
-    } catch (err) {
-      console.warn(`  Error checking ${competitor}:`, err);
-    }
-  }
-
-  return intel;
-}
-
-// Check GAO protest database for target agencies
-async function checkGAOProtests(): Promise<CompetitorIntelItem[]> {
-  console.log('Checking GAO protests for target agencies...');
-  const intel: CompetitorIntelItem[] = [];
-
-  for (const agency of TARGET_AGENCIES.slice(0, 3)) {
-    try {
-      console.log(`  Checking ${agency.name} protests...`);
-      const result = await searchNews({
-        query: `${agency.fullName} GAO protest`,
-        limit: 3,
-        daysBack: 7,
-        govconOnly: true,
-      });
-
-      for (const article of result.articles) {
-        if (article.title.toLowerCase().includes('protest')) {
-          intel.push({
-            company: 'Unknown', // Will be extracted from article
-            type: 'protest',
-            summary: article.title,
-            agency: agency.name,
-            source: article.source,
-            url: article.url,
-          });
+        // Convert to intel items
+        for (const article of scoredArticles.slice(0, 3)) {
+          // Dedupe by URL
+          if (!intel.some((i) => i.url === article.url)) {
+            intel.push({
+              topic: topicConfig.name,
+              type: TOPIC_TO_TYPE[topicKey] || 'tech',
+              summary: article.title,
+              score: article.score,
+              reasons: article.reasons,
+              source: article.source,
+              url: article.url,
+            });
+          }
         }
-      }
 
-      await new Promise((r) => setTimeout(r, 500));
-    } catch (err) {
-      console.warn(`  Error checking ${agency.name} protests:`, err);
+        await new Promise((r) => setTimeout(r, 500)); // Rate limit
+      } catch (err) {
+        console.warn(`  Error searching "${query}":`, err);
+      }
     }
   }
 
-  return intel;
+  // Sort by score and return top items
+  return intel.sort((a, b) => b.score - a.score).slice(0, 15);
 }
 
 // Get Maya's recent opportunities that need research
@@ -482,11 +450,25 @@ async function researchOpportunity(
 async function generateMorningBrief(brief: MorningBrief): Promise<string> {
   const client = getAnthropic();
 
-  // Format the intel for the prompt
-  const competitorSection =
-    brief.competitorIntel.length > 0
-      ? brief.competitorIntel.map((i) => `- ${i.company}: ${i.summary} (${i.type})`).join('\n')
-      : 'Nothing significant from competitors today.';
+  // Group news by topic
+  const newsByTopic: Record<string, NewsIntelItem[]> = {};
+  for (const item of brief.newsIntel) {
+    if (!newsByTopic[item.topic]) {
+      newsByTopic[item.topic] = [];
+    }
+    newsByTopic[item.topic].push(item);
+  }
+
+  // Format the news intel for the prompt
+  const newsSection =
+    brief.newsIntel.length > 0
+      ? Object.entries(newsByTopic)
+          .map(
+            ([topic, items]) =>
+              `${topic}:\n${items.map((i) => `  - ${i.summary} (score: ${i.score}, ${i.source || 'unknown source'})`).join('\n')}`
+          )
+          .join('\n\n')
+      : 'Nothing significant in govcon news today.';
 
   const incumbentSection =
     brief.incumbentResearch.length > 0
@@ -516,8 +498,8 @@ YOUR VOICE:
 - You start with "Alright", "So", "Look"
 - NO Gen-Z slang (no "lowkey", "giving", "hits different")
 
-COMPETITOR INTEL (from this morning's scan):
-${competitorSection}
+GOVCON NEWS (from this morning's scan, filtered by relevance to FFTC):
+${newsSection}
 
 INCUMBENT RESEARCH (for yesterday's opportunities):
 ${incumbentSection}
@@ -526,10 +508,10 @@ ${brief.redFlags.length > 0 ? `RED FLAGS SURFACED:\n${brief.redFlags.map((r) => 
 
 ${patternsSection ? `PATTERN ANALYSIS (from historical data):\n${patternsSection}` : ''}
 
-Write a morning intel brief for Slack.
+Write a morning intel brief for Slack. Focus on news that matters for an HCD/digital services company like FFTC.
 
 SLACK FORMATTING (use these EXACTLY):
-- Bold: *text* (use for headers like *Morning Intel Brief*, *Competitor Watch*)
+- Bold: *text* (use for headers like *Morning Intel Brief*)
 - Italic: _text_ (use for emphasis)
 - Bullets: Start lines with • for lists
 - Links: Put URLs on their own line
@@ -540,28 +522,27 @@ STRUCTURE YOUR POST LIKE THIS:
 
 [Your opening line in David's voice]
 
-*Competitor Watch*
-• [Company]: [What happened] ([source if you have URL])
-• [Company]: [What happened]
+*GovCon News*
+• *Budget/Policy*: [Summarize key budget or policy news]
+• *Technology*: [Summarize tech/modernization news]
+• *AI/HCD*: [Summarize AI or human-centered design news]
 
-*Incumbent Research*
+*Incumbent Research* (if any)
 • [Opportunity title] — Incumbent: [name], Value: [amount]
-• [Opportunity title] — [findings]
 
-${brief.redFlags.length > 0 ? '*Red Flags*\n• [Concern]\n• [Concern]' : ''}
+${brief.redFlags.length > 0 ? '*Red Flags*\n• [Concern]' : ''}
 
 ${
   brief.patterns.length > 0
     ? `*Patterns I'm Tracking*
-• [Trend or insight from pattern analysis]
-• [What this means for our strategy]`
+• [Trend or insight]`
     : ''
 }
 
-[Closing line - offer to dig deeper]
+[Closing line - what this means for FFTC or offer to dig deeper]
 
-Keep it concise (under 450 words). Use the bullet format above - it's much easier to read.
-The patterns section is new - highlight trends that matter for our positioning.
+Keep it concise (under 450 words). Group related news together.
+Focus on what matters for FFTC: budgets, policy affecting digital services, tech modernization, AI in gov, HCD initiatives.
 If there's nothing significant, say so briefly.`;
 
   const response = await client.messages.create({
@@ -595,7 +576,7 @@ ${companyContext}
 OPPORTUNITY: ${research.opportunityTitle}
 NOTICE ID: ${research.noticeId}
 INCUMBENT: ${research.incumbent || 'Unknown - could not identify'}
-CONTRACT VALUE: ${research.contractValue || 'Not found in FPDS'}
+CONTRACT VALUE: ${research.contractValue || 'Not found in USASpending'}
 ${research.redFlags.length > 0 ? `RED FLAGS: ${research.redFlags.join(', ')}` : ''}
 
 Write a brief research update for this opportunity. Post this as a reply in the thread (not a new message).
@@ -651,16 +632,13 @@ export async function runDailyScan() {
 
   const app = await getDavidApp();
 
-  // Phase 1: Competitor intel
-  console.log('\nPhase 1: Competitor Intel Scan');
-  const competitorIntel = await scanCompetitorNews();
+  // Phase 1: Topic-based news scan (budgets, policy, tech, AI, HCD)
+  console.log('\nPhase 1: GovCon News Scan');
+  const newsIntel = await scanNewsTopics();
+  console.log(`  Found ${newsIntel.length} relevant articles`);
 
-  // Phase 2: GAO protests
-  console.log('\nPhase 2: GAO Protest Check');
-  const protestIntel = await checkGAOProtests();
-
-  // Phase 3: Research Maya's opportunities
-  console.log("\nPhase 3: Auto-Research Maya's Opportunities");
+  // Phase 2: Research Maya's opportunities
+  console.log("\nPhase 2: Auto-Research Maya's Opportunities");
   const mayaOpps = await getMayasRecentOpportunities();
   const incumbentResearch: IncumbentResearch[] = [];
 
@@ -670,25 +648,26 @@ export async function runDailyScan() {
     await new Promise((r) => setTimeout(r, 1000));
   }
 
-  // Phase 4: Pattern analysis (new!)
-  console.log('\nPhase 4: Pattern Recognition');
+  // Save high-scoring news for tracking
+  if (newsIntel.length > 0) {
+    console.log('\nSaving news intel to database...');
+    await saveNewsIntelToDatabase(newsIntel);
+  }
+
+  // Phase 3: Pattern analysis
+  console.log('\nPhase 3: Pattern Recognition');
   const patterns = await analyzeCompetitorPatterns();
   const alerts = await checkForAlerts();
   const allPatterns = [...patterns, ...alerts];
 
-  // Save intel to database for future pattern analysis
-  const allIntel = [...competitorIntel, ...protestIntel];
-  console.log('\nSaving intel to database for pattern tracking...');
-  await saveIntelToDatabase(allIntel);
-
   const allRedFlags = incumbentResearch.flatMap((r) => r.redFlags);
 
   const brief: MorningBrief = {
-    competitorIntel: allIntel,
+    newsIntel,
     incumbentResearch,
     redFlags: allRedFlags,
     hasSignificantNews:
-      allIntel.length > 0 || incumbentResearch.some((r) => r.incumbent) || allPatterns.length > 0,
+      newsIntel.length > 0 || incumbentResearch.some((r) => r.incumbent) || allPatterns.length > 0,
     patterns: allPatterns,
   };
 
@@ -697,11 +676,11 @@ export async function runDailyScan() {
     const message = await generateMorningBrief(brief);
     await postToSlack(app, message);
 
-    // Post alerts separately if significant
-    const highPriorityAlerts = alerts.filter((a) => a.confidence === 'HIGH');
-    if (highPriorityAlerts.length > 0) {
-      const alertMessage = `🚨 *Competitive Alert*\n\n${highPriorityAlerts.map((a) => `• ${a.insight}`).join('\n')}\n\nThese are target agencies - worth keeping an eye on.`;
-      await postToSlack(app, alertMessage);
+    // Post high-value news separately if score is very high
+    const topNews = newsIntel.filter((n) => n.score >= 75);
+    if (topNews.length > 0 && topNews.length <= 3) {
+      const hotNewsMessage = `🔥 *Hot GovCon Intel*\n\n${topNews.map((n) => `• *${n.topic}*: ${n.summary}\n  _Score: ${n.score} | ${n.reasons.slice(0, 2).join(', ')}_`).join('\n\n')}`;
+      await postToSlack(app, hotNewsMessage);
     }
 
     // Log to database
@@ -710,7 +689,7 @@ export async function runDailyScan() {
       await supabase.from('agent_memory').insert({
         agent: 'david',
         response_text: message,
-        sources: ['competitor_news', 'gao_protests', 'fpds', 'pattern_analysis'],
+        sources: ['govcon_news', 'usaspending', 'pattern_analysis'],
         confidence_level: 'MEDIUM',
         created_at: new Date().toISOString(),
       });
@@ -729,7 +708,7 @@ export async function runDailyScan() {
   console.log('\nDaily scan complete');
 }
 
-// Morning brief only (7:00am) - just competitor news
+// Morning brief only (7:00am) - topic-based news scan
 export async function runMorningBrief() {
   console.log('\n' + '='.repeat(60));
   console.log(`  David's Morning Brief - ${new Date().toLocaleString()}`);
@@ -737,18 +716,16 @@ export async function runMorningBrief() {
 
   const app = await getDavidApp();
 
-  // Competitor intel scan
-  const competitorIntel = await scanCompetitorNews();
-  const protestIntel = await checkGAOProtests();
+  // Topic-based news scan
+  const newsIntel = await scanNewsTopics();
+  console.log(`  Found ${newsIntel.length} relevant articles`);
 
-  const allIntel = [...competitorIntel, ...protestIntel];
-
-  if (allIntel.length > 0) {
+  if (newsIntel.length > 0) {
     // Run quick pattern check for morning brief
     const patterns = await analyzeCompetitorPatterns();
 
     const brief: MorningBrief = {
-      competitorIntel: allIntel,
+      newsIntel,
       incumbentResearch: [],
       redFlags: [],
       hasSignificantNews: true,
