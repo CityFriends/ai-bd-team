@@ -11,11 +11,11 @@
 
 ### External API Integrations
 - [x] SAM.gov opportunity search
-- [x] FPDS incumbent/contract data
-  - Fixed: uses RSS `<item>` tags, not Atom `<entry>`
-  - Added: contract number (PIID) direct lookup
-  - Added: agency code filtering for precision (VA=036, DOL=012, etc.)
-  - Improved: stopword filtering for cleaner search queries
+- [x] USASpending contract data (replaced FPDS)
+  - Fixed: `toptier_name` → `name` for agency filter
+  - Fixed: `recipient_search_text` must be array, not string
+  - Note: keyword search disabled (causes 504 timeouts)
+  - Agency code filtering for precision (VA=036, DOL=012, etc.)
 - [x] USASpending agency budgets
 - [x] SerpAPI for news search
   - Added: time filtering (last 30 days default)
@@ -41,9 +41,9 @@
 | Agent | APIs Wired Up | Use Case |
 |-------|---------------|----------|
 | Maya | SAM.gov opportunities, SerpAPI news | Scouts new opps, finds relevant news |
-| David | FPDS, USASpending, FAR | Researches incumbents, budgets, cites regulations |
+| David | USASpending, SerpAPI news, FAR | Researches contracts, budgets, news intel, cites regulations |
 | Rosa | SAM.gov entity verification | Verifies potential partners |
-| James | FAR, FPDS | Strategic analysis, regulatory guidance |
+| James | FAR, USASpending | Strategic analysis, regulatory guidance |
 | Patricia | (none yet) | Tracks action items, manages workflow |
 | Jodie | (none yet) | Proposal writing, compliance matrices, executive summaries |
 
@@ -51,12 +51,14 @@
 
 | Agent | Role | Background | Voice |
 |-------|------|------------|-------|
-| Maya | Scout | 27, Spelman, Atlanta, civic tech | Gen-Z AAVE, "lowkey", "not gonna lie", hype energy |
-| David | Analyst | 42, Korean American, NJ/Rutgers, Fairfax | Jersey direct, dad energy, dry humor, "Here's the thing..." |
-| Rosa | Connector | 44, Mexican American, San Antonio, Silver Spring | Warm, Spanglish, "Mira", relationship-first |
-| James | Strategist | 52, Black, Chicago South Side, Arlington | Executive presence, old school, "I've seen this before" |
-| Patricia | PM | 31, Black, PG County/Howard, Petworth | Very online, millennial, emoji-friendly, TikTok references |
-| Jodie | Writer | 33, Vietnamese American, UC Berkeley, Columbia Heights | Quiet confidence, word nerd, "Where's the 'so what'?", night owl |
+| Maya | Scout | 27, Spelman, Atlanta, civic tech | Code-switches naturally, sharp, gets excited about good finds |
+| David | Analyst | 42, Korean American, NJ/Rutgers, Fairfax | Jersey direct, pragmatic, been-there-done-that, dry humor |
+| Rosa | Connector | 44, Mexican American, San Antonio, Silver Spring | Warm, Spanglish flows naturally, relationship-first but sharp |
+| James | Strategist | 52, Black, Chicago South Side, Arlington | Executive presence, Chicago direct, lands somewhere (no hedging) |
+| Patricia | PM | 31, Black, PG County/Howard, Petworth | Millennial work energy, self-aware, polite but persistent |
+| Jodie | Writer | 33, Vietnamese American, UC Berkeley, Columbia Heights | Concise in Slack, clear feedback, dry humor, pushes back on vague |
+
+**Note**: Agent prompts describe communication *style* rather than scripted phrases. Each agent has anti-repetition guidance to prevent robotic catchphrases.
 
 ### Conversational Features
 - [x] Mood detection (busy, engaged, relaxed, stressed, uncertain)
@@ -95,12 +97,15 @@
 - [x] Weekly summary for Monday check-ins
 - [x] Tracks resolved vs unresolved issues
 
-### Competitor Intelligence
-- [x] Automatic competitor news search when incumbents/competitors mentioned
-- [x] Searches for: protests, GAO decisions, performance issues, recent wins
-- [x] Knows major GovCon competitors: Booz Allen, Deloitte, SAIC, Leidos, GDIT, etc.
-- [x] Saves intel to `competitor_intel` table for future reference
-- [x] David reports findings naturally with strategic implications
+### News Intelligence (Topic-Based)
+- [x] David scans 7 news categories relevant to FFTC's BD work
+- [x] Topics: budget, policy, tech modernization, AI, HCD/UX, congressional, performance
+- [x] Relevance scoring (0-100) filters noise, surfaces actionable intel
+- [x] Team members auto-tagged based on topic relevance
+- [x] Threaded posts prevent channel flooding
+- [x] Saves intel to `news_intel` table for future reference
+- [x] Run manually: `npm run david:scan`
+- [x] Quality sources prioritized: NextGov, FCW, FedScoop, Federal News Network, etc.
 
 ### Proactive Behavior (Connect the Dots)
 All agents now:
@@ -142,7 +147,7 @@ Agent-specific strategic reasoning:
 - [x] `message_claims` - prevents multiple agents responding
 - [x] `agent_memory` - response logging with sources/confidence
 - [x] `seen_awards` - tracks reported awards (prevents duplicates)
-- [x] `competitor_intel` - stored intel on competitors (protests, performance, wins)
+- [x] `news_intel` - stored news intel by topic (budget, policy, tech, AI, HCD, etc.)
 - [x] `system_feedback` - tracks bugs, issues, suggestions for agent improvement
 - [x] `agency_forecasts` - upcoming opportunities from agency forecast pages
 - [x] `agent_memories` - persistent memory for emergent agent behavior (see below)
@@ -209,6 +214,76 @@ Comprehensive docs for repeatable product deployment:
 
 ### Recent Fixes (Feb 2026)
 
+**Maya's Opportunity Scoring** ✓ (IMPROVED)
+- [x] Added 24 certification/audit hard excludes to prevent false positives
+- [x] Removed overly generic core keywords that matched irrelevant opps
+- [x] ISO audits, compliance audits, A-123, FISMA assessments now auto-excluded
+- [x] Files: `src/config/opportunity-filters.ts`
+
+**David's Topic-Based News Scanning** ✓ (REDESIGNED)
+Completely replaced competitor-focused scanning with topic-based intelligence:
+- [x] Created `src/config/david-news-criteria.ts` with 7 topic categories:
+  - Budget & Spending (high priority)
+  - Policy & Regulatory (high priority)
+  - Technology & Modernization (high priority)
+  - AI in Government (medium priority)
+  - HCD/UX in Government (high priority - FFTC sweet spot)
+  - Congressional & Legislative (medium priority)
+  - Contract Performance (low priority)
+- [x] Relevance scoring (0-100) with:
+  - Core capability keywords (+25 first match, +5 additional)
+  - Target agency detection (+20)
+  - AI/ML keywords (+15)
+  - Budget/policy keywords (+15)
+  - Quality source boost (+10)
+  - Recency bonus (+10 for <3 days old)
+  - Negative keywords (weapons, construction, furniture → score 0)
+- [x] Quality sources: Federal News Network, NextGov, FCW, GovExec, FedScoop, etc.
+- [x] Posting decisions: 75+ immediate, 60-74 digest, 50-59 low enthusiasm, <50 skip
+- [x] Updated `david-scanner.ts` with `scanNewsTopics()` function
+- [x] Files: `src/config/david-news-criteria.ts`, `src/scripts/david-scanner.ts`
+
+**David's News Threading & Team Tagging** ✓ (NEW)
+- [x] News articles now posted in threads (not separate messages flooding channel)
+- [x] Main post announces the scan, replies contain individual articles
+- [x] Team members auto-tagged based on content relevance:
+  - James: budget, policy, congressional news
+  - Marcus: technology, AI news
+  - Jodie: HCD/UX news
+  - Maya: contract performance issues
+- [x] Tags appear in main post header when relevant topics found
+- [x] Files: `src/scripts/david-scanner.ts`
+
+**USASpending API Fixes** ✓ (CRITICAL)
+- [x] Fixed field name: `toptier_name` → `name` (was causing 422 errors)
+- [x] Fixed `recipient_search_text`: string → array (API requirement)
+- [x] Disabled keyword search filter (causes 504 Gateway Timeout)
+- [x] Updated all FPDS references to USASpending across codebase
+- [x] Files: `src/integrations/contract-data.ts`, `src/live/david.ts`, `src/services/research.ts`, `src/live/agent.ts`, `src/integrations/notion-hub.ts`, `src/scripts/award-scheduler.ts`, `src/scripts/check-awards.ts`
+
+**SerpAPI News Search Fix** ✓
+- [x] Removed overly restrictive `site:` filters that caused empty results
+- [x] Changed from hardcoded site list to general federal/government context
+- [x] Files: `src/integrations/news-search.ts`
+
+**Research Context Fixes** ✓
+- [x] Fixed garbage company name extraction ("How did you pull their")
+- [x] Tightened regex to only match 1-4 capitalized words
+- [x] Added extensive false positive word list (150+ common words)
+- [x] Files: `src/integrations/research-context.ts`
+
+**Agent Personality Layer** ✓ (IMPROVED)
+Removed forced catchphrases that made agents sound robotic:
+- [x] David: removed "needs coffee, mentions the kids and little league"
+- [x] Rosa: removed explicit "Mira...", "Ay, this is tricky...", "corazón"
+- [x] James: removed scripted "Alright, let me tell you...", "Bottom line..."
+- [x] Marcus: removed duplicate phrase lists ("Look...", "Real talk...", "That's clean")
+- [x] Patricia: removed "Okay team...", "Not to be that person but...", "I have Feelings"
+- [x] Jodie: removed "I can work with this", "This needs surgery", "Where's the 'so what'?"
+- [x] Added anti-repetition guidance to all agents ("vary your openers", "don't repeat catchphrases")
+- [x] Personalities now described by style/energy, not scripted phrases
+- [x] Files: `src/live/david.ts`, `src/live/rosa.ts`, `src/live/james.ts`, `src/live/marcus.ts`, `src/live/patricia.ts`, `src/live/jodie.ts`
+
 **Shared Context for All Agents** ✓ (NEW)
 All agents now have full visibility into what's happening:
 - [x] `src/live/shared-context.ts` - Central module for shared state
@@ -267,7 +342,7 @@ Defensive programming to prevent edge cases and improve reliability:
 - [x] Total active contract value: $7.09M | Total historical: $14.88M
 
 ### Known Limitations
-- FPDS keyword search can't find contract vehicles by name (e.g., "SPRUCE IDIQ") - needs contract number
+- USASpending keyword search disabled (causes 504 Gateway Timeouts) - search by agency/vendor only
 - ~~News sources are general~~ - Now includes GovCon sources: OrangeSlices, GovConWire, WashTech, FCW, Nextgov
 - ~~Thread replies with short answers may not always trigger agent responses~~ - Fixed: agents respond to follow-ups
 - ~~Maya hallucinating fake URLs~~ - Fixed: strict validation + verification command
