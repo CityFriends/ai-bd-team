@@ -179,13 +179,9 @@ export const OPPORTUNITY_FILTERS = {
     'platform modernization',
 
     // Common SAM.gov IT phrasing (these often appear without "development")
-    'it services',
-    'information technology services',
-    'technology services',
-    'technical services',
-    'it solutions',
-    'technology solutions',
-    'technical solutions',
+    // NOTE: Removed overly generic terms like "it services", "technology services", "technical services"
+    // These caused false positives (e.g., certification audits, IT consulting, assessments)
+    // Keeping only terms that imply actual building/development work
     'computer programming',
     'programming services',
     'software services',
@@ -193,12 +189,15 @@ export const OPPORTUNITY_FILTERS = {
     'web services',
     'web-based',
     'web based',
-    'portal',
-    'website',
-    'web portal',
-    'database',
-    'data management',
-    'data services',
+    'portal development',
+    'website development',
+    'web portal development',
+    'build a portal',
+    'build a website',
+    'develop a portal',
+    'develop a website',
+    'database development',
+    'data platform',
   ],
 
   // Keywords that INCREASE relevance (bonus points on top of core match)
@@ -312,6 +311,31 @@ export const OPPORTUNITY_FILTERS = {
     'flight scheduling',
     'crew scheduling',
     'air traffic',
+
+    // Certification & Audit Services (we don't do compliance auditing)
+    'certification audit',
+    'audit services',
+    'iso certification',
+    'iso audit',
+    'compliance audit',
+    'certification services',
+    'assessment services',
+    'accreditation',
+    'certifying body',
+    'certification body',
+    'iso/iec',
+    'iso 9001',
+    'iso 27001',
+    'iso 20000',
+    'cmmi appraisal',
+    'cmmi assessment',
+    'fedramp assessment',
+    'fedramp audit',
+    'security audit',
+    'financial audit',
+    'independent audit',
+    'third-party audit',
+    'third party audit',
   ],
 
   // SOFT EXCLUDE - Reduce score but don't auto-skip
