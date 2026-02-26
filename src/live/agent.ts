@@ -658,8 +658,14 @@ export abstract class LiveAgent {
       'marcus',
     ];
 
-    // Check for @bd-team or @bdteam - mentions everyone
-    if (lowerText.includes('@bd-team') || lowerText.includes('@bdteam')) {
+    // Check for team triggers - mentions everyone
+    // Using "hey team" or "okay team" since @team conflicts with Slack
+    if (
+      lowerText.includes('hey team') ||
+      lowerText.includes('okay team') ||
+      lowerText.includes('ok team') ||
+      lowerText.includes('alright team')
+    ) {
       return { agents: allAgents, isTeamMention: true };
     }
 
