@@ -47,6 +47,15 @@ import { buildWarmupMessages, formatAgentMoodLine } from './warmups.js';
 import { parseActionFromResponse, createAction } from '../integrations/agent-actions.js';
 import { loadSharedContext, formatSharedContextForPrompt } from './shared-context.js';
 import {
+  getToolsForAgent,
+  getToolDefinitionsForAgent,
+  executeToolCalls,
+  formatToolResultsForClaude,
+  extractSourceCitations,
+  formatToolDescriptionsForAgent,
+} from '../tools/index.js';
+import type { MessageParam } from '@anthropic-ai/sdk/resources/messages';
+import {
   EventProcessor,
   createEventProcessor,
   getHandlersForAgent,
@@ -1165,7 +1174,8 @@ Only extract clear, specific facts. Don't infer or guess.`;
     fileContext: string,
     userProfileContext: string,
     teamActivityContext: string,
-    sharedContext: string
+    sharedContext: string,
+    toolContext: string = ''
   ): string {
     return `RULES (follow these but don't let them flatten your personality):
 
@@ -1222,6 +1232,7 @@ ${memoryContext}
 ${threadContext}
 ${handoffContext}
 ${researchContext || "\n⚠️ NO RESEARCH DATA LOADED. If asked about opportunities, contracts, or specific data — say you don't have it loaded right now. Do NOT make anything up.\n"}
+${toolContext}
 ${fileContext}
 ${teamActivityContext}
 ---
@@ -1396,6 +1407,17 @@ Respond as ${this.displayName}.`;
       console.warn(`${this.displayName}: Shared context failed:`, err);
     }
 
+    // Get tool descriptions for this agent (if any)
+    const toolContext = formatToolDescriptionsForAgent(this.name);
+    const agentTools = getToolsForAgent(this.name);
+    const toolDefinitions = getToolDefinitionsForAgent(this.name);
+
+    if (agentTools.length > 0) {
+      console.log(
+        `${this.displayName}: ${agentTools.length} tools available: ${agentTools.map((t) => t.definition.name).join(', ')}`
+      );
+    }
+
     // Build compact operational context (goes in user message)
     const operationalContext = this.buildOperationalContext(
       message,
@@ -1410,91 +1432,158 @@ Respond as ${this.displayName}.`;
       fileContext,
       userProfileContext,
       teamActivityContext,
-      sharedContext
+      sharedContext,
+      toolContext
     );
 
     // Build warmup messages for natural conversation flow
     const warmupMessages = buildWarmupMessages(this.name);
 
+    // Track sources from tool calls
+    const toolSources: string[] = [];
+
+    // Build initial messages array (will be extended during tool use loop)
+    const messages: MessageParam[] = [
+      ...(warmupMessages as MessageParam[]),
+      { role: 'user', content: operationalContext },
+    ];
+
+    // Tool use loop (max 3 iterations to prevent runaway)
+    const maxToolIterations = 3;
+    let toolIteration = 0;
+
     // Retry logic for transient errors (429, 529)
     const maxRetries = 3;
     let lastError: unknown = null;
 
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const response = await client.messages.create({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 800,
-          system: this.systemPrompt, // Personality lives here now
-          messages: [...warmupMessages, { role: 'user', content: operationalContext }],
-        });
+    while (toolIteration <= maxToolIterations) {
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          // Build API call - add tools if agent has any
+          const response = await client.messages.create({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 1200, // Increased for tool use responses
+            system: this.systemPrompt,
+            messages,
+            ...(toolDefinitions.length > 0 ? { tools: toolDefinitions } : {}),
+          });
 
-        const textBlock = response.content.find((b) => b.type === 'text');
-        if (!textBlock || textBlock.type !== 'text') {
+          // Check if Claude wants to use tools
+          if (response.stop_reason === 'tool_use') {
+            toolIteration++;
+
+            if (toolIteration > maxToolIterations) {
+              console.warn(
+                `${this.displayName}: Max tool iterations reached (${maxToolIterations})`
+              );
+              break;
+            }
+
+            console.log(`${this.displayName}: Tool use requested (iteration ${toolIteration})`);
+
+            // Execute all tool calls
+            const toolResults = await executeToolCalls(response.content, agentTools);
+
+            // Collect source citations
+            const newSources = extractSourceCitations(toolResults);
+            toolSources.push(...newSources);
+
+            if (newSources.length > 0) {
+              console.log(`${this.displayName}: Tool sources: ${newSources.join(', ')}`);
+            }
+
+            // Add assistant's tool use to messages
+            messages.push({
+              role: 'assistant',
+              content: response.content,
+            } as MessageParam);
+
+            // Add tool results to messages
+            const toolResultMessages = formatToolResultsForClaude(toolResults);
+            messages.push({
+              role: 'user',
+              content: toolResultMessages,
+            } as MessageParam);
+
+            // Continue the loop to get Claude's final response
+            continue;
+          }
+
+          // Normal response (end_turn) - extract text
+          const textBlock = response.content.find((b) => b.type === 'text');
+          if (!textBlock || textBlock.type !== 'text') {
+            return {
+              text: '',
+              shouldRespond: false,
+              delayMs: 0,
+              confidence: 0,
+              sources: [],
+              confidenceLevel: 'LOW' as const,
+              reaction: null,
+            };
+          }
+
+          // Parse JSON response
+          let jsonText = textBlock.text;
+          const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            jsonText = jsonMatch[0];
+          }
+
+          const parsed = JSON.parse(jsonText);
+
+          // Extract reaction if present
+          const reaction = parsed.reaction || null;
+
+          // Calculate delay (2-8 seconds, randomized) - fast enough to feel responsive
+          const baseDelay = 2000 + Math.random() * 6000;
+          const delay = message.isDirectMention ? baseDelay * 0.5 : baseDelay; // Faster for direct mentions
+
+          // Normalize confidence level
+          const rawLevel = (parsed.confidenceLevel || 'LOW').toUpperCase();
+          const confidenceLevel = ['HIGH', 'MEDIUM', 'LOW'].includes(rawLevel)
+            ? (rawLevel as 'HIGH' | 'MEDIUM' | 'LOW')
+            : 'LOW';
+
+          // Merge tool sources with parsed sources
+          const allSources = [...(parsed.sources || []), ...toolSources];
+          const uniqueSources = [...new Set(allSources)];
+
           return {
-            text: '',
-            shouldRespond: false,
-            delayMs: 0,
-            confidence: 0,
-            sources: [],
-            confidenceLevel: 'LOW' as const,
-            reaction: null,
+            text: parsed.response || '',
+            shouldRespond: parsed.shouldRespond && parsed.response,
+            delayMs: Math.floor(delay),
+            confidence: parsed.confidence || 0.5,
+            sources: uniqueSources,
+            confidenceLevel,
+            reaction,
           };
+        } catch (error) {
+          lastError = error;
+
+          // Check if this is a retryable error (429 rate limit or 529 overloaded)
+          const isRetryable =
+            error instanceof Error &&
+            'status' in error &&
+            (error.status === 429 || error.status === 529);
+
+          if (isRetryable && attempt < maxRetries) {
+            // Exponential backoff: 2s, 4s, 8s
+            const backoffMs = Math.pow(2, attempt) * 1000;
+            console.log(
+              `${this.displayName}: Claude API overloaded (attempt ${attempt}/${maxRetries}), retrying in ${backoffMs / 1000}s...`
+            );
+            await this.sleep(backoffMs);
+            continue;
+          }
+
+          // Non-retryable error or max retries reached
+          break;
         }
-
-        // Parse JSON response
-        let jsonText = textBlock.text;
-        const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          jsonText = jsonMatch[0];
-        }
-
-        const parsed = JSON.parse(jsonText);
-
-        // Extract reaction if present
-        const reaction = parsed.reaction || null;
-
-        // Calculate delay (2-8 seconds, randomized) - fast enough to feel responsive
-        const baseDelay = 2000 + Math.random() * 6000;
-        const delay = message.isDirectMention ? baseDelay * 0.5 : baseDelay; // Faster for direct mentions
-
-        // Normalize confidence level
-        const rawLevel = (parsed.confidenceLevel || 'LOW').toUpperCase();
-        const confidenceLevel = ['HIGH', 'MEDIUM', 'LOW'].includes(rawLevel)
-          ? (rawLevel as 'HIGH' | 'MEDIUM' | 'LOW')
-          : 'LOW';
-
-        return {
-          text: parsed.response || '',
-          shouldRespond: parsed.shouldRespond && parsed.response,
-          delayMs: Math.floor(delay),
-          confidence: parsed.confidence || 0.5,
-          sources: parsed.sources || [],
-          confidenceLevel,
-          reaction,
-        };
-      } catch (error) {
-        lastError = error;
-
-        // Check if this is a retryable error (429 rate limit or 529 overloaded)
-        const isRetryable =
-          error instanceof Error &&
-          'status' in error &&
-          (error.status === 429 || error.status === 529);
-
-        if (isRetryable && attempt < maxRetries) {
-          // Exponential backoff: 2s, 4s, 8s
-          const backoffMs = Math.pow(2, attempt) * 1000;
-          console.log(
-            `${this.displayName}: Claude API overloaded (attempt ${attempt}/${maxRetries}), retrying in ${backoffMs / 1000}s...`
-          );
-          await this.sleep(backoffMs);
-          continue;
-        }
-
-        // Non-retryable error or max retries reached
-        break;
       }
+
+      // If we get here without returning, break the tool loop
+      break;
     }
 
     // All retries failed
