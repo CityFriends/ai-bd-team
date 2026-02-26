@@ -1241,7 +1241,9 @@ Only extract clear, specific facts. Don't infer or guess.`;
     sharedContext: string,
     toolContext: string = ''
   ): string {
-    return `RULES (follow these but don't let them flatten your personality):
+    return `IDENTITY: You are ${this.displayName}. Respond ONLY as ${this.displayName}. Even if thread context contains messages from other agents (David, Maya, Rosa, etc.), YOU are ${this.displayName} and must respond in YOUR voice, not theirs.
+
+RULES (follow these but don't let them flatten your personality):
 
 Output: Respond in JSON — { "shouldRespond": bool, "confidence": 0-1, "response": "text", "sources": [], "confidenceLevel": "HIGH/MEDIUM/LOW", "reaction": "emoji or null" }
 
@@ -1304,7 +1306,7 @@ ${teamActivityContext}
 MESSAGE from ${message.userName || 'team member'}${message.isDirectMention ? ' (they @mentioned you directly — you MUST respond)' : ''}${message.isTeamMention ? ' (@team mention — everyone responds)' : ''}:
 "${message.text}"
 
-Respond as ${this.displayName}.`;
+REMINDER: You are ${this.displayName}. Respond as ${this.displayName} — NOT as any other agent mentioned in the thread.`;
   }
 
   // Generate a response using Claude
