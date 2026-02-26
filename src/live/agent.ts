@@ -663,9 +663,14 @@ export abstract class LiveAgent {
       return { agents: allAgents, isTeamMention: true };
     }
 
-    // Check for individual @mentions
+    // Check if THIS agent is mentioned via Slack's <@USERID> format
+    if (this.slackUserId && text.includes(`<@${this.slackUserId}>`)) {
+      mentioned.push(this.name);
+    }
+
+    // Also check for text mentions like "@jodie" (fallback)
     for (const agent of allAgents) {
-      if (lowerText.includes(`@${agent}`) || (lowerText.includes(`<@`) && this.name === agent)) {
+      if (lowerText.includes(`@${agent}`) && !mentioned.includes(agent)) {
         mentioned.push(agent);
       }
     }
