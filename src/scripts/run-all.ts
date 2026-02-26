@@ -28,23 +28,9 @@ async function runWithLogging(jobName: string, fn: () => Promise<void>): Promise
   }
 }
 
-// Agent scan functions
-async function runMayaDailyScan() {
-  const { runDailyScan } = await import('./maya-scanner.js');
-  await runDailyScan();
-}
-
-async function runMayaWeeklySummary() {
-  const { runWeeklySummary } = await import('./maya-scanner.js');
-  await runWeeklySummary();
-}
-
-async function runDavidNewsDigest() {
-  const { runNewsDigest } = await import('./david-news-digest.js');
-  await runNewsDigest();
-}
-
-// NOTE: Patricia standup handled by Railway cron (cron:patricia-standup) with distributed lock
+// NOTE: Agent scans (Maya daily/weekly, David news, Patricia standup) are handled
+// by Railway cron jobs with distributed locking. Do NOT duplicate here.
+// See src/cron/maya-daily.ts, src/cron/maya-weekly.ts, src/cron/david-news.ts, src/cron/patricia-standup.ts
 
 async function runActionScheduler() {
   const { checkAndExecuteActions } = await import('./action-scheduler.js');
@@ -101,44 +87,9 @@ async function main() {
   }
 
   // ============================================================
-  // SCHEDULED AGENTS - Internal cron
+  // SCHEDULED JOBS - Internal cron
+  // NOTE: Agent scans (Maya, David, Patricia) use Railway cron with distributed locks
   // ============================================================
-
-  // Maya daily scan: 8:00 AM CST Mon-Fri (14:00 UTC)
-  cron.schedule('0 14 * * 1-5', async () => {
-    console.log(`[${new Date().toLocaleString()}] Maya: Running daily scan...`);
-    try {
-      await runWithLogging('maya-daily-scan', runMayaDailyScan);
-      console.log(`[${new Date().toLocaleString()}] Maya: Daily scan complete`);
-    } catch (err) {
-      console.error(`[${new Date().toLocaleString()}] Maya: Daily scan failed:`, err);
-    }
-  });
-
-  // Maya weekly summary: 8:30 AM CST Friday (14:30 UTC)
-  cron.schedule('30 14 * * 5', async () => {
-    console.log(`[${new Date().toLocaleString()}] Maya: Running weekly summary...`);
-    try {
-      await runWithLogging('maya-weekly-summary', runMayaWeeklySummary);
-      console.log(`[${new Date().toLocaleString()}] Maya: Weekly summary complete`);
-    } catch (err) {
-      console.error(`[${new Date().toLocaleString()}] Maya: Weekly summary failed:`, err);
-    }
-  });
-
-  // David news digest: 10:00 AM CST Mon/Wed/Fri (16:00 UTC)
-  cron.schedule('0 16 * * 1,3,5', async () => {
-    console.log(`[${new Date().toLocaleString()}] David: Running news digest...`);
-    try {
-      await runWithLogging('david-news-digest', runDavidNewsDigest);
-      console.log(`[${new Date().toLocaleString()}] David: News digest complete`);
-    } catch (err) {
-      console.error(`[${new Date().toLocaleString()}] David: News digest failed:`, err);
-    }
-  });
-
-  // NOTE: Patricia standup is handled by Railway cron job (cron:patricia-standup)
-  // which uses distributed locking. Do NOT duplicate here.
 
   // Action Scheduler: Every 15 minutes check for agent commitments
   cron.schedule('*/15 * * * *', async () => {
@@ -195,14 +146,15 @@ async function main() {
   console.log('  All services running');
   console.log('  Schedule (CST):');
   console.log('    - Live agents: Always listening');
-  console.log('    - Maya scan: 8:00 AM CST Mon-Fri');
-  console.log('    - Maya weekly: 8:30 AM CST Friday');
-  console.log('    - David news: 10:00 AM CST Mon/Wed/Fri');
-  console.log('    - Patricia standup: 11:00 AM CST Mon-Fri (Railway cron)');
   console.log('    - Action scheduler: Every 15 minutes');
   console.log('    - Stale event cleanup: Every 5 minutes');
   console.log('    - Pipeline health: Every 2 hours 9am-5pm CST Mon-Fri');
-  console.log('    - Patricia retrospective: First Monday of month 9am CST (Railway cron)');
+  console.log('  Railway cron jobs (with distributed locks):');
+  console.log('    - Maya scan: 8:00 AM CST Mon-Fri');
+  console.log('    - Maya weekly: 8:30 AM CST Friday');
+  console.log('    - David news: 10:00 AM CST Mon/Wed/Fri');
+  console.log('    - Patricia standup: 11:00 AM CST Mon-Fri');
+  console.log('    - Patricia retrospective: First Monday of month 9am CST');
   console.log('='.repeat(60));
 
   // Keep process alive
