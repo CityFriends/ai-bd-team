@@ -230,21 +230,29 @@ async function updateCompanyData() {
   const caseStudies = [
     {
       title: "When Search Doesn't Find",
-      agency: 'Department of Veterans Affairs',
+      agency: 'Smithsonian Institution',
+      client: 'National Museum of African American History and Culture',
       source_url: 'https://www.friendsfromthecity.com/work/case-study/when-search-doesnt-find',
       challenge:
-        "VA.gov's search function wasn't helping veterans find what they needed. Search results often failed to surface relevant content, leaving veterans unable to locate critical information about their benefits and services.",
+        "The Searchable Museum platform digitized collections, 3D models, and videos for remote audiences. However, the search feature failed users significantly. When searching for 'Harriet Tubman,' users received tangentially related results instead of content specifically about that subject. Results loaded mid-page without highlighting matching content, leaving users disoriented.",
       approach:
-        'Conducted extensive user research to understand how veterans actually search for information. Analyzed search logs to identify patterns in failed searches and content gaps. Worked with content teams to improve searchability of key pages.',
+        'Conducted five remote moderated usability sessions with educators, lifelong learners, and family researchers. Participants searched for personally relevant topics while researchers observed behavior. Testing revealed keyword-based search could not differentiate between mentions and actual subjects.',
       solution:
-        'Redesigned search experience with improved relevance ranking, better content tagging, and clearer search result displays. Implemented search analytics to continuously monitor and improve results.',
-      methods_used: ['User Research', 'Search UX', 'Content Strategy', 'Analytics'],
-      outcomes: ['Improved search success rates', 'Better content discoverability for veterans'],
+        'Delivered remote moderated usability testing, search prioritization analysis, and content model recommendations. Filters added to search feature. Search results now load where users expect them.',
+      methods_used: ['User Research', 'Usability Testing', 'Search UX', 'Content Strategy'],
+      outcomes: [
+        'Filters added to search feature',
+        'Search results now load where users expect',
+        'Six documented findings with recommendations implemented',
+      ],
+      team_composition: ['1 UX Researcher'],
+      duration: '6 months',
       public_releasable: true,
     },
     {
       title: 'Making Accessibility Harder to Miss',
       agency: 'Department of Veterans Affairs',
+      client: 'Department of Veterans Affairs',
       source_url:
         'https://www.friendsfromthecity.com/work/case-study/making-accessibility-harder-to-miss',
       challenge:
@@ -264,11 +272,14 @@ async function updateCompanyData() {
         'Real-time feedback now built into CMS',
         'Editors can immediately correct accessibility violations',
       ],
+      team_composition: ['1 Product Designer', '2 UX Researchers', '1 Frontend Developer'],
+      duration: '2 years',
       public_releasable: true,
     },
     {
       title: 'Translating the 526ez for PACT Act',
       agency: 'Department of Veterans Affairs',
+      client: 'Department of Veterans Affairs',
       source_url:
         'https://www.friendsfromthecity.com/work/case-study/translating-the-526ez-for-pact-act',
       challenge:
@@ -289,11 +300,14 @@ async function updateCompanyData() {
         'Digital form captures better data than paper version',
         'Veterans can file toxic exposure claims online with more detail',
       ],
+      team_composition: ['2 Product Designers', '2 UX Researchers', '2 Frontend Developers'],
+      duration: '2.5 years',
       public_releasable: true,
     },
     {
       title: 'A Dot That Changed Behavior',
       agency: 'Department of Veterans Affairs',
+      client: 'Department of Veterans Affairs',
       source_url: 'https://www.friendsfromthecity.com/work/case-study/a-dot-that-changed-behavior',
       challenge:
         'Veterans were not completing critical tasks on VA.gov, often abandoning forms or missing important notifications. The team needed to find subtle design interventions that would improve completion rates without adding complexity.',
@@ -303,11 +317,14 @@ async function updateCompanyData() {
         'Implemented targeted visual cues and behavioral nudges that guided veterans through task completion. Small UI changes led to measurable improvements in engagement and completion rates.',
       methods_used: ['Behavioral Design', 'UX Research', 'A/B Testing', 'UI Design'],
       outcomes: ['Improved task completion rates', 'Better user engagement with key features'],
+      team_composition: ['2 Product Designers', '2 UX Researchers'],
+      duration: '1 year',
       public_releasable: true,
     },
     {
       title: 'Faster Decisions for Clinicians',
       agency: 'Centers for Medicare & Medicaid Services',
+      client: 'Centers for Medicare & Medicaid Services',
       source_url:
         'https://www.friendsfromthecity.com/work/case-study/faster-decisions-for-clinicians',
       challenge:
@@ -321,11 +338,14 @@ async function updateCompanyData() {
         '570K+ clinicians served',
         'Faster decision-making for quality program participants',
       ],
+      team_composition: ['1 Product Designer', '1 UX Researcher'],
+      duration: '1 year',
       public_releasable: true,
     },
     {
       title: 'Learning How to Watch',
       agency: 'Centers for Medicare & Medicaid Services',
+      client: 'Centers for Medicare & Medicaid Services',
       source_url: 'https://www.friendsfromthecity.com/work/case-study/learning-how-to-watch',
       challenge:
         'CMS needed to understand how clinicians actually used their digital tools in real-world settings. Traditional research methods were not capturing the nuances of day-to-day usage patterns and pain points.',
@@ -344,11 +364,14 @@ async function updateCompanyData() {
         'Authentic user insights captured',
         'Product roadmap informed by real-world behavior',
       ],
+      team_composition: ['2 Product Designers', '3 UX Researchers'],
+      duration: '2.5 years',
       public_releasable: true,
     },
     {
       title: 'Untangling QPP for Clinicians',
       agency: 'Centers for Medicare & Medicaid Services',
+      client: 'Centers for Medicare & Medicaid Services',
       source_url:
         'https://www.friendsfromthecity.com/work/case-study/untangling-qpp-for-clinicians',
       challenge:
@@ -364,11 +387,14 @@ async function updateCompanyData() {
         'Journey Mapping',
       ],
       outcomes: ['Simplified program navigation', 'Clearer understanding of QPP requirements'],
+      team_composition: ['2 Product Designers', '2 UX Researchers'],
+      duration: '3 years',
       public_releasable: true,
     },
     {
       title: 'Resolving Veteran Debt in Minutes',
       agency: 'Department of Veterans Affairs',
+      client: 'Department of Veterans Affairs',
       source_url:
         'https://www.friendsfromthecity.com/work/case-study/resolving-veteran-debt-in-minutes',
       challenge:
@@ -390,6 +416,8 @@ async function updateCompanyData() {
         'Veterans resolve debt in minutes instead of weeks',
         '30K+ veterans helped',
       ],
+      team_composition: ['2 Product Designers', '3 UX Researchers', '1 Frontend Developer'],
+      duration: '3 years',
       public_releasable: true,
     },
     {
@@ -410,30 +438,35 @@ async function updateCompanyData() {
         'State employees trained on research methods',
         'Research-informed improvements to state services',
       ],
+      team_composition: ['2 UX Researchers'],
+      duration: '6 months',
       public_releasable: true,
     },
     {
       title: 'Designing Policy Through Workshops',
-      agency: 'Centers for Medicare & Medicaid Services',
+      agency: 'American Board of Family Medicine',
+      client: 'American Board of Family Medicine',
       source_url:
         'https://www.friendsfromthecity.com/work/case-study/designing-policy-through-workshops',
       challenge:
-        'CMS needed to develop new policies but traditional policy-making processes were disconnected from the people they would affect. There was a gap between policy intent and real-world implementation.',
+        "Medicare and Medicaid don't account for social determinants of health in provider reimbursement. Where a person lives, their income, their access to food and housing shapes their health more than what happens in a clinic. Clinics in underserved communities receive identical reimbursement to wealthy area clinics despite greater needs.",
       approach:
-        'Facilitated workshops that brought together policy makers, implementers, and affected stakeholders. Used design thinking methods to explore policy options and their implications. Created feedback loops between policy development and user impact.',
+        'Facilitated two workshops bringing together federal officials, state Medicaid directors, health plan executives, clinicians, and researchers. Used scenario-based exercises to move from abstract policy discussions to concrete design decisions regarding payment thresholds, data sources, and fund distribution mechanisms.',
       solution:
-        'Delivered collaborative workshop methodology for policy development. Enabled CMS to incorporate diverse perspectives into policy making. Created templates and facilitation guides for future policy workshops.',
+        'Delivered workshop design and facilitation, scenario development, and stakeholder convening. Published 2 public reports with key findings: area-based indices recommended for Medicare; flexibility with federal guidance emphasized for Medicaid.',
       methods_used: [
         'Workshop Facilitation',
         'Policy Design',
-        'Stakeholder Engagement',
-        'Design Thinking',
+        'Stakeholder Convening',
+        'Scenario Development',
       ],
       outcomes: [
-        'More inclusive policy development process',
-        'Better alignment between policy and implementation',
-        'Reusable workshop methodology for CMS',
+        '40 federal and industry experts convened',
+        '2 reports published publicly',
+        'Policy recommendations for Medicare and Medicaid',
       ],
+      team_composition: ['2 UX Researchers'],
+      duration: '9 months',
       public_releasable: true,
     },
   ];
