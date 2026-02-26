@@ -1686,8 +1686,15 @@ REMINDER: You are ${this.displayName}. Respond as ${this.displayName} — NOT as
         // Determine author
         let author = 'unknown';
         if (msg.bot_id) {
-          // Map bot to agent name based on username or other identifier
-          author = (msg as any).username?.toLowerCase() || 'bot';
+          // Check if this is one of our agents by user ID
+          const agentName = AGENT_SLACK_IDS[msg.user as string];
+          if (agentName) {
+            // Capitalize agent name for display (e.g., 'david' -> 'David')
+            author = agentName.charAt(0).toUpperCase() + agentName.slice(1);
+          } else {
+            // Fallback for unknown bots
+            author = (msg as any).username?.toLowerCase() || 'bot';
+          }
         } else if (msg.user) {
           // Look up user profile to get their name
           const userProfile = await getUserProfile(msg.user);
