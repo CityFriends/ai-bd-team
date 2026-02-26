@@ -1578,6 +1578,9 @@ Respond as ${this.displayName}.`;
           }
 
           const parsed = JSON.parse(jsonText);
+          console.log(
+            `${this.displayName}: Claude returned shouldRespond=${parsed.shouldRespond}, response length=${(parsed.response || '').length}`
+          );
 
           // Extract reaction if present
           const reaction = parsed.reaction || null;
