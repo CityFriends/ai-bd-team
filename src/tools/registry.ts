@@ -16,6 +16,7 @@ import { usaspendingTools } from './definitions/usaspending.tools.js';
 import { newsSearchTools } from './definitions/news-search.tools.js';
 import { farSearchTools } from './definitions/far-search.tools.js';
 import { samEntityTools } from './definitions/sam-entity.tools.js';
+import { proposalTools } from './definitions/proposal.tools.js';
 
 /**
  * All registered tools
@@ -38,6 +39,9 @@ const ALL_TOOLS: AgentTool[] = [
 
   // SAM entity tools (Rosa)
   ...samEntityTools,
+
+  // Proposal tools (Jodie)
+  ...proposalTools,
 ];
 
 /**

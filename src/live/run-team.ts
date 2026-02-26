@@ -8,7 +8,7 @@ import { patricia } from './patricia.js';
 import { marcus } from './marcus.js';
 import { registerButtonHandlers } from './button-handlers.js';
 import { registerSlashCommands } from './slash-commands.js';
-// import { jodie } from './jodie.js'; // Disabled - Slack app auth issue
+import { jodie } from './jodie.js';
 
 const agents = [
   { agent: maya, name: 'Maya (Scout)', tokenEnv: 'MAYA_BOT_TOKEN' },
@@ -17,7 +17,7 @@ const agents = [
   { agent: james, name: 'James (Strategist)', tokenEnv: 'JAMES_BOT_TOKEN' },
   { agent: patricia, name: 'Patricia (PM)', tokenEnv: 'PATRICIA_BOT_TOKEN' },
   { agent: marcus, name: 'Marcus (Engineering Lead)', tokenEnv: 'MARCUS_BOT_TOKEN' },
-  // { agent: jodie, name: 'Jodie (Writer)', tokenEnv: 'JODIE_BOT_TOKEN' }, // Disabled - Slack app auth issue
+  { agent: jodie, name: 'Jodie (Writer)', tokenEnv: 'JODIE_BOT_TOKEN' },
 ];
 
 async function main() {
