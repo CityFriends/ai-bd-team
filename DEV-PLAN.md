@@ -3,7 +3,7 @@
 ## What We've Built
 
 ### Core Infrastructure
-- [x] 6 Slack agents with separate bot tokens (Maya, David, Rosa, James, Patricia, Jodie)
+- [x] 7 Slack agents with separate bot tokens (Maya, David, Rosa, James, Patricia, Jodie, Marcus)
 - [x] Socket Mode for real-time message handling
 - [x] Message deduplication to prevent double responses
 - [x] Message claiming system to prevent pile-ons
@@ -45,7 +45,7 @@
 | Rosa | SAM.gov entity (verify, certifications, partner search) | Verifies and finds potential partners |
 | James | FAR (lookup, search, part browse) | Strategic analysis, regulatory guidance |
 | Patricia | (none - uses pre-loaded context) | Tracks action items, manages workflow |
-| Jodie | (none - uses pre-loaded context) | Proposal writing, compliance matrices, executive summaries |
+| Jodie | Proposal snippets, case studies, capabilities, key personnel | Proposal writing, compliance matrices, executive summaries |
 | Marcus | (none - uses pre-loaded context) | Engineering lead, architecture, tech assessments |
 
 **Note**: Agents with live tools can search data sources mid-conversation. Agents without tools use pre-fetched context only.
@@ -269,6 +269,7 @@ Tools by agent:
 | David | `search_contracts`, `find_incumbent`, `get_vendor_history`, `get_agency_spending`, `get_agency_trend`, `search_contractor_spending`, `search_news`, `get_agency_news`, `search_competitor_news`, `lookup_far_section`, `search_far`, `get_far_part` |
 | Rosa | `verify_sam_registration`, `check_certification`, `find_partners_by_naics`, `search_sam_entities` |
 | James | `lookup_far_section`, `search_far`, `get_far_part` |
+| Jodie | `search_proposal_snippets`, `get_case_study_details`, `get_company_capabilities`, `get_key_personnel` |
 
 Implementation:
 - [x] `src/tools/types.ts` - Tool type definitions (`AgentTool`, `ToolResult`)
@@ -330,6 +331,40 @@ All agents now have full visibility into what's happening:
 - [x] Clear instruction: "I don't have [X] in my system right now. To get that, we'd need to [specific action]"
 - [x] Added credibility warning about trust destruction from making things up
 
+**Jodie (Writer) Fully Integrated** ✓ (NEW - Feb 26)
+- [x] Jodie re-enabled with Slack bot tokens and Socket Mode
+- [x] Created `proposal_snippets` table for Shipley-aligned proposal language
+- [x] Loaded 48 proposal snippets linked to case studies by type (past_performance, capability, technical_approach, differentiator, management, staffing, transition)
+- [x] Added 4 tools for Jodie:
+  - `search_proposal_snippets` - Search by type, case study, tags, or audience
+  - `get_case_study_details` - Full case study info (challenge, approach, solution, outcomes)
+  - `get_company_capabilities` - Company profile, differentiators, certifications
+  - `get_key_personnel` - Team members by role and specialty
+- [x] Added `team_composition` and `duration` fields to all 10 case studies
+- [x] Jodie triggers on proposal keywords ("compliance matrix", "executive summary", "draft the", etc.)
+- [x] Files: `src/live/jodie.ts`, `src/tools/definitions/proposal.tools.ts`, `supabase/migrations/20250226_create_proposal_snippets.sql`
+
+**"Hey Team" Command** ✓ (NEW - Feb 26)
+- [x] Added team trigger phrases: "hey team", "okay team", "ok team", "alright team"
+- [x] All 7 agents respond with staggered delays (3-6 seconds apart) to avoid pile-on
+- [x] Order: Maya → David → Rosa → James → Jodie → Patricia → Marcus
+- [x] @team conflicts with Slack so uses plain text triggers instead
+- [x] Files: `src/live/agent.ts`, `src/live/types.ts`
+
+**Agent Identity Fix** ✓ (CRITICAL - Feb 26)
+- [x] Fixed bug where agents would speak as other agents when mentioned in thread context
+- [x] Example: David @mentions Jodie, Jodie responds saying "David here" - wrong identity
+- [x] Added strong IDENTITY block at start of operational context
+- [x] Added REMINDER at end reinforcing "respond as X, NOT as other agents"
+- [x] Files: `src/live/agent.ts`
+
+**Patricia Double Standup Fix** ✓ (Feb 26)
+- [x] `run-all.ts` had internal node-cron for Patricia standup at 11am
+- [x] Railway ALSO ran `cron:patricia-standup` at 11am (with distributed lock)
+- [x] Internal cron didn't use lock, so both posted → double standup
+- [x] Removed duplicate cron from `run-all.ts` - Railway cron handles it exclusively
+- [x] Files: `src/scripts/run-all.ts`
+
 **Maya Pipeline Confirmation** ✓ (NEW)
 - [x] Maya now ASKS before adding opportunities to Notion: "📋 Add to pipeline?"
 - [x] User must confirm ("yes", "add it") or decline ("no", "skip")
@@ -378,7 +413,7 @@ Defensive programming to prevent edge cases and improve reliability:
 - ~~Thread replies with short answers may not always trigger agent responses~~ - Fixed: agents respond to follow-ups
 - ~~Maya hallucinating fake URLs~~ - Fixed: strict validation + verification command
 - Agency forecast HTML parsing is generic - may need agency-specific parsers for complex pages
-- Jodie (Writer) temporarily disabled - Slack app needs Socket Mode enabled and proper scopes configured
+- ~~Jodie (Writer) temporarily disabled~~ - Fixed: Jodie fully integrated with Slack app and 4 proposal tools
 - ~~Patricia's standup had no memory~~ - Fixed: now loads extracted facts from database
 - ~~Agents ignored each other's announcements~~ - Fixed: team-wide fact sharing via `subject: 'team'`
 - ~~Patricia didn't know about active pipeline~~ - Fixed: queries Notion for DoS Camp, Doorway, etc.
@@ -562,7 +597,7 @@ Persistent memory for emergent, autonomous agent behavior. Agents remember past 
 
 ## Running the Agents
 ```bash
-npm run live              # Start all 6 agents in Slack (Jodie currently disabled pending Slack app setup)
+npm run live              # Start all 7 agents in Slack
 npm run full-system-test  # Run full BD team demo with real data
 
 # Maya's Automated Scanner
@@ -598,7 +633,7 @@ npm run notion:test             # Test with sample opportunity
 
 ### Running Locally
 ```bash
-npm run live              # Start all 5 agents
+npm run live              # Start all 7 agents
 npm run start:prod        # Production mode (agents + schedulers)
 ```
 
