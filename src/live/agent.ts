@@ -199,7 +199,11 @@ export abstract class LiveAgent {
 
       const message = await this.parseIncomingMessage(event);
       if (message) {
-        await this.handleMessage(message);
+        try {
+          await this.handleMessage(message);
+        } catch (err) {
+          console.error(`${this.displayName}: Error in handleMessage:`, err);
+        }
       }
     });
 
@@ -751,7 +755,9 @@ export abstract class LiveAgent {
     }
 
     // Should we respond?
+    console.log(`${this.displayName}: Generating response...`);
     const response = await this.generateResponse(message, handoffContext);
+    console.log(`${this.displayName}: Response generated, shouldRespond=${response.shouldRespond}`);
 
     // Add reaction if specified (even if not responding with text)
     if (response.reaction) {
