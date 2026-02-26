@@ -658,8 +658,8 @@ export abstract class LiveAgent {
       'marcus',
     ];
 
-    // Check for @team - mentions everyone
-    if (lowerText.includes('@team')) {
+    // Check for @bd-team or @bdteam - mentions everyone
+    if (lowerText.includes('@bd-team') || lowerText.includes('@bdteam')) {
       return { agents: allAgents, isTeamMention: true };
     }
 
