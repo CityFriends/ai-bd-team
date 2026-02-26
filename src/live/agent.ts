@@ -574,7 +574,7 @@ export abstract class LiveAgent {
     const messageTs = event.ts;
 
     // Find mentioned agents
-    const mentionedAgents = this.extractMentionedAgents(text);
+    const { agents: mentionedAgents, isTeamMention } = this.extractMentionedAgents(text);
     const isDirectMention = mentionedAgents.includes(this.name);
     const isInActiveThread = this.activeThreads.has(threadTs);
 
@@ -613,6 +613,7 @@ export abstract class LiveAgent {
       messageTs,
       mentionedAgents,
       isDirectMention,
+      isTeamMention,
       isInActiveThread,
       isFromBot,
       files: files?.length ? files : undefined,
@@ -640,13 +641,14 @@ export abstract class LiveAgent {
   }
 
   // Extract which agents are mentioned in the text
-  private extractMentionedAgents(text: string): LiveAgentName[] {
+  private extractMentionedAgents(text: string): {
+    agents: LiveAgentName[];
+    isTeamMention: boolean;
+  } {
     const mentioned: LiveAgentName[] = [];
     const lowerText = text.toLowerCase();
 
-    // Check for @mentions by Slack user ID (would need to map these)
-    // For now, check for name mentions
-    const agents: LiveAgentName[] = [
+    const allAgents: LiveAgentName[] = [
       'maya',
       'david',
       'rosa',
@@ -656,13 +658,19 @@ export abstract class LiveAgent {
       'marcus',
     ];
 
-    for (const agent of agents) {
+    // Check for @team - mentions everyone
+    if (lowerText.includes('@team')) {
+      return { agents: allAgents, isTeamMention: true };
+    }
+
+    // Check for individual @mentions
+    for (const agent of allAgents) {
       if (lowerText.includes(`@${agent}`) || (lowerText.includes(`<@`) && this.name === agent)) {
         mentioned.push(agent);
       }
     }
 
-    return mentioned;
+    return { agents: mentioned, isTeamMention: false };
   }
 
   // Clean up Slack formatting from message text
@@ -748,12 +756,34 @@ export abstract class LiveAgent {
         await recordThreadParticipation(this.name, message.threadTs, message.channelId);
       }
 
+      // For @team mentions, add staggered delay so agents don't all respond at once
+      let totalDelay = response.delayMs;
+      if (message.isTeamMention) {
+        const agentOrder: Record<string, number> = {
+          maya: 0, // Scout responds first
+          david: 1, // Analyst second
+          rosa: 2, // Connector third
+          james: 3, // Strategist fourth
+          jodie: 4, // Writer fifth
+          patricia: 5, // PM sixth
+          marcus: 6, // Engineer last
+        };
+        const position = agentOrder[this.name] || 0;
+        // 3-6 seconds stagger per agent + random jitter
+        const staggerDelay = position * (3000 + Math.random() * 3000);
+        totalDelay += staggerDelay;
+        console.log(
+          `${this.displayName}: @team detected, adding ${Math.round(staggerDelay)}ms stagger (position ${position})`
+        );
+      }
+
       // Wait for natural delay
-      console.log(`${this.displayName}: Waiting ${response.delayMs}ms before responding...`);
-      await this.sleep(response.delayMs);
+      console.log(`${this.displayName}: Waiting ${totalDelay}ms before responding...`);
+      await this.sleep(totalDelay);
 
       // Double-check another agent didn't respond while we were waiting
-      if (message.threadTs && !message.isDirectMention) {
+      // Skip this check for @team mentions since we want everyone to respond
+      if (message.threadTs && !message.isDirectMention && !message.isTeamMention) {
         const recentResponses = await getRecentThreadResponses(message.threadTs, 15);
         const otherAgentJustResponded = recentResponses.some((r) => r.agent !== this.name);
         if (otherAgentJustResponded) {
