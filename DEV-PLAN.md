@@ -38,14 +38,17 @@
 - [x] FAR lookup (semantic search + direct citation lookup via Supabase)
 
 ### API Assignments by Agent
-| Agent | APIs Wired Up | Use Case |
-|-------|---------------|----------|
-| Maya | SAM.gov opportunities, SerpAPI news | Scouts new opps, finds relevant news |
-| David | USASpending, SerpAPI news, FAR | Researches contracts, budgets, news intel, cites regulations |
-| Rosa | SAM.gov entity verification | Verifies potential partners |
-| James | FAR, USASpending | Strategic analysis, regulatory guidance |
-| Patricia | (none yet) | Tracks action items, manages workflow |
-| Jodie | (none yet) | Proposal writing, compliance matrices, executive summaries |
+| Agent | Live Tools | Use Case |
+|-------|------------|----------|
+| Maya | SAM.gov opportunities (search, details) | Scouts new opps, searches on demand |
+| David | USASpending (contracts, spending, incumbents), News, FAR | Researches contracts, budgets, news intel, cites regulations |
+| Rosa | SAM.gov entity (verify, certifications, partner search) | Verifies and finds potential partners |
+| James | FAR (lookup, search, part browse) | Strategic analysis, regulatory guidance |
+| Patricia | (none - uses pre-loaded context) | Tracks action items, manages workflow |
+| Jodie | (none - uses pre-loaded context) | Proposal writing, compliance matrices, executive summaries |
+| Marcus | (none - uses pre-loaded context) | Engineering lead, architecture, tech assessments |
+
+**Note**: Agents with live tools can search data sources mid-conversation. Agents without tools use pre-fetched context only.
 
 ### Agent Personalities (Distinct Voices)
 
@@ -254,6 +257,34 @@ Completely replaced competitor-focused scanning with topic-based intelligence:
 - [x] Tags appear in main post header when relevant topics found
 - [x] Files: `src/scripts/david-scanner.ts`
 
+**Live Tool Use for Agents** ✓ (NEW)
+Agents can now search data sources in real-time during conversation instead of relying only on pre-fetched context. This solves the "I don't have that data" problem—when David said "I can't scan for that" even though his scheduled jobs CAN scan.
+
+*Why this matters*: Pre-fetched context is static—loaded before Claude is called. If the user asks about something not pre-loaded, agents had no way to get it. Now they can call tools mid-conversation to fetch live data.
+
+Tools by agent:
+| Agent | Tools |
+|-------|-------|
+| Maya | `search_sam_opportunities`, `get_opportunity_details` |
+| David | `search_contracts`, `find_incumbent`, `get_vendor_history`, `get_agency_spending`, `get_agency_trend`, `search_contractor_spending`, `search_news`, `get_agency_news`, `search_competitor_news`, `lookup_far_section`, `search_far`, `get_far_part` |
+| Rosa | `verify_sam_registration`, `check_certification`, `find_partners_by_naics`, `search_sam_entities` |
+| James | `lookup_far_section`, `search_far`, `get_far_part` |
+
+Implementation:
+- [x] `src/tools/types.ts` - Tool type definitions (`AgentTool`, `ToolResult`)
+- [x] `src/tools/registry.ts` - Central registry with agent permissions
+- [x] `src/tools/executor.ts` - Executes tool calls with timeout handling
+- [x] `src/tools/definitions/*.tools.ts` - Tool definitions wrapping existing integrations
+- [x] `src/live/agent.ts` - Tool use loop in `generateResponse()` (max 3 iterations)
+- [x] Source citations tracked and merged with agent responses
+- [x] Tool descriptions injected into agent context so Claude knows what's available
+
+Example interaction:
+```
+User: "@David who's the incumbent on VA cloud services?"
+David: [calls find_incumbent tool] → gets live USASpending data → responds with citation
+```
+
 **USASpending API Fixes** ✓ (CRITICAL)
 - [x] Fixed field name: `toptier_name` → `name` (was causing 422 errors)
 - [x] Fixed `recipient_search_text`: string → array (API requirement)
@@ -358,6 +389,7 @@ Defensive programming to prevent edge cases and improve reliability:
 - ~~Confirmation regex false positives~~ - Fixed: word boundary regex prevents "Yesterday" matching "yes"
 - ~~Duplicate Notion entries~~ - Fixed: deduplication check before adding opportunities
 - ~~API hangs blocking all agents~~ - Fixed: 5-second timeout with graceful fallback
+- ~~Agents saying "I can't scan for that"~~ - Fixed: live tool use lets agents search data sources mid-conversation
 
 ---
 
