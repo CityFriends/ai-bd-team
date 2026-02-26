@@ -1284,7 +1284,7 @@ ${fileContext}
 ${teamActivityContext}
 ---
 
-MESSAGE from ${message.userName || 'team member'}:
+MESSAGE from ${message.userName || 'team member'}${message.isDirectMention ? ' (they @mentioned you directly — you MUST respond)' : ''}${message.isTeamMention ? ' (@team mention — everyone responds)' : ''}:
 "${message.text}"
 
 Respond as ${this.displayName}.`;
