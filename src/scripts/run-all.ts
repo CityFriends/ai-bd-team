@@ -44,10 +44,7 @@ async function runDavidNewsDigest() {
   await runNewsDigest();
 }
 
-async function runPatriciaStandup() {
-  const { runMorningCheckin } = await import('./patricia-checkin.js');
-  await runMorningCheckin();
-}
+// NOTE: Patricia standup handled by Railway cron (cron:patricia-standup) with distributed lock
 
 async function runActionScheduler() {
   const { checkAndExecuteActions } = await import('./action-scheduler.js');
@@ -140,16 +137,8 @@ async function main() {
     }
   });
 
-  // Patricia standup: 11:00 AM CST Mon-Fri (17:00 UTC)
-  cron.schedule('0 17 * * 1-5', async () => {
-    console.log(`[${new Date().toLocaleString()}] Patricia: Running standup...`);
-    try {
-      await runWithLogging('patricia-standup', runPatriciaStandup);
-      console.log(`[${new Date().toLocaleString()}] Patricia: Standup complete`);
-    } catch (err) {
-      console.error(`[${new Date().toLocaleString()}] Patricia: Standup failed:`, err);
-    }
-  });
+  // NOTE: Patricia standup is handled by Railway cron job (cron:patricia-standup)
+  // which uses distributed locking. Do NOT duplicate here.
 
   // Action Scheduler: Every 15 minutes check for agent commitments
   cron.schedule('*/15 * * * *', async () => {
@@ -209,11 +198,11 @@ async function main() {
   console.log('    - Maya scan: 8:00 AM CST Mon-Fri');
   console.log('    - Maya weekly: 8:30 AM CST Friday');
   console.log('    - David news: 10:00 AM CST Mon/Wed/Fri');
-  console.log('    - Patricia standup: 11:00 AM CST Mon-Fri');
+  console.log('    - Patricia standup: 11:00 AM CST Mon-Fri (Railway cron)');
   console.log('    - Action scheduler: Every 15 minutes');
   console.log('    - Stale event cleanup: Every 5 minutes');
   console.log('    - Pipeline health: Every 2 hours 9am-5pm CST Mon-Fri');
-  console.log('    - Patricia retrospective: First Monday of month 9am CST');
+  console.log('    - Patricia retrospective: First Monday of month 9am CST (Railway cron)');
   console.log('='.repeat(60));
 
   // Keep process alive
