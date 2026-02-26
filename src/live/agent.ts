@@ -718,15 +718,13 @@ export abstract class LiveAgent {
 
   // Main message handler
   async handleMessage(message: IncomingMessage): Promise<void> {
-    // Agent-to-agent cooldown: If another agent @mentioned us, check if we already responded recently
-    // This prevents response chains where agents keep tagging each other back and forth
+    // Agent-to-agent duplicate prevention: Only skip if we JUST responded (within 5 seconds)
+    // This prevents true duplicates but allows legitimate handoffs when agents @mention each other
     if (message.isDirectMention && message.isFromBot && message.threadTs) {
-      const recentResponses = await getRecentThreadResponses(message.threadTs, 60); // 60 second cooldown
+      const recentResponses = await getRecentThreadResponses(message.threadTs, 5); // 5 second window
       const alreadyRespondedRecently = recentResponses.some((r) => r.agent === this.name);
       if (alreadyRespondedRecently) {
-        console.log(
-          `${this.displayName}: Already responded in this thread recently, skipping agent mention`
-        );
+        console.log(`${this.displayName}: Just responded in this thread, skipping duplicate`);
         return;
       }
     }
