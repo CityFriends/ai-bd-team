@@ -27,6 +27,7 @@ import {
   type SlackFile,
 } from '../integrations/slack-files.js';
 import { createMemoryManager, type MemoryManager } from '../integrations/memory-manager.js';
+import { storeMemoryWithEmbedding, type AgentName, type MemoryType } from '../memory/index.js';
 import {
   buildHierarchicalContext,
   formatHierarchicalContext,
@@ -957,6 +958,16 @@ export abstract class LiveAgent {
         console.warn(`${this.displayName}: Fact extraction failed:`, err);
       });
 
+      // Store interaction memories for future recall (async, non-blocking)
+      this.storeInteractionMemory(
+        message.text,
+        response.text,
+        response.sources,
+        message.threadTs
+      ).catch((err) => {
+        console.warn(`${this.displayName}: Memory storage failed:`, err);
+      });
+
       // Check if we tagged another agent - create handoff
       const taggedAgent = detectAgentTag(response.text, AGENT_SLACK_IDS);
       if (taggedAgent && taggedAgent !== this.name && message.threadTs) {
@@ -985,6 +996,96 @@ export abstract class LiveAgent {
         );
       }
     }
+  }
+
+  // Store significant memories from this interaction for future recall
+  private async storeInteractionMemory(
+    userMessage: string,
+    agentResponse: string,
+    sources: string[],
+    threadTs?: string
+  ): Promise<void> {
+    const client = getAnthropic();
+
+    const prompt = `Analyze this exchange and determine if the agent learned something worth remembering:
+
+User: ${userMessage}
+Agent (${this.displayName}): ${agentResponse}
+Sources used: ${sources.length > 0 ? sources.join(', ') : 'None'}
+
+Should this be stored as a memory? Extract insights that would help future conversations.
+
+Return JSON:
+{
+  "shouldStore": boolean (true if there's something worth remembering),
+  "memories": [
+    {
+      "type": "insight|observation|decision|pattern|preference",
+      "content": "what was learned or observed",
+      "importance": 1-10 (10 being critical to remember),
+      "tags": ["relevant", "tags"]
+    }
+  ]
+}
+
+Guidelines:
+- Store: Key decisions, user preferences discovered, important patterns, significant findings
+- Skip: Routine responses, simple acknowledgments, no new information
+- Importance 7+: Business decisions, user preferences, important discoveries
+- Importance 4-6: Useful context, minor patterns
+- Importance 1-3: Routine observations (usually don't store these)`;
+
+    try {
+      const response = await client.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 400,
+        messages: [{ role: 'user', content: prompt }],
+      });
+
+      const textBlock = response.content.find((b) => b.type === 'text');
+      if (!textBlock || textBlock.type !== 'text') return;
+
+      const jsonMatch = textBlock.text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return;
+
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (!parsed.shouldStore || !parsed.memories || parsed.memories.length === 0) return;
+
+      // Store each memory with embedding
+      for (const memory of parsed.memories) {
+        // Only store memories with importance >= 4
+        if (memory.importance < 4) continue;
+
+        const memoryType = this.mapToMemoryType(memory.type);
+
+        await storeMemoryWithEmbedding(this.name as AgentName, memoryType, memory.content, {
+          importance: memory.importance,
+          tags: memory.tags || [],
+          relatedEventId: threadTs,
+        });
+
+        console.log(
+          `${this.displayName}: Stored memory (importance ${memory.importance}): "${memory.content.slice(0, 50)}..."`
+        );
+      }
+    } catch (err) {
+      // Memory extraction failed, that's okay - it's best-effort
+      console.warn(`${this.displayName}: Memory storage failed:`, err);
+    }
+  }
+
+  // Map extracted memory type to MemoryType enum
+  private mapToMemoryType(type: string): MemoryType {
+    const typeMap: Record<string, MemoryType> = {
+      insight: 'insight',
+      observation: 'observation',
+      decision: 'outcome', // decisions map to outcomes
+      pattern: 'insight',
+      preference: 'observation',
+      reflection: 'reflection',
+      conversation: 'conversation',
+    };
+    return typeMap[type.toLowerCase()] || 'observation';
   }
 
   // Extract facts from conversation and store with embeddings

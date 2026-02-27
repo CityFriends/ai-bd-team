@@ -5,7 +5,7 @@
  * agents to remember past experiences and form insights.
  */
 
-export type AgentName = 'maya' | 'david' | 'rosa' | 'james' | 'patricia' | 'marcus';
+export type AgentName = 'maya' | 'david' | 'rosa' | 'james' | 'patricia' | 'jodie' | 'marcus';
 
 export type MemoryType =
   | 'observation' // Something the agent noticed

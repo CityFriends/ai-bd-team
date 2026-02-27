@@ -8,6 +8,12 @@ import {
   searchDecisionPatterns,
   searchExtractedFacts,
 } from './semantic-search.js';
+import {
+  searchMemoriesBySimilarity,
+  getRecentMemories,
+  type AgentMemory,
+  type AgentName,
+} from '../memory/index.js';
 import type {
   UserContext,
   ConversationMemory,
@@ -44,6 +50,8 @@ export interface EpisodicMemory {
   decisionHistory: DecisionPattern[];
   // Relevant thread summaries
   relatedThreads: Array<{ threadTs: string; summary: string; relevance: number }>;
+  // Agent-specific memories from recent interactions
+  agentMemories: AgentMemory[];
 }
 
 export interface FullMemoryContext {
@@ -164,24 +172,37 @@ export class MemoryManager {
   ): Promise<EpisodicMemory> {
     if (useSemanticSearch) {
       // Use semantic search to find relevant past experiences
-      const [memoryResults, decisionResults] = await Promise.all([
+      // Include agent-specific memories from the agent_memories table
+      const [memoryResults, decisionResults, agentMemoryResults] = await Promise.all([
         searchConversationMemory(message, { threshold: 0.6, limit: 5 }),
         searchDecisionPatterns(message, { threshold: 0.6, limit: 5 }),
+        searchMemoriesBySimilarity(message, {
+          agent: this._agentName as AgentName,
+          minSimilarity: 0.65,
+          limit: 5,
+        }).catch(() => [] as AgentMemory[]), // Graceful fallback if embedding fails
       ]);
 
       return {
         pastExperiences: memoryResults.map((r) => r.data as ConversationMemory),
         decisionHistory: decisionResults.map((r) => r.data as DecisionPattern),
         relatedThreads: [], // Could be populated from thread_summaries
+        agentMemories: agentMemoryResults,
       };
     } else {
       // Fallback to keyword-based retrieval
       const context = await getConversationalContext();
 
+      // Still try to get recent agent memories even without semantic search
+      const recentMemories = await getRecentMemories(this._agentName as AgentName, 5).catch(
+        () => []
+      );
+
       return {
         pastExperiences: context.memories,
         decisionHistory: context.decisionPatterns,
         relatedThreads: [],
+        agentMemories: recentMemories,
       };
     }
   }
@@ -236,6 +257,18 @@ export class MemoryManager {
       memory.episodic.decisionHistory.forEach((dec) => {
         sections.push(`- ${dec.decision.toUpperCase()}: ${dec.reasoning || 'no reason given'}`);
         if (dec.agency) sections.push(`  Agency: ${dec.agency}`);
+      });
+    }
+
+    // Agent-specific memories (things this agent has learned/observed)
+    if (memory.episodic.agentMemories.length > 0) {
+      sections.push('\nYOUR PAST OBSERVATIONS & LEARNINGS:');
+      memory.episodic.agentMemories.forEach((mem) => {
+        const dateStr = new Date(mem.created_at).toLocaleDateString();
+        sections.push(`- [${dateStr}] ${mem.content}`);
+        if (mem.tags && mem.tags.length > 0) {
+          sections.push(`  Tags: ${mem.tags.join(', ')}`);
+        }
       });
     }
 

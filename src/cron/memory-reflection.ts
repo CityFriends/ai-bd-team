@@ -57,6 +57,8 @@ async function generateReflection(
     rosa: 'a partnerships specialist who evaluates teaming strategies and relationship opportunities',
     maya: 'an opportunity scout who discovers new federal contracts',
     patricia: 'a project manager who coordinates the team',
+    jodie:
+      'a proposal writer who drafts compliant, compelling responses to RFPs and helps with capture narratives',
   };
 
   const prompt = `You are ${agent}, ${agentContextMap[agent]}. Review your recent observations and identify patterns, insights, and recommendations.
