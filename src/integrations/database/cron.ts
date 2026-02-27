@@ -5,55 +5,102 @@ import { getSupabase } from './client.js';
 // Prevents duplicate runs when Railway has multiple replicas
 // ============================================
 
+const DEFAULT_RETRY_ATTEMPTS = 3;
+const RETRY_DELAY_MS = 1000;
+
+/**
+ * Sleep helper for retry delays
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Acquire a distributed lock for a cron job.
  * Returns true if lock acquired, false if another instance already has it.
  *
  * Uses a time-window based lock key to prevent duplicate runs within a window.
  * Default window is 5 minutes - jobs won't run twice within that window.
+ *
+ * FAIL-CLOSED: If lock system has errors, retries then fails (doesn't run job).
+ * This prevents duplicate runs when the database is slow or unavailable.
  */
 export async function acquireCronLock(
   jobName: string,
-  windowMinutes: number = 5
-): Promise<{ acquired: boolean; lockId?: string }> {
-  try {
-    // Create a lock key based on job name and time window
-    // e.g., "patricia-standup:2026-02-23T16:00" (rounded to 5-min window)
-    const now = new Date();
-    const windowMs = windowMinutes * 60 * 1000;
-    const windowStart = new Date(Math.floor(now.getTime() / windowMs) * windowMs);
-    const lockKey = `${jobName}:${windowStart.toISOString()}`;
+  windowMinutes: number = 5,
+  retryAttempts: number = DEFAULT_RETRY_ATTEMPTS
+): Promise<{ acquired: boolean; lockId?: string; error?: string }> {
+  // Create a lock key based on job name and time window
+  // e.g., "patricia-standup:2026-02-23T16:00" (rounded to 5-min window)
+  const now = new Date();
+  const windowMs = windowMinutes * 60 * 1000;
+  const windowStart = new Date(Math.floor(now.getTime() / windowMs) * windowMs);
+  const lockKey = `${jobName}:${windowStart.toISOString()}`;
 
-    // Try to insert the lock - will fail if duplicate
-    const { data, error } = await getSupabase()
-      .from('cron_locks')
-      .insert({
-        lock_key: lockKey,
-        job_name: jobName,
-        acquired_at: now.toISOString(),
-        expires_at: new Date(now.getTime() + windowMs).toISOString(),
-      })
-      .select('id')
-      .single();
+  for (let attempt = 1; attempt <= retryAttempts; attempt++) {
+    try {
+      // Try to insert the lock - will fail if duplicate
+      const { data, error } = await getSupabase()
+        .from('cron_locks')
+        .insert({
+          lock_key: lockKey,
+          job_name: jobName,
+          acquired_at: new Date().toISOString(),
+          expires_at: new Date(Date.now() + windowMs).toISOString(),
+        })
+        .select('id')
+        .single();
 
-    if (error) {
-      // Check if it's a duplicate key error
-      if (error.code === '23505') {
-        console.log(`[LOCK] ${jobName}: Another instance already running (lock: ${lockKey})`);
-        return { acquired: false };
+      if (error) {
+        // Check if it's a duplicate key error - another instance has the lock
+        if (error.code === '23505') {
+          console.log(`[LOCK] ${jobName}: Another instance already running (lock: ${lockKey})`);
+          return { acquired: false };
+        }
+
+        // Other database error - retry with backoff
+        console.warn(
+          `[LOCK] ${jobName}: Lock error (attempt ${attempt}/${retryAttempts}):`,
+          error.message
+        );
+
+        if (attempt < retryAttempts) {
+          await sleep(RETRY_DELAY_MS * attempt); // Exponential backoff
+          continue;
+        }
+
+        // All retries exhausted - FAIL CLOSED (don't run the job)
+        console.error(
+          `[LOCK] ${jobName}: Lock system failed after ${retryAttempts} attempts - NOT running job`
+        );
+        return { acquired: false, error: `Lock system error: ${error.message}` };
       }
-      // Other error - log but allow job to proceed (fail open)
-      console.warn(`[LOCK] ${jobName}: Lock error (proceeding anyway):`, error.message);
-      return { acquired: true };
-    }
 
-    console.log(`[LOCK] ${jobName}: Lock acquired (${lockKey})`);
-    return { acquired: true, lockId: data.id };
-  } catch (err) {
-    // On any error, fail open - allow job to run
-    console.warn(`[LOCK] ${jobName}: Lock system error (proceeding anyway):`, err);
-    return { acquired: true };
+      console.log(`[LOCK] ${jobName}: Lock acquired (${lockKey})`);
+      return { acquired: true, lockId: data.id };
+    } catch (err) {
+      // Exception during lock acquisition - retry
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `[LOCK] ${jobName}: Lock exception (attempt ${attempt}/${retryAttempts}):`,
+        errorMsg
+      );
+
+      if (attempt < retryAttempts) {
+        await sleep(RETRY_DELAY_MS * attempt);
+        continue;
+      }
+
+      // All retries exhausted - FAIL CLOSED
+      console.error(
+        `[LOCK] ${jobName}: Lock system failed after ${retryAttempts} attempts - NOT running job`
+      );
+      return { acquired: false, error: `Lock system exception: ${errorMsg}` };
+    }
   }
+
+  // Should not reach here, but fail closed just in case
+  return { acquired: false, error: 'Lock acquisition failed unexpectedly' };
 }
 
 /**

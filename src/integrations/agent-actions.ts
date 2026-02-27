@@ -10,6 +10,10 @@
 
 import { getSupabase } from './supabase.js';
 import { getAnthropic } from './claude.js';
+import { toZonedTime, fromZonedTime } from 'date-fns-tz';
+
+// Team timezone - configurable via env var
+const TEAM_TIMEZONE = process.env.TEAM_TIMEZONE || 'America/Chicago';
 
 export interface AgentAction {
   id?: string;
@@ -201,20 +205,21 @@ export async function getAgentPendingActions(agentName: string): Promise<AgentAc
 
 /**
  * Parse natural language time references to actual dates
- * All times are interpreted as CST (UTC-6) and converted to UTC for storage
+ * All times are interpreted in the team's timezone and converted to UTC for storage
+ * Uses date-fns-tz for proper DST handling
  */
 export function parseScheduleTime(timeRef: string): Date {
   const now = new Date();
   const lower = timeRef.toLowerCase();
 
-  // CST offset: UTC-6 (6 hours behind UTC)
-  // To schedule for 10 AM CST, we set UTC hours to 16 (10 + 6)
-  const CST_OFFSET = 6;
-
-  // Helper to set time in CST
-  const setHoursCST = (date: Date, cstHours: number, minutes = 0): void => {
-    const utcHours = cstHours + CST_OFFSET;
-    date.setUTCHours(utcHours, minutes, 0, 0);
+  // Helper to create a date in team timezone and convert to UTC
+  const createInTimezone = (baseDate: Date, hours: number, minutes = 0): Date => {
+    // Get the date in team timezone
+    const zonedDate = toZonedTime(baseDate, TEAM_TIMEZONE);
+    // Set the hours/minutes in that timezone
+    zonedDate.setHours(hours, minutes, 0, 0);
+    // Convert back to UTC for storage
+    return fromZonedTime(zonedDate, TEAM_TIMEZONE);
   };
 
   // Handle relative times (these work correctly since they're relative to now)
@@ -228,22 +233,21 @@ export function parseScheduleTime(timeRef: string): Date {
     return new Date(now.getTime() + 2 * 60 * 60 * 1000);
   }
   if (lower.includes('later today') || lower.includes('this afternoon')) {
-    const afternoon = new Date(now);
-    setHoursCST(afternoon, 14); // 2 PM CST
-    if (afternoon <= now) setHoursCST(afternoon, 16); // 4 PM CST
+    let afternoon = createInTimezone(now, 14); // 2 PM team timezone
+    if (afternoon <= now) {
+      afternoon = createInTimezone(now, 16); // 4 PM team timezone
+    }
     return afternoon;
   }
   if (lower.includes('tomorrow')) {
     const tomorrow = new Date(now);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    setHoursCST(tomorrow, 10); // 10 AM CST
-    return tomorrow;
+    return createInTimezone(tomorrow, 10); // 10 AM team timezone
   }
   if (lower.includes('next week')) {
     const nextWeek = new Date(now);
     nextWeek.setDate(nextWeek.getDate() + 7);
-    setHoursCST(nextWeek, 10); // 10 AM CST
-    return nextWeek;
+    return createInTimezone(nextWeek, 10); // 10 AM team timezone
   }
 
   // Handle day names
@@ -255,12 +259,11 @@ export function parseScheduleTime(timeRef: string): Date {
       let daysUntil = i - currentDay;
       if (daysUntil <= 0) daysUntil += 7;
       target.setDate(target.getDate() + daysUntil);
-      setHoursCST(target, 10); // 10 AM CST
-      return target;
+      return createInTimezone(target, 10); // 10 AM team timezone
     }
   }
 
-  // Handle specific times (interpreted as CST)
+  // Handle specific times (interpreted in team timezone)
   const timeMatch = lower.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/);
   if (timeMatch) {
     let hours = parseInt(timeMatch[1]);
@@ -270,12 +273,13 @@ export function parseScheduleTime(timeRef: string): Date {
     if (period === 'pm' && hours < 12) hours += 12;
     if (period === 'am' && hours === 12) hours = 0;
 
-    const scheduled = new Date(now);
-    setHoursCST(scheduled, hours, minutes);
+    let scheduled = createInTimezone(now, hours, minutes);
 
     // If time already passed today, schedule for tomorrow
     if (scheduled <= now) {
-      scheduled.setDate(scheduled.getDate() + 1);
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      scheduled = createInTimezone(tomorrow, hours, minutes);
     }
 
     return scheduled;

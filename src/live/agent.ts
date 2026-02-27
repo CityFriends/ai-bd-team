@@ -72,7 +72,7 @@ import type {
   SlackFileAttachment,
 } from './types.js';
 
-// Agent Slack IDs for handoffs
+// Agent Slack IDs for handoffs and identity verification
 const AGENT_SLACK_IDS: Record<string, LiveAgentName> = {
   U0AC3RA4JVB: 'maya',
   U0AC0SVD3MH: 'david',
@@ -82,6 +82,78 @@ const AGENT_SLACK_IDS: Record<string, LiveAgentName> = {
   U0ACP8LKFB3: 'jodie',
   U0ADSL3DL95: 'marcus',
 };
+
+// All agent names for identity checking
+const ALL_AGENT_NAMES: LiveAgentName[] = [
+  'maya',
+  'david',
+  'rosa',
+  'james',
+  'patricia',
+  'jodie',
+  'marcus',
+];
+
+/**
+ * Identity enforcement: Check if a response contains another agent's identity claim
+ * Returns the corrected response if leakage detected, or null if clean
+ */
+function detectIdentityLeakage(
+  response: string,
+  correctAgentName: LiveAgentName
+): { corrected: string; leaked: string } | null {
+  const correctDisplayName = correctAgentName.charAt(0).toUpperCase() + correctAgentName.slice(1);
+
+  // Patterns that indicate identity confusion
+  const identityPatterns = ALL_AGENT_NAMES.filter((name) => name !== correctAgentName).flatMap(
+    (wrongName) => {
+      const displayName = wrongName.charAt(0).toUpperCase() + wrongName.slice(1);
+      return [
+        // "David here" or "This is David"
+        new RegExp(`\\b${displayName}\\s+here\\b`, 'gi'),
+        new RegExp(`\\bThis\\s+is\\s+${displayName}\\b`, 'gi'),
+        new RegExp(`\\bIt's\\s+${displayName}\\b`, 'gi'),
+        new RegExp(`\\bI'm\\s+${displayName}\\b`, 'gi'),
+        // Starting with just the name as greeting
+        new RegExp(`^${displayName}[,:.!]\\s`, 'i'),
+      ];
+    }
+  );
+
+  for (const pattern of identityPatterns) {
+    if (pattern.test(response)) {
+      const match = response.match(pattern);
+      if (match) {
+        // Replace wrong identity with correct one
+        let corrected = response;
+
+        // Replace patterns one by one
+        for (const wrongName of ALL_AGENT_NAMES.filter((n) => n !== correctAgentName)) {
+          const wrongDisplay = wrongName.charAt(0).toUpperCase() + wrongName.slice(1);
+          corrected = corrected
+            .replace(
+              new RegExp(`\\b${wrongDisplay}\\s+here\\b`, 'gi'),
+              `${correctDisplayName} here`
+            )
+            .replace(
+              new RegExp(`\\bThis\\s+is\\s+${wrongDisplay}\\b`, 'gi'),
+              `This is ${correctDisplayName}`
+            )
+            .replace(
+              new RegExp(`\\bIt's\\s+${wrongDisplay}\\b`, 'gi'),
+              `It's ${correctDisplayName}`
+            )
+            .replace(new RegExp(`\\bI'm\\s+${wrongDisplay}\\b`, 'gi'), `I'm ${correctDisplayName}`)
+            .replace(new RegExp(`^${wrongDisplay}([,:.!])\\s`, 'i'), `${correctDisplayName}$1 `);
+        }
+
+        return { corrected, leaked: match[0] };
+      }
+    }
+  }
+
+  return null;
+}
 
 export abstract class LiveAgent {
   abstract name: LiveAgentName;
@@ -130,6 +202,22 @@ export abstract class LiveAgent {
     const authResult = await this.app.client.auth.test();
     this.slackUserId = authResult.user_id as string;
     console.log(`${this.displayName}: Connected as <@${this.slackUserId}>`);
+
+    // IDENTITY VERIFICATION: Ensure this bot's Slack ID matches expected agent
+    const expectedAgent = AGENT_SLACK_IDS[this.slackUserId];
+    if (expectedAgent && expectedAgent !== this.name) {
+      console.error(
+        `[IDENTITY ERROR] ${this.displayName}: Slack ID ${this.slackUserId} is registered to '${expectedAgent}', not '${this.name}'`
+      );
+      throw new Error(
+        `Identity mismatch: Bot token for ${this.displayName} returned Slack ID registered to ${expectedAgent}`
+      );
+    }
+    if (!expectedAgent) {
+      console.warn(
+        `[IDENTITY WARNING] ${this.displayName}: Slack ID ${this.slackUserId} not found in AGENT_SLACK_IDS mapping - consider adding it`
+      );
+    }
 
     // Initialize memory manager with agent name
     this.memoryManager = createMemoryManager(this.name);
@@ -1724,10 +1812,20 @@ REMINDER: You are ${this.displayName}. Respond as ${this.displayName} — NOT as
   async postMessage(text: string, threadTs?: string): Promise<{ ts: string } | null> {
     if (!this.app) return null;
 
+    // IDENTITY ENFORCEMENT: Check for and correct identity leakage
+    let finalText = text;
+    const leakage = detectIdentityLeakage(text, this.name);
+    if (leakage) {
+      console.warn(
+        `[IDENTITY CORRECTION] ${this.displayName}: Detected identity leakage "${leakage.leaked}" - correcting`
+      );
+      finalText = leakage.corrected;
+    }
+
     try {
       const result = await this.app.client.chat.postMessage({
         channel: this.channelId,
-        text,
+        text: finalText,
         thread_ts: threadTs,
         unfurl_links: false,
         unfurl_media: false,
