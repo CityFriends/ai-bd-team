@@ -17,12 +17,13 @@ import { newsSearchTools } from './definitions/news-search.tools.js';
 import { farSearchTools } from './definitions/far-search.tools.js';
 import { samEntityTools } from './definitions/sam-entity.tools.js';
 import { proposalTools } from './definitions/proposal.tools.js';
+import { githubTools } from './definitions/github.tools.js';
 
 /**
  * All registered tools
  */
 const ALL_TOOLS: AgentTool[] = [
-  // SAM.gov opportunity tools (Maya)
+  // SAM.gov opportunity tools (Maya, Marcus)
   ...samGovTools,
 
   // Contract data tools (David)
@@ -42,6 +43,9 @@ const ALL_TOOLS: AgentTool[] = [
 
   // Proposal tools (Jodie)
   ...proposalTools,
+
+  // GitHub tools (Marcus)
+  ...githubTools,
 ];
 
 /**

@@ -119,7 +119,7 @@ export const getOpportunityDetailsTool: AgentTool = {
   definition: {
     name: 'get_opportunity_details',
     description:
-      'Get full details for a specific SAM.gov opportunity by its Notice ID. Use when someone asks about a specific opportunity or shares a notice ID.',
+      'Get full details for a specific SAM.gov opportunity by its Notice ID. Use when someone asks about a specific opportunity or shares a notice ID. Returns the full description, requirements, set-aside info, and contact details.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -131,7 +131,7 @@ export const getOpportunityDetailsTool: AgentTool = {
       required: ['noticeId'],
     },
   },
-  allowedAgents: ['maya'],
+  allowedAgents: ['maya', 'marcus'],
   sourceName: 'SAM.gov',
   execute: async (params) => {
     try {

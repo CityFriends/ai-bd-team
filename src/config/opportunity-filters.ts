@@ -221,6 +221,27 @@ export const OPPORTUNITY_FILTERS = {
   // HARD EXCLUDE - If ANY of these appear, score = 0, skip entirely
   // These are fundamentally not our work
   hardExcludeKeywords: [
+    // Non-competitive / Already Decided (no point pursuing)
+    'bridge contract',
+    'sole source',
+    'sole-source',
+    'j&a',
+    'justification and approval',
+    'justification & approval',
+    'limited sources',
+    'brand name only',
+    'only one responsible source',
+    'one responsible source',
+    'directed award',
+    'incumbent only',
+    'follow-on contract',
+    'extension of existing',
+    'contract modification',
+    'option exercise',
+    'task order under',
+    'delivery order under',
+    'blanket purchase agreement',
+
     // COTS Implementation (buying/configuring products, not custom work)
     'cots implementation',
     'cots solution',
@@ -340,11 +361,10 @@ export const OPPORTUNITY_FILTERS = {
 
   // SOFT EXCLUDE - Reduce score but don't auto-skip
   excludeKeywords: [
-    // Award notices (not actionable)
+    // Award notices (not actionable) - Note: sole source moved to hard exclude
     'award notice',
     'contract award',
     'intent to award',
-    'sole source award',
     // Red flags that reduce fit
     'sysadmin',
     'system administrator',
