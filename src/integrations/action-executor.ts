@@ -276,6 +276,7 @@ Your follow-up:`;
     const result = await app.client.chat.postMessage({
       channel: CHANNEL_ID,
       text: `📋 *Follow-up:* ${action.description}\n\n${message}`,
+      thread_ts: action.source_thread_ts, // Post in original thread if available
     });
 
     return { success: true, message, threadTs: result.ts };
@@ -305,6 +306,7 @@ async function executeWatchOpportunity(
     const result = await mayaApp.client.chat.postMessage({
       channel: CHANNEL_ID,
       text: message,
+      thread_ts: action.source_thread_ts, // Post in original thread if available
     });
 
     return { success: true, message: 'Watch check completed', threadTs: result.ts };
@@ -356,6 +358,7 @@ Be honest and direct. Use your dry humor if appropriate.`;
     const result = await davidApp.client.chat.postMessage({
       channel: CHANNEL_ID,
       text: `📊 *Research Update:* ${action.description}\n\n${researchUpdate}`,
+      thread_ts: action.source_thread_ts, // Post in original thread if available
     });
 
     return { success: true, message: researchUpdate, threadTs: result.ts };
@@ -408,6 +411,7 @@ Be honest - if you can't actually access a codebase or system, say so. Don't inv
     const result = await marcusApp.client.chat.postMessage({
       channel: CHANNEL_ID,
       text: `🔧 *Technical Review:* ${action.description}\n\n${update}`,
+      thread_ts: action.source_thread_ts, // Post in original thread if available
     });
 
     return { success: true, message: update, threadTs: result.ts };

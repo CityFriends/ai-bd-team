@@ -201,12 +201,23 @@ export async function getAgentPendingActions(agentName: string): Promise<AgentAc
 
 /**
  * Parse natural language time references to actual dates
+ * All times are interpreted as CST (UTC-6) and converted to UTC for storage
  */
 export function parseScheduleTime(timeRef: string): Date {
   const now = new Date();
   const lower = timeRef.toLowerCase();
 
-  // Handle relative times
+  // CST offset: UTC-6 (6 hours behind UTC)
+  // To schedule for 10 AM CST, we set UTC hours to 16 (10 + 6)
+  const CST_OFFSET = 6;
+
+  // Helper to set time in CST
+  const setHoursCST = (date: Date, cstHours: number, minutes = 0): void => {
+    const utcHours = cstHours + CST_OFFSET;
+    date.setUTCHours(utcHours, minutes, 0, 0);
+  };
+
+  // Handle relative times (these work correctly since they're relative to now)
   if (lower.includes('in 30 min') || lower.includes('in half an hour')) {
     return new Date(now.getTime() + 30 * 60 * 1000);
   }
@@ -218,20 +229,20 @@ export function parseScheduleTime(timeRef: string): Date {
   }
   if (lower.includes('later today') || lower.includes('this afternoon')) {
     const afternoon = new Date(now);
-    afternoon.setHours(14, 0, 0, 0);
-    if (afternoon <= now) afternoon.setHours(16, 0, 0, 0);
+    setHoursCST(afternoon, 14); // 2 PM CST
+    if (afternoon <= now) setHoursCST(afternoon, 16); // 4 PM CST
     return afternoon;
   }
   if (lower.includes('tomorrow')) {
     const tomorrow = new Date(now);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(10, 0, 0, 0);
+    setHoursCST(tomorrow, 10); // 10 AM CST
     return tomorrow;
   }
   if (lower.includes('next week')) {
     const nextWeek = new Date(now);
     nextWeek.setDate(nextWeek.getDate() + 7);
-    nextWeek.setHours(10, 0, 0, 0);
+    setHoursCST(nextWeek, 10); // 10 AM CST
     return nextWeek;
   }
 
@@ -244,12 +255,12 @@ export function parseScheduleTime(timeRef: string): Date {
       let daysUntil = i - currentDay;
       if (daysUntil <= 0) daysUntil += 7;
       target.setDate(target.getDate() + daysUntil);
-      target.setHours(10, 0, 0, 0);
+      setHoursCST(target, 10); // 10 AM CST
       return target;
     }
   }
 
-  // Handle specific times
+  // Handle specific times (interpreted as CST)
   const timeMatch = lower.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/);
   if (timeMatch) {
     let hours = parseInt(timeMatch[1]);
@@ -260,7 +271,7 @@ export function parseScheduleTime(timeRef: string): Date {
     if (period === 'am' && hours === 12) hours = 0;
 
     const scheduled = new Date(now);
-    scheduled.setHours(hours, minutes, 0, 0);
+    setHoursCST(scheduled, hours, minutes);
 
     // If time already passed today, schedule for tomorrow
     if (scheduled <= now) {
