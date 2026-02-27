@@ -68,6 +68,8 @@
     "workflow:schedule": "tsx src/coordination/workflow-processor.ts --schedule",
     "workflow:summary": "tsx src/coordination/workflow-processor.ts --summary",
     "workflow:learning": "tsx src/coordination/workflow-processor.ts --learning",
+    "workflow:timeouts": "tsx src/cron/workflow-timeouts.ts",
+    "workflow:timeouts:schedule": "tsx src/cron/workflow-timeouts.ts --schedule",
     "full-system-test": "tsx src/scripts/full-system-test.ts",
     "start:prod": "tsx src/scripts/run-all.ts",
     "cron:maya-daily": "tsx src/cron/maya-daily.ts",
