@@ -28,6 +28,7 @@ import {
 } from '../integrations/slack-files.js';
 import { createMemoryManager, type MemoryManager } from '../integrations/memory-manager.js';
 import { storeMemoryWithEmbedding, type AgentName, type MemoryType } from '../memory/index.js';
+import { getDashboardData, formatDashboardForSlack } from '../dashboard/index.js';
 import {
   buildHierarchicalContext,
   formatHierarchicalContext,
@@ -80,7 +81,7 @@ const AGENT_SLACK_IDS: Record<string, LiveAgentName> = {
   U0ACASZ36BW: 'rosa',
   U0AC582GXBQ: 'james',
   U0AC79NTDAN: 'patricia',
-  U0ACP8LKFB3: 'jodie',
+  U0AHG13N23W: 'jodie',
   U0ADSL3DL95: 'marcus',
 };
 
@@ -604,7 +605,7 @@ export abstract class LiveAgent {
               'final call',
               'worth pursuing',
             ],
-            patricia: [], // Patricia handled above
+            patricia: ['status', 'dashboard', 'system health', 'how are we doing', 'system status'],
             marcus: [
               'github',
               'repo',
@@ -1660,6 +1661,35 @@ REMINDER: You are ${this.displayName}. Respond as ${this.displayName} — NOT as
       console.warn(`${this.displayName}: Shared context failed:`, err);
     }
 
+    // For Patricia: Check if this is a status/dashboard request and include system health
+    let dashboardContext = '';
+    if (this.name === 'patricia') {
+      const statusKeywords = [
+        'status',
+        'dashboard',
+        'system health',
+        'how are we doing',
+        'system status',
+        'health check',
+      ];
+      const isStatusRequest = statusKeywords.some((kw) => message.text.toLowerCase().includes(kw));
+
+      if (isStatusRequest) {
+        try {
+          console.log(`${this.displayName}: Status request detected, gathering dashboard data...`);
+          const dashboardData = await getDashboardData();
+          const dashboardFormatted = formatDashboardForSlack(dashboardData);
+          dashboardContext = `\n\n📊 SYSTEM DASHBOARD (current status):\n${dashboardFormatted}\n\nUse this data to give the user a comprehensive status update. Summarize the key metrics and highlight any issues.`;
+          console.log(
+            `${this.displayName}: Dashboard data loaded (${dashboardData.workflows.active} active workflows, ${dashboardData.health.status} health)`
+          );
+        } catch (err) {
+          console.warn(`${this.displayName}: Dashboard data failed:`, err);
+          dashboardContext = '\n\n⚠️ Could not load system dashboard data.\n';
+        }
+      }
+    }
+
     // Get tool descriptions for this agent (if any)
     const toolContext = formatToolDescriptionsForAgent(this.name);
     const agentTools = getToolsForAgent(this.name);
@@ -1672,6 +1702,11 @@ REMINDER: You are ${this.displayName}. Respond as ${this.displayName} — NOT as
     }
 
     // Build compact operational context (goes in user message)
+    // For Patricia, append dashboard context to shared context when available
+    const enrichedSharedContext = dashboardContext
+      ? sharedContext + dashboardContext
+      : sharedContext;
+
     const operationalContext = this.buildOperationalContext(
       message,
       mood,
@@ -1685,7 +1720,7 @@ REMINDER: You are ${this.displayName}. Respond as ${this.displayName} — NOT as
       fileContext,
       userProfileContext,
       teamActivityContext,
-      sharedContext,
+      enrichedSharedContext,
       toolContext
     );
 

@@ -13,6 +13,9 @@ import { rosaHandlers } from './rosa.handlers.js';
 import { jamesHandlers } from './james.handlers.js';
 import { patriciaHandlers } from './patricia.handlers.js';
 
+// Import system handlers (non-agent)
+import { workflowHandlers } from './workflow-auto-create.js';
+
 // ============================================================
 // Handler Registry
 // ============================================================
@@ -82,4 +85,13 @@ export {
   rosaHandlers,
   jamesHandlers,
   patriciaHandlers,
+  workflowHandlers,
 };
+
+/**
+ * Get system-level handlers (not agent-specific)
+ * These handle events that need system-wide processing
+ */
+export function getSystemHandlers(): AgentHandlerMap {
+  return workflowHandlers;
+}

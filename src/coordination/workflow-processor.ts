@@ -38,6 +38,12 @@ import {
 import { autoResearchOpportunity } from '../scripts/david-scanner.js';
 import { getAnthropic } from '../integrations/claude.js';
 import { loadCompanyContext, formatCompanyContextForPrompt } from '../context/company-context.js';
+import {
+  createWorkflowInstance,
+  transitionWorkflow,
+  getWorkflowByReference,
+  type WorkflowState,
+} from '../workflows/index.js';
 
 const CHANNEL_ID = process.env.SLACK_CHANNEL_ID || '';
 
@@ -56,6 +62,84 @@ const AUTO_EXECUTE_THRESHOLDS = {
   PASS_SCORE_MAX: 55, // Below 55 to auto-execute PASS
   PASS_RED_FLAGS_MIN: 2, // At least 2 red flags for auto-PASS
 };
+
+// Map old stage names to new workflow states
+const STAGE_TO_STATE: Record<string, WorkflowState> = {
+  found: 'found',
+  researching: 'researching',
+  partner_search: 'partner_search',
+  strategy: 'strategy',
+  decision: 'decision_pending',
+  pursuing: 'pursuing',
+  passed: 'passed',
+};
+
+/**
+ * Ensure a workflow instance exists for this opportunity
+ * Creates one if it doesn't exist, returns the instance ID
+ */
+async function ensureWorkflowInstance(workflow: OpportunityWorkflow): Promise<string | null> {
+  // Check if instance already exists
+  const existing = await getWorkflowByReference(workflow.notice_id, 'opportunity_pursuit');
+  if (existing) {
+    return existing.id;
+  }
+
+  // Create new instance
+  const instance = await createWorkflowInstance({
+    workflowType: 'opportunity_pursuit',
+    referenceId: workflow.notice_id,
+    referenceTitle: workflow.title,
+    channelId: CHANNEL_ID,
+    threadTs: workflow.thread_ts || undefined,
+    priority:
+      workflow.score && workflow.score >= 85 ? 2 : workflow.score && workflow.score >= 70 ? 3 : 5,
+    metadata: {
+      agency: workflow.agency,
+      score: workflow.score,
+      incumbent: workflow.incumbent,
+    },
+  });
+
+  if (instance) {
+    console.log(`  → Created workflow instance: ${instance.id}`);
+    return instance.id;
+  }
+
+  return null;
+}
+
+/**
+ * Sync state transition to the workflow instance system
+ */
+async function syncWorkflowTransition(
+  workflow: OpportunityWorkflow,
+  toStage: string,
+  agent?: string
+): Promise<void> {
+  const instance = await getWorkflowByReference(workflow.notice_id, 'opportunity_pursuit');
+  if (!instance) {
+    // Create instance if it doesn't exist
+    await ensureWorkflowInstance(workflow);
+    return;
+  }
+
+  const toState = STAGE_TO_STATE[toStage];
+  if (!toState) {
+    console.warn(`  → Unknown stage for workflow sync: ${toStage}`);
+    return;
+  }
+
+  await transitionWorkflow({
+    instanceId: instance.id,
+    toState,
+    triggeredBy: 'auto',
+    agent: agent as any,
+    notes: `Synced from workflow processor`,
+  });
+
+  console.log(`  → Synced workflow instance to state: ${toState}`);
+}
 
 // Get agent Slack apps
 async function getAgentApp(agent: 'rosa' | 'james' | 'patricia'): Promise<App | null> {
@@ -126,6 +210,9 @@ async function processWorkflow(workflow: OpportunityWorkflow): Promise<void> {
   console.log(`  Current stage: ${workflow.stage}`);
   console.log(`  Notice ID: ${workflow.notice_id}`);
 
+  // Ensure workflow instance exists for SLA tracking
+  await ensureWorkflowInstance(workflow);
+
   switch (workflow.stage) {
     case 'found':
       await triggerDavidResearch(workflow);
@@ -184,6 +271,9 @@ async function triggerDavidResearch(workflow: OpportunityWorkflow): Promise<void
       );
     }
 
+    // Sync to workflow instance system for SLA tracking
+    await syncWorkflowTransition(workflow, 'researching', 'david');
+
     await logTeamActivity({
       thread_ts: workflow.thread_ts || '',
       notice_id: workflow.notice_id,
@@ -225,6 +315,9 @@ async function checkTeamingNeed(workflow: OpportunityWorkflow): Promise<void> {
         'Teaming not needed, proceeding to synthesis'
       );
     }
+
+    // Sync to workflow instance system
+    await syncWorkflowTransition(workflow, 'partner_search');
   }
 }
 
@@ -324,6 +417,9 @@ End with: "Let me know if you want me to identify specific companies to consider
         'Teaming recommended'
       );
     }
+
+    // Sync to workflow instance system
+    await syncWorkflowTransition(workflow, 'partner_search', 'rosa');
 
     await logTeamActivity({
       thread_ts: workflow.thread_ts || '',
@@ -484,6 +580,9 @@ Keep it under 250 words. Be decisive.`;
       );
     }
 
+    // Sync to workflow instance system
+    await syncWorkflowTransition(workflow, 'strategy', 'james');
+
     // Record for learning
     await recordDecisionOutcome({
       notice_id: workflow.notice_id,
@@ -569,6 +668,9 @@ async function checkOverrideWindow(workflow: OpportunityWorkflow): Promise<void>
         `Auto-executed: ${decision.toUpperCase()}`
       );
     }
+
+    // Sync to workflow instance system
+    await syncWorkflowTransition(workflow, decision === 'go' ? 'pursuing' : 'passed', 'patricia');
 
     // Post notification
     const app = await getAgentApp('patricia');

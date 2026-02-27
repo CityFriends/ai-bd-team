@@ -120,6 +120,82 @@ async function runPatriciaRetrospective() {
   }
 }
 
+// Patricia's daily health summary
+async function runPatriciaHealthSummary() {
+  const { cronHealthSummary } = await import('./patricia-health-summary.js');
+  await cronHealthSummary();
+}
+
+// Memory reflection job (weekly synthesis of agent observations)
+async function runMemoryReflection() {
+  const { cronMemoryReflection } = await import('../cron/memory-reflection.js');
+  await cronMemoryReflection();
+}
+
+// System event processor for workflow auto-creation
+async function runSystemEventProcessor() {
+  const { acquireCronLock, releaseCronLock } = await import('../integrations/database/cron.js');
+  const lock = await acquireCronLock('system-event-processor', 2);
+  if (!lock.acquired) {
+    return; // Another instance is processing
+  }
+
+  try {
+    const { claimEvents, completeEvent, publishChainEvent, EventTypes } =
+      await import('../events/index.js');
+    const { getSystemHandlers } = await import('../events/handlers/index.js');
+
+    const handlers = getSystemHandlers();
+    const handledTypes = Array.from(handlers.keys());
+
+    // Claim events that have system handlers
+    // Using 'maya' as the claimer since system is processing opportunity events
+    const allEvents = await claimEvents('maya', 5);
+    const events = allEvents.filter((e) =>
+      handledTypes.includes(e.event_type as typeof EventTypes.NEW_OPPORTUNITY)
+    );
+
+    for (const event of events) {
+      const handler = handlers.get(event.event_type as typeof EventTypes.NEW_OPPORTUNITY);
+      if (handler) {
+        try {
+          // Build context for the handler
+          const context = {
+            event,
+            agent: 'maya' as const,
+            publishChainEvent: async (
+              eventType: any,
+              payload: Record<string, unknown>,
+              priority?: number,
+              targetAgent?: any
+            ) => publishChainEvent(eventType, 'maya', payload, event, priority, targetAgent),
+          };
+
+          const result = await handler(context);
+
+          await completeEvent({
+            eventId: event.id,
+            success: result.success,
+            result: result.result,
+            error: result.error,
+          });
+        } catch (err) {
+          console.error(`[SYSTEM] Event handler failed:`, err);
+          await completeEvent({
+            eventId: event.id,
+            success: false,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    }
+  } finally {
+    if (lock.lockId) {
+      await releaseCronLock(lock.lockId);
+    }
+  }
+}
+
 async function main() {
   console.log('='.repeat(60));
   console.log('  AI BD Team - Starting All Services');
@@ -254,6 +330,37 @@ async function main() {
     }
   });
 
+  // Patricia's daily health summary: 9:00 AM CST Mon-Fri (15:00 UTC)
+  cron.schedule('0 15 * * 1-5', async () => {
+    console.log(`[${new Date().toLocaleString()}] Patricia: Running health summary...`);
+    try {
+      await runWithLogging('patricia-health-summary', runPatriciaHealthSummary);
+      console.log(`[${new Date().toLocaleString()}] Patricia: Health summary complete`);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Patricia: Health summary failed:`, err);
+    }
+  });
+
+  // Memory reflection: Sundays at 2am CST (08:00 UTC) - off-hours processing
+  cron.schedule('0 8 * * 0', async () => {
+    console.log(`[${new Date().toLocaleString()}] Memory: Running weekly reflection...`);
+    try {
+      await runWithLogging('memory-reflection', runMemoryReflection);
+      console.log(`[${new Date().toLocaleString()}] Memory: Weekly reflection complete`);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Memory: Weekly reflection failed:`, err);
+    }
+  });
+
+  // System event processor: Every minute (for fast workflow creation)
+  cron.schedule('* * * * *', async () => {
+    try {
+      await runSystemEventProcessor();
+    } catch (err) {
+      // Silent fail - this runs frequently
+    }
+  });
+
   console.log('  ✓ Scheduled jobs configured\n');
 
   console.log('='.repeat(60));
@@ -265,11 +372,14 @@ async function main() {
   console.log('    - Maya weekly summary: 8:30 AM Friday');
   console.log('    - David news digest: 10:00 AM Mon/Wed/Fri');
   console.log('    - Patricia standup: 11:00 AM Mon-Fri');
-  console.log('  Other Jobs:');
+  console.log('    - Patricia health summary: 9:00 AM Mon-Fri');
+  console.log('  System Jobs:');
   console.log('    - Action scheduler: Every 15 minutes');
   console.log('    - Workflow timeouts: Every 5 minutes');
+  console.log('    - Workflow auto-create: Every minute');
   console.log('    - Stale event cleanup: Every 5 minutes');
   console.log('    - Pipeline health: Every 2 hours 9am-5pm Mon-Fri');
+  console.log('    - Memory reflection: Sundays 2am');
   console.log('    - Patricia retrospective: First Monday of month 9am');
   console.log('='.repeat(60));
 
