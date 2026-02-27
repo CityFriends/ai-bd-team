@@ -407,6 +407,130 @@ Defensive programming to prevent edge cases and improve reliability:
 - [x] Active contracts: VA Financial Management, QPP, CMS SEAS-IT, HHS ACR-ORR, VA CDS Apps
 - [x] Total active contract value: $7.09M | Total historical: $14.88M
 
+---
+
+## Session Journal: Feb 27, 2026
+
+### Phase 3: Memory Activation ✓
+
+**Goal**: Enable agents to remember past experiences and use semantic search for relevant recall.
+
+**What was done**:
+- [x] Wired up `agent_memories` table for persistent memory storage
+- [x] Added `storeMemoryWithEmbedding()` - stores memories with pgvector embeddings
+- [x] Added `searchMemoriesBySimilarity()` - semantic search for relevant memories
+- [x] Connected memory storage to live agent responses in `src/live/agent.ts`
+- [x] Agents now auto-extract and store significant memories after each interaction
+- [x] Memory importance scoring (4-10) filters what gets stored
+- [x] Created SQL function `match_agent_memories` for vector similarity search
+
+**Files created/modified**:
+- `src/memory/index.ts` - Core memory functions with embedding support
+- `src/integrations/memory-manager.ts` - Three-tier memory with semantic search
+- `src/live/agent.ts` - Memory storage after responses
+- `supabase/migrations/20260227_match_agent_memories.sql` - pgvector search function
+
+**Why**: Without memory, agents can't learn from patterns or reference past decisions. Now they can say "We've seen this pattern before with HHS..." backed by actual stored memories.
+
+---
+
+### Phase 4: Workflow Orchestration ✓
+
+**Goal**: Track opportunities through the pipeline with SLA monitoring and automatic escalation.
+
+**What was done**:
+- [x] Created formal workflow state machine definitions
+- [x] OPPORTUNITY_PURSUIT_WORKFLOW: found → researching → tech_review → partner_search → strategy → decision_pending → pursuing/passed
+- [x] Each state has SLA (e.g., "found" = 4 hours, "researching" = 24 hours)
+- [x] Escalation actions: notify_patricia, notify_channel, auto_advance, assign_backup, escalate_human, timeout_fail
+- [x] Workflow instance manager tracks state transitions with history
+- [x] Timeout processor runs every 5 minutes, checks SLA breaches, executes escalations
+- [x] Posts to Slack when escalations trigger
+
+**Files created**:
+- `src/workflows/definitions.ts` - State machine definitions with SLAs
+- `src/workflows/instance-manager.ts` - CRUD for workflow instances
+- `src/workflows/timeout-processor.ts` - SLA monitoring and escalation
+- `src/cron/workflow-timeouts.ts` - Cron entry point
+- `supabase/migrations/20260227_workflow_instances.sql` - Database schema
+
+**Database tables**:
+- `workflow_instances` - Active workflow tracking
+- `workflow_state_history` - State transition audit log
+- `workflow_escalations` - Escalation action log
+
+**Why**: Without workflow tracking, opportunities could stall indefinitely. Now there's automatic SLA monitoring with escalation to humans when things get stuck.
+
+---
+
+### Production Enhancements ✓ (Feb 27)
+
+**1. Patricia Daily Health Summary**
+- [x] Created `src/scripts/patricia-health-summary.ts`
+- [x] Posts system health to Slack at 9am Mon-Fri
+- [x] Includes: workflow status, memory stats, cache performance, escalations
+- [x] Uses Claude to generate natural-sounding summary in Patricia's voice
+- [x] Commands: `npm run patricia:health`, `npm run patricia:health:schedule`
+
+**2. Auto-Create Workflow for New Opportunities**
+- [x] Created `src/events/handlers/workflow-auto-create.ts`
+- [x] Listens for `NEW_OPPORTUNITY` events from Maya's scanner
+- [x] Automatically creates workflow instance to track opportunity
+- [x] System event processor runs every minute
+- [x] Enables automatic SLA tracking from moment Maya finds an opportunity
+
+**3. Memory Reflection Cron Job**
+- [x] Existing `src/cron/memory-reflection.ts` wired into production scheduler
+- [x] Runs Sundays at 2am (off-hours processing)
+- [x] Synthesizes patterns and insights from agent observations
+- [x] Stores reflections back as high-importance memories
+- [x] Command: `npm run memory:reflect`
+
+**4. Observability Dashboard**
+- [x] Created `src/dashboard/index.ts` with dashboard aggregation
+- [x] `getDashboardData()` - Gathers metrics from all system tables
+- [x] `formatDashboardForSlack()` - Formats for Slack mrkdwn
+- [x] Tracks: workflows (active, breached), memories (total, recent), cache (hit rate), escalations
+- [x] Health status: 🟢 healthy, 🟡 degraded, 🔴 unhealthy
+- [x] Created `src/scripts/show-dashboard.ts` CLI
+- [x] Commands: `npm run dashboard`, `npm run dashboard --json`, `npm run dashboard --slack`
+
+**5. Patricia Status Command**
+- [x] Patricia now responds to status keywords: "status", "dashboard", "system health", "how are we doing"
+- [x] Fetches live dashboard data and includes in her response context
+- [x] Provides comprehensive system health summary on demand
+
+**6. Jodie Slack ID Fix**
+- [x] Fixed `AGENT_SLACK_IDS` mapping - Jodie was `U0ACP8LKFB3` (wrong), now `U0AHG13N23W` (correct)
+- [x] Eliminates identity warning on startup
+
+**Updated run-all.ts Schedule**:
+```
+Agent Scans (with distributed locks):
+  - Maya daily scan: 8:00 AM Mon-Fri
+  - Maya weekly summary: 8:30 AM Friday
+  - David news digest: 10:00 AM Mon/Wed/Fri
+  - Patricia standup: 11:00 AM Mon-Fri
+  - Patricia health summary: 9:00 AM Mon-Fri
+
+System Jobs:
+  - Action scheduler: Every 15 minutes
+  - Workflow timeouts: Every 5 minutes
+  - Workflow auto-create: Every minute
+  - Stale event cleanup: Every 5 minutes
+  - Pipeline health: Every 2 hours 9am-5pm Mon-Fri
+  - Memory reflection: Sundays 2am
+  - Patricia retrospective: First Monday of month 9am
+```
+
+**Commits**:
+- `d899201` - Phase 4: Workflow orchestration - state machine and timeout handling
+- `4350906` - Phase 3: Memory activation - embedding pipeline and retrieval
+- `a66e417` - Add workflow timeout processor to run-all production script
+- `d588b2e` - Add production enhancements: health alerts, auto-workflow, memory reflection
+
+---
+
 ### Known Limitations
 - USASpending keyword search disabled (causes 504 Gateway Timeouts) - search by agency/vendor only
 - ~~News sources are general~~ - Now includes GovCon sources: OrangeSlices, GovConWire, WashTech, FCW, Nextgov
