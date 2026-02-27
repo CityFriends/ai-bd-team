@@ -226,9 +226,20 @@ export abstract class LiveAgent {
       // This prevents the race condition where both handlers fire for the same message
       if (isMentioned && !msg.bot_id) return;
 
-      // For bot messages (other agents), only respond if directly @mentioned
+      // Check for "hey team" triggers EARLY - before bot message filtering
+      const isTeamTrigger =
+        text.includes('hey team') ||
+        text.includes('okay team') ||
+        text.includes('ok team') ||
+        text.includes('alright team');
+
+      // For bot messages (other agents), only respond if directly @mentioned OR it's a team trigger
       const isFromBot = msg.bot_id || msg.subtype === 'bot_message';
-      if (isFromBot && !isMentioned) return;
+      if (isFromBot && !isMentioned && !isTeamTrigger) return;
+
+      if (isTeamTrigger) {
+        console.log(`${this.displayName}: Detected team trigger in message`);
+      }
 
       // Check if this is in a thread we're active in
       const threadTs = msg.thread_ts;
@@ -242,17 +253,6 @@ export abstract class LiveAgent {
       // Check if this is a general channel message (not in a thread) that we should respond to
       const isGeneralMessage = !threadTs && !isFromBot && msg.channel === this.channelId;
       let shouldProactivelyRespond = false;
-
-      // Check for "hey team" triggers BEFORE checking other agent mentions
-      const isTeamTrigger =
-        text.includes('hey team') ||
-        text.includes('okay team') ||
-        text.includes('ok team') ||
-        text.includes('alright team');
-
-      if (isTeamTrigger) {
-        console.log(`${this.displayName}: Detected team trigger in message`);
-      }
 
       // Check if ANOTHER agent is @mentioned - if so, don't proactively respond
       // UNLESS it's a team trigger (hey team) which everyone should respond to
