@@ -456,4 +456,7 @@ async function main() {
   }
 }
 
-main().catch(console.error);
+// Only run main() when executed directly, not when imported
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch(console.error);
+}

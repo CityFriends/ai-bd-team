@@ -30,6 +30,7 @@ export interface IncomingMessage {
   mentionedAgents: LiveAgentName[];
   isDirectMention: boolean;
   isTeamMention: boolean; // True if @team was used
+  isTeamTrigger: boolean; // True if "hey team" or similar phrase (all agents should respond)
   isInActiveThread: boolean;
   isFromBot: boolean; // True if message is from another agent/bot
   files?: SlackFileAttachment[]; // Attached files

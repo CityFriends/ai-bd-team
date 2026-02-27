@@ -302,6 +302,16 @@ export abstract class LiveAgent {
       const msg = event as any;
       const messageId = msg.ts;
 
+      // Debug: Log ALL incoming messages to understand what agents receive
+      const isFromBot = msg.bot_id || msg.subtype === 'bot_message';
+      if (isFromBot) {
+        const textPreview = (msg.text || '').slice(0, 100);
+        console.log(
+          `[DEBUG] ${this.displayName} received bot message: bot_id=${msg.bot_id}, ` +
+            `subtype=${msg.subtype}, text="${textPreview}..."`
+        );
+      }
+
       // Dedupe: skip if we already processed this message (via app_mention or earlier)
       if (this.processedMessages.has(messageId)) return;
 
@@ -323,9 +333,22 @@ export abstract class LiveAgent {
         text.includes('ok team') ||
         text.includes('alright team');
 
+      // Debug: Log team trigger check for bot messages
+      if (isFromBot) {
+        console.log(
+          `[DEBUG] ${this.displayName} team trigger check: ` +
+            `text="${text.slice(0, 50)}", isTeamTrigger=${isTeamTrigger}`
+        );
+      }
+
       // For bot messages (other agents), only respond if directly @mentioned OR it's a team trigger
-      const isFromBot = msg.bot_id || msg.subtype === 'bot_message';
-      if (isFromBot && !isMentioned && !isTeamTrigger) return;
+      if (isFromBot && !isMentioned && !isTeamTrigger) {
+        console.log(
+          `[DEBUG] ${this.displayName} skipping bot message: ` +
+            `isMentioned=${isMentioned}, isTeamTrigger=${isTeamTrigger}`
+        );
+        return;
+      }
 
       if (isTeamTrigger) {
         console.log(`${this.displayName}: Detected team trigger in message`);
@@ -715,6 +738,14 @@ export abstract class LiveAgent {
     // Determine if message is from another bot/agent
     const isFromBot = !!(event.bot_id || event.subtype === 'bot_message');
 
+    // Check for "hey team" style triggers where ALL agents should respond
+    const textLower = text.toLowerCase();
+    const isTeamTrigger =
+      textLower.includes('hey team') ||
+      textLower.includes('okay team') ||
+      textLower.includes('ok team') ||
+      textLower.includes('alright team');
+
     return {
       text: this.cleanMessageText(text),
       userId,
@@ -725,6 +756,7 @@ export abstract class LiveAgent {
       mentionedAgents,
       isDirectMention,
       isTeamMention,
+      isTeamTrigger,
       isInActiveThread,
       isFromBot,
       files: files?.length ? files : undefined,
@@ -821,14 +853,20 @@ export abstract class LiveAgent {
 
     // Claim the message in Supabase to prevent duplicate responses across instances
     // This is CRITICAL for distributed deployments where multiple instances may receive the same event
-    const claimed = await claimMessage(message.messageTs, this.name, message.threadTs);
-    if (!claimed) {
-      console.log(`${this.displayName}: Message already claimed by another instance, skipping`);
-      return;
+    // EXCEPTION: For team triggers ("hey team"), we WANT all agents to respond - skip claiming
+    if (!message.isTeamTrigger) {
+      const claimed = await claimMessage(message.messageTs, this.name, message.threadTs);
+      if (!claimed) {
+        console.log(`${this.displayName}: Message already claimed by another instance, skipping`);
+        return;
+      }
+    } else {
+      console.log(`${this.displayName}: Team trigger - all agents responding`);
     }
 
     // Check if another agent JUST responded in this thread (within last 20 seconds)
-    if (message.threadTs && !message.isDirectMention) {
+    // Skip this check for team triggers since we want everyone to respond
+    if (message.threadTs && !message.isDirectMention && !message.isTeamTrigger) {
       const recentResponses = await getRecentThreadResponses(message.threadTs, 20);
       const otherAgentJustResponded = recentResponses.some((r) => r.agent !== this.name);
       if (otherAgentJustResponded) {
