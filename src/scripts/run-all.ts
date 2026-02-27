@@ -89,6 +89,23 @@ async function runStaleEventCleanup() {
   await cronStaleEventCleanup();
 }
 
+async function runWorkflowTimeouts() {
+  const { acquireCronLock, releaseCronLock } = await import('../integrations/database/cron.js');
+  const lock = await acquireCronLock('workflow-timeouts', 5, 2);
+  if (!lock.acquired) {
+    console.log('[CRON] Workflow timeouts: Another instance already running, skipping');
+    return;
+  }
+  try {
+    const { processTimeouts } = await import('../workflows/index.js');
+    await processTimeouts();
+  } finally {
+    if (lock.lockId) {
+      await releaseCronLock(lock.lockId);
+    }
+  }
+}
+
 // Patricia's monthly retrospective
 async function runPatriciaRetrospective() {
   const { runMonthlyRetrospective, formatRetrospectiveForSlack } =
@@ -213,6 +230,15 @@ async function main() {
     }
   });
 
+  // Workflow timeout processor: Every 5 minutes
+  cron.schedule('*/5 * * * *', async () => {
+    try {
+      await runWithLogging('workflow-timeouts', runWorkflowTimeouts);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Workflows: Timeout check failed:`, err);
+    }
+  });
+
   // Patricia's monthly retrospective: First Monday of each month at 9am CST (15:00 UTC)
   // Note: '1-7' ensures it's in the first 7 days, combined with day-of-week 1 (Monday)
   cron.schedule('0 15 1-7 * 1', async () => {
@@ -241,6 +267,7 @@ async function main() {
   console.log('    - Patricia standup: 11:00 AM Mon-Fri');
   console.log('  Other Jobs:');
   console.log('    - Action scheduler: Every 15 minutes');
+  console.log('    - Workflow timeouts: Every 5 minutes');
   console.log('    - Stale event cleanup: Every 5 minutes');
   console.log('    - Pipeline health: Every 2 hours 9am-5pm Mon-Fri');
   console.log('    - Patricia retrospective: First Monday of month 9am');
