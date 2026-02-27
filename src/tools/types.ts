@@ -63,4 +63,6 @@ export interface ToolExecutionOptions {
   timeout?: number;
   /** Whether to include debug info in result */
   debug?: boolean;
+  /** Skip cache and force fresh API call (default false) */
+  skipCache?: boolean;
 }

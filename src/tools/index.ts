@@ -24,3 +24,12 @@ export {
   formatToolResultsForClaude,
   extractSourceCitations,
 } from './executor.js';
+
+// Cache
+export {
+  getCachedToolResult,
+  cacheToolResult,
+  getStaleCachedResult,
+  cleanupToolCache,
+  getToolCacheStats,
+} from './cache.js';
