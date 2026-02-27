@@ -13,6 +13,14 @@ import {
   markActionCompleted,
   markActionFailed,
 } from './agent-actions.js';
+import {
+  getToolsForAgent,
+  getToolDefinitionsForAgent,
+  executeToolCalls,
+  formatToolResultsForClaude,
+  extractSourceCitations,
+} from '../tools/index.js';
+import type { MessageParam, ContentBlock } from '@anthropic-ai/sdk/resources/messages';
 
 const CHANNEL_ID = process.env.SLACK_CHANNEL_ID || '';
 
@@ -317,6 +325,7 @@ async function executeWatchOpportunity(
 
 /**
  * Execute a research action (David)
+ * Uses David's actual research tools to gather real data
  */
 async function executeResearch(
   action: AgentAction,
@@ -329,40 +338,121 @@ async function executeResearch(
 
   const client = getAnthropic();
 
-  const prompt = `You are David, the senior research analyst. You committed to researching:
-"${action.description}"
+  // Get David's actual tools
+  const tools = getToolsForAgent('david');
+  const toolDefinitions = getToolDefinitionsForAgent('david');
+
+  console.log(
+    `[ActionExecutor] David research with ${tools.length} tools: ${tools.map((t) => t.definition.name).join(', ')}`
+  );
+
+  const systemPrompt = `You are David, the senior research analyst for Friends From The City's BD team. You're direct, analytical, with dry humor.
+
+You have access to real research tools - USE THEM to gather actual data. DO NOT make up facts.
+
+Available tools:
+- search_news: Search federal contracting news articles (returns URLs)
+- get_agency_news: Get news about a specific agency (returns URLs)
+- search_competitor_news: Research competitor companies - protests, awards, performance (returns URLs)
+- get_agency_spending: Get agency budget/spending data from USASpending.gov
+- get_agency_trend: Analyze spending trends over years
+- search_contractor_spending: Research a contractor's federal awards
+- search_contracts: Search USASpending.gov for contracts by keyword, agency, vendor, or NAICS
+- find_incumbent: Find who currently holds a contract
+- get_vendor_history: Get a vendor's contract history
+
+CRITICAL: You MUST use at least one tool to gather real data. Never provide research findings without first using tools to get actual information.
+
+After gathering data, write a research update that:
+1. Summarizes what you found
+2. CITES YOUR SOURCES with links (e.g., "According to USASpending.gov..." or include URLs)
+3. Notes strategic implications for FFTC
+4. Is 3-5 sentences max
+
+Include actual URLs from the tool results in your response as hyperlinks where relevant.`;
+
+  const userPrompt = `Research task: "${action.description}"
 
 Context: ${action.context || 'No additional context'}
 
-Provide a brief research update (3-4 sentences). Include:
-- What you looked into
-- Key findings or observations
-- Any strategic implications for FFTC
-
-Be honest and direct. Use your dry humor if appropriate.`;
+Use your tools to gather real data, then provide your research update with sources.`;
 
   try {
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 300,
-      messages: [{ role: 'user', content: prompt }],
-    });
+    const messages: MessageParam[] = [{ role: 'user', content: userPrompt }];
+    const allSourceCitations: string[] = [];
+    let finalResponse = '';
+    let iterations = 0;
+    const MAX_ITERATIONS = 5;
 
-    const text = response.content.find((b) => b.type === 'text');
-    const researchUpdate = text?.type === 'text' ? text.text : '';
+    // Tool use loop - keep calling tools until Claude produces final text
+    while (iterations < MAX_ITERATIONS) {
+      iterations++;
 
-    if (!researchUpdate) {
+      const response = await client.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        system: systemPrompt,
+        tools: toolDefinitions,
+        messages,
+      });
+
+      // Check if there are tool calls
+      const hasToolUse = response.content.some((block) => block.type === 'tool_use');
+
+      if (hasToolUse) {
+        // Execute tool calls
+        const toolResults = await executeToolCalls(response.content, tools);
+        const citations = extractSourceCitations(toolResults);
+        allSourceCitations.push(...citations);
+
+        console.log(
+          `[ActionExecutor] David used tools: ${toolResults.map((r) => r.tool_use_id).length} calls, sources: ${citations.join(', ')}`
+        );
+
+        // Add assistant response and tool results to messages
+        messages.push({ role: 'assistant', content: response.content as ContentBlock[] });
+        messages.push({
+          role: 'user',
+          content: formatToolResultsForClaude(toolResults),
+        });
+      } else {
+        // No more tool calls - extract final text response
+        const textBlock = response.content.find((b) => b.type === 'text');
+        finalResponse = textBlock?.type === 'text' ? textBlock.text : '';
+        break;
+      }
+
+      // If stop reason is end_turn without tool_use, we're done
+      if (response.stop_reason === 'end_turn' && !hasToolUse) {
+        const textBlock = response.content.find((b) => b.type === 'text');
+        finalResponse = textBlock?.type === 'text' ? textBlock.text : '';
+        break;
+      }
+    }
+
+    if (!finalResponse) {
       return { success: false, message: 'Failed to generate research update' };
+    }
+
+    // Add source footer if we have citations and they're not already mentioned
+    const uniqueSources = [...new Set(allSourceCitations)];
+    let messageText = `📊 *Research Update:* ${action.description}\n\n${finalResponse}`;
+
+    if (uniqueSources.length > 0 && !finalResponse.toLowerCase().includes('source')) {
+      messageText += `\n\n_Sources: ${uniqueSources.join(', ')}_`;
     }
 
     const result = await davidApp.client.chat.postMessage({
       channel: CHANNEL_ID,
-      text: `📊 *Research Update:* ${action.description}\n\n${researchUpdate}`,
-      thread_ts: action.source_thread_ts, // Post in original thread if available
+      text: messageText,
+      thread_ts: action.source_thread_ts,
     });
 
-    return { success: true, message: researchUpdate, threadTs: result.ts };
+    console.log(`[ActionExecutor] David research complete with ${uniqueSources.length} sources`);
+
+    return { success: true, message: finalResponse, threadTs: result.ts };
   } catch (err) {
+    console.error('[ActionExecutor] David research error:', err);
     return { success: false, message: String(err) };
   }
 }
