@@ -3,6 +3,8 @@
  *
  * Provides common execution logic for both live agents and scheduled actions.
  * This ensures consistent behavior for tool use, context loading, and response generation.
+ *
+ * Includes instrumentation for monitoring execution time, tool usage, and errors.
  */
 
 import { getAnthropic } from '../integrations/claude.js';
@@ -13,6 +15,8 @@ import {
   formatToolResultsForClaude,
   extractSourceCitations,
 } from '../tools/index.js';
+import { metrics, MetricNames } from '../lib/metrics.js';
+import { getRequestId, withRequestContext } from '../lib/request-context.js';
 import type { MessageParam, ContentBlock, Tool } from '@anthropic-ai/sdk/resources/messages';
 import type { LiveAgentName } from '../live/types.js';
 import type { AgentTool } from '../tools/types.js';
@@ -52,6 +56,10 @@ export interface ExecutionResult {
   sourceCitations: string[];
   wasIdentityCorrected: boolean;
   error?: string;
+  // Instrumentation
+  durationMs?: number;
+  iterations?: number;
+  requestId?: string;
 }
 
 const DEFAULT_OPTIONS: Required<ExecutionOptions> = {
@@ -153,157 +161,201 @@ export async function executeAgentTask(
   context: ExecutionContext,
   options: ExecutionOptions = {}
 ): Promise<ExecutionResult> {
-  const opts = { ...DEFAULT_OPTIONS, ...options };
-  const client = getAnthropic();
+  const startTime = Date.now();
+  const requestId = getRequestId();
 
-  // Get tools for this agent
-  const tools: AgentTool[] = getToolsForAgent(context.agentName);
-  const toolDefinitions: Tool[] = getToolDefinitionsForAgent(context.agentName);
+  return withRequestContext({ agent: context.agentName }, async () => {
+    const opts = { ...DEFAULT_OPTIONS, ...options };
+    const client = getAnthropic();
 
-  console.log(`[AgentExecutor] ${context.displayName} executing with ${tools.length} tools`);
+    // Get tools for this agent
+    const tools: AgentTool[] = getToolsForAgent(context.agentName);
+    const toolDefinitions: Tool[] = getToolDefinitionsForAgent(context.agentName);
 
-  // Build system prompt with context
-  let fullSystemPrompt = context.systemPrompt;
+    console.log(
+      `[AgentExecutor] ${context.displayName} executing with ${tools.length} tools${requestId ? ` [${requestId}]` : ''}`
+    );
 
-  if (context.additionalContext) {
-    fullSystemPrompt += `\n\n${context.additionalContext}`;
-  }
+    // Track agent call
+    metrics.increment(MetricNames.AGENT_CALLS, { agent: context.agentName });
 
-  // Add tool instructions if agent has tools
-  if (tools.length > 0) {
-    fullSystemPrompt += `\n\nYou have access to real-time data tools. USE THEM when you need current information.
+    // Build system prompt with context
+    let fullSystemPrompt = context.systemPrompt;
+
+    if (context.additionalContext) {
+      fullSystemPrompt += `\n\n${context.additionalContext}`;
+    }
+
+    // Add tool instructions if agent has tools
+    if (tools.length > 0) {
+      fullSystemPrompt += `\n\nYou have access to real-time data tools. USE THEM when you need current information.
 DO NOT make up data - if you cite facts, they must come from tool results.
 After using tools, cite your sources (e.g., "According to USASpending.gov...").`;
 
-    if (opts.requireToolUse) {
-      fullSystemPrompt += `\n\nIMPORTANT: You MUST use at least one tool to gather data before responding.`;
+      if (opts.requireToolUse) {
+        fullSystemPrompt += `\n\nIMPORTANT: You MUST use at least one tool to gather data before responding.`;
+      }
     }
-  }
 
-  // Build initial message with thread context
-  let userContent = userMessage;
-  if (context.threadContext) {
-    userContent = `${context.threadContext}\n\nCurrent message: ${userMessage}`;
-  }
+    // Build initial message with thread context
+    let userContent = userMessage;
+    if (context.threadContext) {
+      userContent = `${context.threadContext}\n\nCurrent message: ${userMessage}`;
+    }
 
-  const messages: MessageParam[] = [{ role: 'user', content: userContent }];
-  const allSourceCitations: string[] = [];
-  const toolsUsed: string[] = [];
-  let finalResponse = '';
-  let iterations = 0;
+    const messages: MessageParam[] = [{ role: 'user', content: userContent }];
+    const allSourceCitations: string[] = [];
+    const toolsUsed: string[] = [];
+    let finalResponse = '';
+    let iterations = 0;
 
-  try {
-    // Tool use loop
-    while (iterations < opts.maxToolIterations) {
-      iterations++;
+    try {
+      // Tool use loop
+      while (iterations < opts.maxToolIterations) {
+        iterations++;
 
-      const response = await client.messages.create({
-        model: opts.model,
-        max_tokens: opts.maxTokens,
-        system: fullSystemPrompt,
-        tools: toolDefinitions.length > 0 ? toolDefinitions : undefined,
-        messages,
-      });
+        const response = await client.messages.create({
+          model: opts.model,
+          max_tokens: opts.maxTokens,
+          system: fullSystemPrompt,
+          tools: toolDefinitions.length > 0 ? toolDefinitions : undefined,
+          messages,
+        });
 
-      // Check if there are tool calls
-      const hasToolUse = response.content.some((block) => block.type === 'tool_use');
+        // Check if there are tool calls
+        const hasToolUse = response.content.some((block) => block.type === 'tool_use');
 
-      if (hasToolUse) {
-        // Execute tool calls
-        const toolResults = await executeToolCalls(response.content, tools);
-        const citations = extractSourceCitations(toolResults);
-        allSourceCitations.push(...citations);
+        if (hasToolUse) {
+          // Execute tool calls
+          const toolResults = await executeToolCalls(response.content, tools);
+          const citations = extractSourceCitations(toolResults);
+          allSourceCitations.push(...citations);
 
-        // Track which tools were used
-        for (const block of response.content) {
-          if (block.type === 'tool_use') {
-            toolsUsed.push(block.name);
+          // Track which tools were used
+          for (const block of response.content) {
+            if (block.type === 'tool_use') {
+              toolsUsed.push(block.name);
+            }
           }
+
+          console.log(`[AgentExecutor] ${context.displayName} used tools: ${toolsUsed.join(', ')}`);
+
+          // Add assistant response and tool results to messages
+          messages.push({
+            role: 'assistant',
+            content: response.content as ContentBlock[],
+          });
+          messages.push({
+            role: 'user',
+            content: formatToolResultsForClaude(toolResults),
+          });
+        } else {
+          // No more tool calls - extract final text response
+          const textBlock = response.content.find((b) => b.type === 'text');
+          finalResponse = textBlock?.type === 'text' ? textBlock.text : '';
+          break;
         }
 
-        console.log(`[AgentExecutor] ${context.displayName} used tools: ${toolsUsed.join(', ')}`);
-
-        // Add assistant response and tool results to messages
-        messages.push({
-          role: 'assistant',
-          content: response.content as ContentBlock[],
-        });
-        messages.push({
-          role: 'user',
-          content: formatToolResultsForClaude(toolResults),
-        });
-      } else {
-        // No more tool calls - extract final text response
-        const textBlock = response.content.find((b) => b.type === 'text');
-        finalResponse = textBlock?.type === 'text' ? textBlock.text : '';
-        break;
+        // If stop reason is end_turn without tool_use, we're done
+        if (response.stop_reason === 'end_turn' && !hasToolUse) {
+          const textBlock = response.content.find((b) => b.type === 'text');
+          finalResponse = textBlock?.type === 'text' ? textBlock.text : '';
+          break;
+        }
       }
 
-      // If stop reason is end_turn without tool_use, we're done
-      if (response.stop_reason === 'end_turn' && !hasToolUse) {
-        const textBlock = response.content.find((b) => b.type === 'text');
-        finalResponse = textBlock?.type === 'text' ? textBlock.text : '';
-        break;
+      if (!finalResponse) {
+        return {
+          success: false,
+          response: '',
+          toolsUsed,
+          sourceCitations: allSourceCitations,
+          wasIdentityCorrected: false,
+          error: 'Failed to generate response',
+        };
       }
-    }
 
-    if (!finalResponse) {
+      // Check for data claims without tool use (potential hallucination)
+      if (detectDataClaimsWithoutTools(finalResponse, toolsUsed)) {
+        console.warn(
+          `[AgentExecutor] ${context.displayName}: Response claims data but no tools were used - potential hallucination`
+        );
+        // Add disclaimer
+        finalResponse +=
+          '\n\n_Note: Some information above may be from training data rather than live lookup._';
+      }
+
+      // Identity enforcement
+      let wasIdentityCorrected = false;
+      const leakage = detectAndCorrectIdentityLeakage(finalResponse, context.agentName);
+      if (leakage) {
+        console.warn(
+          `[AgentExecutor] ${context.displayName}: Corrected identity leakage "${leakage.leaked}"`
+        );
+        finalResponse = leakage.corrected;
+        wasIdentityCorrected = true;
+      }
+
+      // Add source citations if we have them and they're not mentioned
+      const uniqueSources = [...new Set(allSourceCitations)];
+      if (uniqueSources.length > 0 && !finalResponse.toLowerCase().includes('source')) {
+        finalResponse += `\n\n_Sources: ${uniqueSources.join(', ')}_`;
+      }
+
+      const durationMs = Date.now() - startTime;
+
+      // Track metrics
+      metrics.timing(MetricNames.AGENT_LATENCY, durationMs, { agent: context.agentName });
+      metrics.increment(MetricNames.AGENT_ITERATIONS, { agent: context.agentName }, iterations);
+      metrics.increment(
+        MetricNames.AGENT_TOOL_CALLS,
+        { agent: context.agentName },
+        toolsUsed.length
+      );
+
+      console.log(
+        `[AgentExecutor] ${context.displayName} completed in ${durationMs}ms, ${iterations} iterations, ${toolsUsed.length} tools${requestId ? ` [${requestId}]` : ''}`
+      );
+
+      return {
+        success: true,
+        response: finalResponse,
+        toolsUsed: [...new Set(toolsUsed)],
+        sourceCitations: uniqueSources,
+        wasIdentityCorrected,
+        durationMs,
+        iterations,
+        requestId,
+      };
+    } catch (err) {
+      const durationMs = Date.now() - startTime;
+      const errorMsg = err instanceof Error ? err.message : String(err);
+
+      // Track error
+      metrics.increment(MetricNames.AGENT_ERRORS, {
+        agent: context.agentName,
+        error_type: err instanceof Error ? err.name : 'Unknown',
+      });
+      metrics.timing(MetricNames.AGENT_LATENCY, durationMs, { agent: context.agentName });
+
+      console.error(
+        `[AgentExecutor] ${context.displayName} error after ${durationMs}ms:`,
+        errorMsg
+      );
+
       return {
         success: false,
         response: '',
         toolsUsed,
         sourceCitations: allSourceCitations,
         wasIdentityCorrected: false,
-        error: 'Failed to generate response',
+        error: errorMsg,
+        durationMs,
+        iterations,
+        requestId,
       };
     }
-
-    // Check for data claims without tool use (potential hallucination)
-    if (detectDataClaimsWithoutTools(finalResponse, toolsUsed)) {
-      console.warn(
-        `[AgentExecutor] ${context.displayName}: Response claims data but no tools were used - potential hallucination`
-      );
-      // Add disclaimer
-      finalResponse +=
-        '\n\n_Note: Some information above may be from training data rather than live lookup._';
-    }
-
-    // Identity enforcement
-    let wasIdentityCorrected = false;
-    const leakage = detectAndCorrectIdentityLeakage(finalResponse, context.agentName);
-    if (leakage) {
-      console.warn(
-        `[AgentExecutor] ${context.displayName}: Corrected identity leakage "${leakage.leaked}"`
-      );
-      finalResponse = leakage.corrected;
-      wasIdentityCorrected = true;
-    }
-
-    // Add source citations if we have them and they're not mentioned
-    const uniqueSources = [...new Set(allSourceCitations)];
-    if (uniqueSources.length > 0 && !finalResponse.toLowerCase().includes('source')) {
-      finalResponse += `\n\n_Sources: ${uniqueSources.join(', ')}_`;
-    }
-
-    return {
-      success: true,
-      response: finalResponse,
-      toolsUsed: [...new Set(toolsUsed)],
-      sourceCitations: uniqueSources,
-      wasIdentityCorrected,
-    };
-  } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
-    console.error(`[AgentExecutor] ${context.displayName} error:`, errorMsg);
-    return {
-      success: false,
-      response: '',
-      toolsUsed,
-      sourceCitations: allSourceCitations,
-      wasIdentityCorrected: false,
-      error: errorMsg,
-    };
-  }
+  });
 }
 
 /**
@@ -314,8 +366,13 @@ export async function executeSimpleTask(
   context: ExecutionContext,
   options: Omit<ExecutionOptions, 'requireToolUse'> = {}
 ): Promise<ExecutionResult> {
+  const startTime = Date.now();
+  const requestId = getRequestId();
   const opts = { ...DEFAULT_OPTIONS, ...options, requireToolUse: false };
   const client = getAnthropic();
+
+  // Track agent call
+  metrics.increment(MetricNames.AGENT_CALLS, { agent: context.agentName, type: 'simple' });
 
   let fullSystemPrompt = context.systemPrompt;
   if (context.additionalContext) {
@@ -333,7 +390,13 @@ export async function executeSimpleTask(
     const textBlock = response.content.find((b) => b.type === 'text');
     let finalResponse = textBlock?.type === 'text' ? textBlock.text : '';
 
+    const durationMs = Date.now() - startTime;
+
     if (!finalResponse) {
+      metrics.increment(MetricNames.AGENT_ERRORS, {
+        agent: context.agentName,
+        error_type: 'EmptyResponse',
+      });
       return {
         success: false,
         response: '',
@@ -341,6 +404,8 @@ export async function executeSimpleTask(
         sourceCitations: [],
         wasIdentityCorrected: false,
         error: 'Failed to generate response',
+        durationMs,
+        requestId,
       };
     }
 
@@ -355,16 +420,36 @@ export async function executeSimpleTask(
       wasIdentityCorrected = true;
     }
 
+    // Track metrics
+    metrics.timing(MetricNames.AGENT_LATENCY, durationMs, {
+      agent: context.agentName,
+      type: 'simple',
+    });
+
     return {
       success: true,
       response: finalResponse,
       toolsUsed: [],
       sourceCitations: [],
       wasIdentityCorrected,
+      durationMs,
+      requestId,
     };
   } catch (err) {
+    const durationMs = Date.now() - startTime;
     const errorMsg = err instanceof Error ? err.message : String(err);
-    console.error(`[AgentExecutor] ${context.displayName} error:`, errorMsg);
+
+    // Track error
+    metrics.increment(MetricNames.AGENT_ERRORS, {
+      agent: context.agentName,
+      error_type: err instanceof Error ? err.name : 'Unknown',
+    });
+    metrics.timing(MetricNames.AGENT_LATENCY, durationMs, {
+      agent: context.agentName,
+      type: 'simple',
+    });
+
+    console.error(`[AgentExecutor] ${context.displayName} error after ${durationMs}ms:`, errorMsg);
     return {
       success: false,
       response: '',
@@ -372,6 +457,8 @@ export async function executeSimpleTask(
       sourceCitations: [],
       wasIdentityCorrected: false,
       error: errorMsg,
+      durationMs,
+      requestId,
     };
   }
 }

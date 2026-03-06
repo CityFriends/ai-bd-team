@@ -7,11 +7,17 @@ import pino from 'pino';
  * In development, uses pino-pretty for readable output.
  * In production, uses JSON format for log aggregation.
  *
+ * Integrates with request-context.ts for automatic request ID correlation.
+ *
  * Usage:
- *   import { logger } from '../lib/logger.js';
+ *   import { logger, getContextLogger } from '../lib/logger.js';
  *   logger.info('Message');
  *   logger.info({ userId: '123' }, 'User action');
  *   logger.error({ err }, 'Operation failed');
+ *
+ *   // With request context (auto-includes requestId, agent, elapsed time):
+ *   const log = getContextLogger();
+ *   log.info('Processing...'); // Automatically includes requestId
  */
 
 const isDevelopment = process.env.NODE_ENV !== 'production';
@@ -93,6 +99,65 @@ export function createIntegrationLogger(serviceName: string): pino.Logger {
 
 // Export the pino type for TypeScript consumers
 export type { Logger } from 'pino';
+
+// Cache for request context module (loaded lazily to avoid circular dependency)
+let requestContextModule: { getLogContext: () => Record<string, unknown> } | null = null;
+
+async function loadRequestContext(): Promise<{ getLogContext: () => Record<string, unknown> }> {
+  if (!requestContextModule) {
+    requestContextModule = await import('./request-context.js');
+  }
+  return requestContextModule;
+}
+
+/**
+ * Get a logger with current request context automatically included
+ * This includes requestId, agent, threadTs, and elapsed time
+ *
+ * Note: This is synchronous and uses cached module. For first use in a request,
+ * ensure request-context has been imported elsewhere first.
+ *
+ * Usage:
+ *   import { getContextLogger } from '../lib/logger.js';
+ *   const log = getContextLogger();
+ *   log.info('Processing...'); // Auto-includes requestId, agent, etc.
+ */
+export function getContextLogger(): pino.Logger {
+  if (!requestContextModule) {
+    // Module not loaded yet - return base logger
+    // Next call will work after async import completes
+    loadRequestContext().catch(() => {});
+    return logger;
+  }
+
+  const context = requestContextModule.getLogContext();
+  if (Object.keys(context).length === 0) {
+    return logger;
+  }
+
+  return logger.child(context);
+}
+
+/**
+ * Create a child logger with request context plus additional bindings
+ */
+export function createContextLogger(
+  name: string,
+  additionalContext: Record<string, unknown> = {}
+): pino.Logger {
+  if (!requestContextModule) {
+    // Module not loaded yet
+    loadRequestContext().catch(() => {});
+    return logger.child({ name, ...additionalContext });
+  }
+
+  const requestContext = requestContextModule.getLogContext();
+  return logger.child({
+    name,
+    ...requestContext,
+    ...additionalContext,
+  });
+}
 
 // Default export for convenience
 export default logger;

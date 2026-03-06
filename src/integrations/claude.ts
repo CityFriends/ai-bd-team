@@ -1,5 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { AgentName } from '../types/index.js';
+import { metrics, MetricNames } from '../lib/metrics.js';
+import { getRequestId } from '../lib/request-context.js';
 
 let anthropic: Anthropic | null = null;
 
@@ -15,6 +17,76 @@ export function getAnthropic(): Anthropic {
 }
 
 const MODEL = 'claude-sonnet-4-20250514';
+
+/**
+ * Track Claude API usage metrics
+ */
+function trackApiUsage(
+  response: Anthropic.Message,
+  operation: string,
+  durationMs: number,
+  agent?: string
+): void {
+  const labels = {
+    operation,
+    model: response.model,
+    ...(agent && { agent }),
+  };
+
+  // Track call count
+  metrics.increment(MetricNames.CLAUDE_CALLS, labels);
+
+  // Track latency
+  metrics.timing(MetricNames.CLAUDE_LATENCY, durationMs, labels);
+
+  // Track token usage
+  if (response.usage) {
+    metrics.increment(MetricNames.CLAUDE_TOKENS_INPUT, labels, response.usage.input_tokens);
+    metrics.increment(MetricNames.CLAUDE_TOKENS_OUTPUT, labels, response.usage.output_tokens);
+  }
+}
+
+/**
+ * Track Claude API errors
+ */
+function trackApiError(operation: string, error: Error, agent?: string): void {
+  const labels = {
+    operation,
+    error_type: error.name,
+    ...(agent && { agent }),
+  };
+  metrics.increment(MetricNames.CLAUDE_ERRORS, labels);
+}
+
+/**
+ * Get current API usage summary
+ */
+export function getClaudeApiStats(): {
+  totalCalls: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalErrors: number;
+  estimatedCost: string;
+} {
+  const summary = metrics.getSummary();
+  const calls = summary.counters[MetricNames.CLAUDE_CALLS]?.total || 0;
+  const inputTokens = summary.counters[MetricNames.CLAUDE_TOKENS_INPUT]?.total || 0;
+  const outputTokens = summary.counters[MetricNames.CLAUDE_TOKENS_OUTPUT]?.total || 0;
+  const errors = summary.counters[MetricNames.CLAUDE_ERRORS]?.total || 0;
+
+  // Rough cost estimate for Sonnet: $3/M input, $15/M output
+  const inputCost = (inputTokens / 1_000_000) * 3;
+  const outputCost = (outputTokens / 1_000_000) * 15;
+  const estimatedCost = `$${(inputCost + outputCost).toFixed(4)}`;
+
+  return {
+    totalCalls: calls,
+    totalInputTokens: inputTokens,
+    totalOutputTokens: outputTokens,
+    totalErrors: errors,
+    estimatedCost,
+  };
+}
 
 export interface Message {
   role: 'user' | 'assistant';
@@ -36,12 +108,14 @@ export interface AgentContext {
 
 // Generate a response from an agent
 export async function generateAgentResponse(
-  _agent: AgentName,
+  agent: AgentName,
   systemPrompt: string,
   userMessage: string,
   context?: AgentContext
 ): Promise<string> {
   const client = getAnthropic();
+  const startTime = Date.now();
+  const requestId = getRequestId();
 
   // Build context string
   let contextString = '';
@@ -64,23 +138,38 @@ export async function generateAgentResponse(
   const messages: Message[] = context?.recent_messages || [];
   messages.push({ role: 'user', content: userMessage + contextString });
 
-  const response = await client.messages.create({
-    model: MODEL,
-    max_tokens: 1024,
-    system: systemPrompt,
-    messages: messages.map((m) => ({
-      role: m.role,
-      content: m.content,
-    })),
-  });
+  try {
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages: messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+      })),
+    });
 
-  // Extract text from response
-  const textBlock = response.content.find((block) => block.type === 'text');
-  if (!textBlock || textBlock.type !== 'text') {
-    throw new Error('No text response from Claude');
+    const durationMs = Date.now() - startTime;
+    trackApiUsage(response, 'generateAgentResponse', durationMs, agent);
+
+    // Log token usage for debugging
+    if (response.usage) {
+      console.log(
+        `[Claude] ${agent} response: ${response.usage.input_tokens} in / ${response.usage.output_tokens} out (${durationMs}ms)${requestId ? ` [${requestId}]` : ''}`
+      );
+    }
+
+    // Extract text from response
+    const textBlock = response.content.find((block) => block.type === 'text');
+    if (!textBlock || textBlock.type !== 'text') {
+      throw new Error('No text response from Claude');
+    }
+
+    return textBlock.text;
+  } catch (error) {
+    trackApiError('generateAgentResponse', error as Error, agent);
+    throw error;
   }
-
-  return textBlock.text;
 }
 
 // Analyze an opportunity for fit scoring
@@ -95,6 +184,7 @@ export async function analyzeOpportunityFit(
   keywords_matched: string[];
 }> {
   const client = getAnthropic();
+  const startTime = Date.now();
 
   const prompt = `Analyze this government contracting opportunity for fit with a human-centered design and digital services company.
 
@@ -119,32 +209,39 @@ Respond in JSON format:
   "keywords_matched": ["<keyword1>", "<keyword2>", ...]
 }`;
 
-  const response = await client.messages.create({
-    model: MODEL,
-    max_tokens: 512,
-    messages: [{ role: 'user', content: prompt }],
-  });
-
-  const textBlock = response.content.find((block) => block.type === 'text');
-  if (!textBlock || textBlock.type !== 'text') {
-    throw new Error('No text response from Claude');
-  }
-
   try {
-    // Extract JSON from response (handle markdown code blocks)
-    let jsonText = textBlock.text;
-    const jsonMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (jsonMatch) {
-      jsonText = jsonMatch[1];
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 512,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    trackApiUsage(response, 'analyzeOpportunityFit', Date.now() - startTime);
+
+    const textBlock = response.content.find((block) => block.type === 'text');
+    if (!textBlock || textBlock.type !== 'text') {
+      throw new Error('No text response from Claude');
     }
-    return JSON.parse(jsonText.trim());
-  } catch {
-    // Fallback if JSON parsing fails
-    return {
-      score: 50,
-      reasoning: 'Unable to fully analyze opportunity',
-      keywords_matched: [],
-    };
+
+    try {
+      // Extract JSON from response (handle markdown code blocks)
+      let jsonText = textBlock.text;
+      const jsonMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (jsonMatch) {
+        jsonText = jsonMatch[1];
+      }
+      return JSON.parse(jsonText.trim());
+    } catch {
+      // Fallback if JSON parsing fails
+      return {
+        score: 50,
+        reasoning: 'Unable to fully analyze opportunity',
+        keywords_matched: [],
+      };
+    }
+  } catch (error) {
+    trackApiError('analyzeOpportunityFit', error as Error);
+    throw error;
   }
 }
 
@@ -158,6 +255,7 @@ export async function researchAgency(
   research_notes: string;
 }> {
   const client = getAnthropic();
+  const startTime = Date.now();
 
   const prompt = `Research this government agency for business development purposes:
 
@@ -176,30 +274,37 @@ Respond in JSON format:
   "research_notes": "<other relevant BD insights>"
 }`;
 
-  const response = await client.messages.create({
-    model: MODEL,
-    max_tokens: 1024,
-    messages: [{ role: 'user', content: prompt }],
-  });
-
-  const textBlock = response.content.find((block) => block.type === 'text');
-  if (!textBlock || textBlock.type !== 'text') {
-    throw new Error('No text response from Claude');
-  }
-
   try {
-    let jsonText = textBlock.text;
-    const jsonMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (jsonMatch) {
-      jsonText = jsonMatch[1];
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    trackApiUsage(response, 'researchAgency', Date.now() - startTime);
+
+    const textBlock = response.content.find((block) => block.type === 'text');
+    if (!textBlock || textBlock.type !== 'text') {
+      throw new Error('No text response from Claude');
     }
-    return JSON.parse(jsonText.trim());
-  } catch {
-    return {
-      tech_stack: 'Unknown',
-      pain_points: 'Unknown',
-      research_notes: textBlock.text,
-    };
+
+    try {
+      let jsonText = textBlock.text;
+      const jsonMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (jsonMatch) {
+        jsonText = jsonMatch[1];
+      }
+      return JSON.parse(jsonText.trim());
+    } catch {
+      return {
+        tech_stack: 'Unknown',
+        pain_points: 'Unknown',
+        research_notes: textBlock.text,
+      };
+    }
+  } catch (error) {
+    trackApiError('researchAgency', error as Error);
+    throw error;
   }
 }
 
@@ -214,6 +319,7 @@ export async function generateOutreachEmail(
   body: string;
 }> {
   const client = getAnthropic();
+  const startTime = Date.now();
 
   const prompt = `Draft a teaming partner outreach email for a government contracting opportunity.
 
@@ -237,28 +343,35 @@ Respond in JSON format:
   "body": "<email body>"
 }`;
 
-  const response = await client.messages.create({
-    model: MODEL,
-    max_tokens: 512,
-    messages: [{ role: 'user', content: prompt }],
-  });
-
-  const textBlock = response.content.find((block) => block.type === 'text');
-  if (!textBlock || textBlock.type !== 'text') {
-    throw new Error('No text response from Claude');
-  }
-
   try {
-    let jsonText = textBlock.text;
-    const jsonMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (jsonMatch) {
-      jsonText = jsonMatch[1];
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 512,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    trackApiUsage(response, 'generateOutreachEmail', Date.now() - startTime);
+
+    const textBlock = response.content.find((block) => block.type === 'text');
+    if (!textBlock || textBlock.type !== 'text') {
+      throw new Error('No text response from Claude');
     }
-    return JSON.parse(jsonText.trim());
-  } catch {
-    return {
-      subject: `Teaming Opportunity: ${opportunityTitle}`,
-      body: textBlock.text,
-    };
+
+    try {
+      let jsonText = textBlock.text;
+      const jsonMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (jsonMatch) {
+        jsonText = jsonMatch[1];
+      }
+      return JSON.parse(jsonText.trim());
+    } catch {
+      return {
+        subject: `Teaming Opportunity: ${opportunityTitle}`,
+        body: textBlock.text,
+      };
+    }
+  } catch (error) {
+    trackApiError('generateOutreachEmail', error as Error);
+    throw error;
   }
 }
