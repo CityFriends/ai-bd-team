@@ -4,14 +4,27 @@
  * Executes tool calls from Claude's response and returns results
  * with proper source citations for agent responses.
  *
- * Includes caching layer to reduce API calls.
+ * Features:
+ * - Caching layer to reduce API calls
+ * - Retry logic with exponential backoff for transient errors
+ * - Stale cache fallback when APIs are unavailable
+ * - Structured error logging
  */
 
 import type { ContentBlock, ToolUseBlock } from '@anthropic-ai/sdk/resources/messages';
 import type { AgentTool, ToolCallResult, ToolExecutionOptions } from './types.js';
 import { getCachedToolResult, cacheToolResult, getStaleCachedResult } from './cache.js';
+import {
+  withRetry,
+  logError,
+  categorizeError,
+  ErrorCategory,
+  TimeoutError,
+} from '../lib/errors.js';
+import { metrics, MetricNames } from '../lib/metrics.js';
 
 const DEFAULT_TIMEOUT = 15000; // 15 seconds
+const MAX_RETRIES = 2; // Retry transient errors up to 2 times
 
 /**
  * Execute all tool calls from a Claude response
@@ -43,7 +56,7 @@ export async function executeToolCalls(
 }
 
 /**
- * Execute a single tool call with caching
+ * Execute a single tool call with caching and retry logic
  */
 async function executeToolCall(
   toolUse: ToolUseBlock,
@@ -51,10 +64,12 @@ async function executeToolCall(
   timeout: number,
   useCache: boolean = true
 ): Promise<ToolCallResult> {
+  const startTime = Date.now();
   const tool = availableTools.find((t) => t.definition.name === toolUse.name);
 
   if (!tool) {
     console.warn(`[ToolExecutor] Unknown tool: ${toolUse.name}`);
+    metrics.increment(MetricNames.TOOL_ERRORS, { tool: toolUse.name, error_type: 'unknown_tool' });
     return {
       tool_use_id: toolUse.id,
       content: JSON.stringify({
@@ -73,6 +88,7 @@ async function executeToolCall(
     try {
       const cached = await getCachedToolResult(toolUse.name, params);
       if (cached) {
+        metrics.increment(MetricNames.CACHE_HITS, { tool: toolUse.name });
         return {
           tool_use_id: toolUse.id,
           content: JSON.stringify(cached.data),
@@ -80,36 +96,59 @@ async function executeToolCall(
           isError: false,
         };
       }
-    } catch {
-      // Cache check failed, proceed with execution
+      metrics.increment(MetricNames.CACHE_MISSES, { tool: toolUse.name });
+    } catch (cacheError) {
+      // Log cache check failure but proceed
+      logError(cacheError, { tool: toolUse.name }, 'cache_check');
     }
   }
+
+  // Track this tool call
+  metrics.increment(MetricNames.TOOL_CALLS, { tool: toolUse.name });
 
   try {
     console.log(`[ToolExecutor] Executing: ${toolUse.name}`, params);
 
-    // Execute with timeout
-    const result = await Promise.race([
-      tool.execute(params),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Tool execution timeout')), timeout)
-      ),
-    ]);
+    // Execute with retry for transient errors
+    const result = await withRetry(
+      async () => {
+        // Execute with timeout
+        const execResult = await Promise.race([
+          tool.execute(params),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new TimeoutError(toolUse.name, timeout)), timeout)
+          ),
+        ]);
 
-    if (!result.success) {
-      console.warn(`[ToolExecutor] Tool failed: ${toolUse.name}`, result.error);
-      return {
-        tool_use_id: toolUse.id,
-        content: JSON.stringify({
-          error: result.error || 'Tool execution failed',
-          data: null,
-        }),
-        sourceCitation: result.sourceCitation || tool.sourceName,
-        isError: true,
-      };
-    }
+        // If tool returns success:false, don't retry - it's a logical failure
+        if (!execResult.success) {
+          const error = new Error(execResult.error || 'Tool execution failed');
+          // Mark as permanent so we don't retry
+          (error as unknown as Record<string, unknown>).statusCode = 400;
+          throw error;
+        }
 
-    console.log(`[ToolExecutor] Success: ${toolUse.name} (source: ${result.sourceCitation})`);
+        return execResult;
+      },
+      {
+        maxRetries: MAX_RETRIES,
+        initialDelayMs: 500,
+        maxDelayMs: 5000,
+        operationName: `tool:${toolUse.name}`,
+        retryOn: [ErrorCategory.TRANSIENT, ErrorCategory.UNKNOWN],
+        onRetry: (error, attempt) => {
+          console.log(
+            `[ToolExecutor] Retrying ${toolUse.name} (attempt ${attempt}): ${error.message}`
+          );
+        },
+      }
+    );
+
+    const durationMs = Date.now() - startTime;
+    console.log(
+      `[ToolExecutor] Success: ${toolUse.name} in ${durationMs}ms (source: ${result.sourceCitation})`
+    );
+    metrics.timing(MetricNames.TOOL_LATENCY, durationMs, { tool: toolUse.name });
 
     // Store in cache (don't await - fire and forget)
     if (useCache && result.data) {
@@ -118,8 +157,9 @@ async function executeToolCall(
         params,
         result.data,
         result.sourceCitation || tool.sourceName
-      ).catch(() => {
-        // Ignore cache store failures
+      ).catch((cacheErr) => {
+        // Log cache store failure
+        logError(cacheErr, { tool: toolUse.name }, 'cache_store');
       });
     }
 
@@ -130,11 +170,28 @@ async function executeToolCall(
       isError: false,
     };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`[ToolExecutor] Error: ${toolUse.name}`, errorMessage);
+    const durationMs = Date.now() - startTime;
+    const categorized = categorizeError(error);
 
-    // Try stale cache as fallback
-    if (useCache) {
+    // Log the error with full context
+    logError(
+      error,
+      {
+        tool: toolUse.name,
+        params: JSON.stringify(params).slice(0, 200),
+        durationMs,
+      },
+      `tool:${toolUse.name}`
+    );
+
+    metrics.increment(MetricNames.TOOL_ERRORS, {
+      tool: toolUse.name,
+      error_type: categorized.category,
+    });
+    metrics.timing(MetricNames.TOOL_LATENCY, durationMs, { tool: toolUse.name, error: 'true' });
+
+    // Try stale cache as fallback for transient errors
+    if (useCache && categorized.category === ErrorCategory.TRANSIENT) {
       try {
         const stale = await getStaleCachedResult(toolUse.name, params);
         if (stale) {
@@ -149,25 +206,64 @@ async function executeToolCall(
             isError: false, // Not an error since we have data
           };
         }
-      } catch {
-        // Stale cache lookup failed, proceed with error
+      } catch (staleErr) {
+        // Log stale cache lookup failure
+        logError(staleErr, { tool: toolUse.name }, 'stale_cache_lookup');
       }
     }
 
-    // No fallback available - return clear error message
+    // Build user-friendly error message based on category
+    const errorDetails = buildErrorDetails(categorized, tool.sourceName);
+
     return {
       tool_use_id: toolUse.id,
-      content: JSON.stringify({
-        error: `Unable to reach ${tool.sourceName}`,
-        details: errorMessage.includes('timeout')
-          ? 'The service is taking too long to respond.'
-          : 'The service may be temporarily unavailable.',
-        suggestion: 'Try again in a few minutes or proceed without this data.',
-        data: null,
-      }),
+      content: JSON.stringify(errorDetails),
       sourceCitation: tool.sourceName,
       isError: true,
     };
+  }
+}
+
+/**
+ * Build user-friendly error details based on error category
+ */
+function buildErrorDetails(
+  error: ReturnType<typeof categorizeError>,
+  sourceName: string
+): Record<string, unknown> {
+  switch (error.category) {
+    case ErrorCategory.TRANSIENT:
+      return {
+        error: `Unable to reach ${sourceName}`,
+        details: error.message.includes('timeout')
+          ? 'The service is taking too long to respond.'
+          : 'The service may be temporarily unavailable.',
+        suggestion: 'Try again in a few minutes or proceed without this data.',
+        retryable: true,
+        data: null,
+      };
+
+    case ErrorCategory.PERMANENT:
+      return {
+        error: `Request to ${sourceName} failed`,
+        details:
+          error.statusCode === 404
+            ? 'The requested data was not found.'
+            : error.statusCode === 403
+              ? 'Access to this data is restricted.'
+              : 'The request could not be completed.',
+        suggestion: 'Check the parameters and try again.',
+        retryable: false,
+        data: null,
+      };
+
+    default:
+      return {
+        error: `Error accessing ${sourceName}`,
+        details: 'An unexpected error occurred.',
+        suggestion: 'Try again or proceed without this data.',
+        data: null,
+      };
   }
 }
 
