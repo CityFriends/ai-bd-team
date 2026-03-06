@@ -119,7 +119,7 @@ function detectIdentityLeakage(
         // Starting with just the name as greeting
         new RegExp(`^${displayName}[,:.!]\\s`, 'i'),
         // Signature patterns: "— Jodie" or "- Jodie" or "~Jodie"
-        new RegExp(`[—–-~]\\s*${displayName}\\s*$`, 'gim'),
+        new RegExp(`[—–~\\-]\\s*${displayName}\\s*$`, 'gim'),
         // "Jodie out" or "Jodie signing off"
         new RegExp(`\\b${displayName}\\s+(out|signing\\s+off)\\b`, 'gi'),
         // "As Jodie, I..." or "Speaking as Jodie"
@@ -156,7 +156,7 @@ function detectIdentityLeakage(
             .replace(new RegExp(`^${wrongDisplay}([,:.!])\\s`, 'i'), `${correctDisplayName}$1 `)
             // Signature patterns
             .replace(
-              new RegExp(`([—–-~])\\s*${wrongDisplay}\\s*$`, 'gim'),
+              new RegExp(`([—–~\\-])\\s*${wrongDisplay}\\s*$`, 'gim'),
               `$1 ${correctDisplayName}`
             )
             .replace(
