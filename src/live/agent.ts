@@ -534,6 +534,19 @@ export abstract class LiveAgent {
               'griot',
               'kernel',
             ],
+            jodie: [
+              'pho',
+              'phở',
+              'vietnamese',
+              'orange county',
+              'berkeley',
+              'semicolon',
+              'novel',
+              'oxford comma',
+              'writing',
+              'cat',
+              'night owl',
+            ],
           };
           const myCasualKeywords = casualKeywords[this.name] || [];
           shouldProactivelyRespond = myCasualKeywords.some((kw) => text.includes(kw));
@@ -671,6 +684,24 @@ export abstract class LiveAgent {
               'code review',
               'engineering',
             ],
+            jodie: [
+              'proposal',
+              'write',
+              'writing',
+              'draft',
+              'edit',
+              'compliance matrix',
+              'executive summary',
+              'technical approach',
+              'management approach',
+              'past performance',
+              'section l',
+              'section m',
+              'discriminator',
+              'win theme',
+              'shipley',
+              'page limit',
+            ],
           };
           const myKeywords = expertiseKeywords[this.name] || [];
           shouldProactivelyRespond = myKeywords.some((kw) => text.includes(kw));
@@ -790,13 +821,15 @@ export abstract class LiveAgent {
 
   // Check if another agent (not this one) is @mentioned
   private checkIfOtherAgentMentioned(text: string): boolean {
-    // Agent Slack IDs
+    // Agent Slack IDs - must match AGENT_SLACK_IDS at top of file
     const agentSlackIds: Record<string, LiveAgentName> = {
       U0AC3RA4JVB: 'maya',
       U0AC0SVD3MH: 'david',
       U0ACASZ36BW: 'rosa',
       U0AC582GXBQ: 'james',
       U0AC79NTDAN: 'patricia',
+      U0AHG13N23W: 'jodie',
+      U0ADSL3DL95: 'marcus',
     };
 
     // Check for @mentions of other agents
