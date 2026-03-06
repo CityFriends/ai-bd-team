@@ -59,6 +59,7 @@ export const searchProposalSnippetsTool: AgentTool = {
   allowedAgents: ['jodie'],
   sourceName: 'Proposal Snippets Database',
   execute: async (params) => {
+    console.log('[ProposalTools] search_proposal_snippets called with:', JSON.stringify(params));
     try {
       const supabase = getSupabase();
 

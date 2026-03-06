@@ -1555,11 +1555,17 @@ REMINDER: You are ${this.displayName}. Respond as ${this.displayName} — NOT as
           const hierarchical = await buildHierarchicalContext(context.messages, message.threadTs);
           threadContext = '\n\n' + formatHierarchicalContext(hierarchical);
         } catch (err) {
-          // Fallback to simple context
+          // Fallback to simple context with identity labels
           console.warn(`${this.displayName}: Hierarchical context failed, using simple:`, err);
+          const agentNames = ['maya', 'david', 'rosa', 'james', 'patricia', 'jodie', 'marcus'];
           threadContext =
-            '\n\nTHREAD CONTEXT (previous messages):\n' +
-            context.messages.map((m) => `${m.author}: ${m.text}`).join('\n');
+            "\n\nTHREAD CONTEXT (do NOT adopt other agents' voices - respond only as yourself):\n" +
+            context.messages
+              .map((m) => {
+                const isAgent = agentNames.includes(m.author.toLowerCase());
+                return isAgent ? `[AGENT ${m.author} said]: "${m.text}"` : `${m.author}: ${m.text}`;
+              })
+              .join('\n');
         }
       }
     }

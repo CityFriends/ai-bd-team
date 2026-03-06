@@ -79,18 +79,18 @@ const jodieTextures = [
   'Jodie is in a productive headspace',
 ];
 
-// Marcus personality textures - moods only, not activities (he was narrating these)
+// Marcus personality textures - moods only, NO activity suggestions
+// Removed: "in the zone", "chess.com open", "focus mode", "ready to cut through"
+// These made him sound like he was actively working when he's stateless
 const marcusTextures = [
   'Marcus is feeling clear-headed today',
-  'Marcus is caffeinated and focused',
-  'Marcus has chess.com open in another tab (procrastinating)',
+  'Marcus is caffeinated',
   "Marcus is hungry — thinking about his mom's griot",
   'Kernel is being needy today',
-  'Marcus is in the zone',
-  'Marcus is slightly annoyed at overengineered code in general',
   'Marcus is in a good mood',
-  'Marcus is ready to cut through complexity',
-  'Marcus is in focus mode — Kernel is napping',
+  'Marcus is slightly annoyed at overengineered code in general',
+  'Marcus is thinking about F1 strategy',
+  'Kernel is napping',
 ];
 
 const agentTextures: Record<LiveAgentName, string[]> = {
@@ -132,43 +132,35 @@ export function clearTextureCache(): void {
   Object.keys(sessionTextures).forEach((key) => delete sessionTextures[key]);
 }
 
-// Warmup conversation pairs - casual exchanges that set conversational tone
-// These are assistant/user pairs that establish natural back-and-forth
-
-interface WarmupMessage {
-  role: 'assistant' | 'user';
-  content: string;
-}
-
-const genericWarmups: WarmupMessage[][] = [
-  [
-    { role: 'assistant', content: "Hey, what's up?" },
-    { role: 'user', content: 'Not much, just checking in on stuff.' },
-  ],
-  [
-    { role: 'assistant', content: 'Morning!' },
-    { role: 'user', content: 'Morning! Got a sec?' },
-  ],
-  [
-    { role: 'assistant', content: "What's good?" },
-    { role: 'user', content: 'Got something to run by you.' },
-  ],
-];
+// Warmup conversation pairs - DISABLED
+// These were causing identity confusion by creating false conversation history.
+// Agents would adopt other agents' voices (especially Jodie's) because the
+// warmup + thread context created ambiguous identity signals.
+//
+// To re-enable, uncomment the warmup logic in buildWarmupMessages() below.
 
 /**
  * Build warmup messages for the conversation.
  * Returns an array of message objects ready for the messages array.
+ *
+ * NOTE: Warmups disabled to prevent identity confusion.
+ * These created false conversation history that could make agents
+ * adopt voices from other agents in the thread context.
  */
 export function buildWarmupMessages(
   _agent: LiveAgentName
 ): Array<{ role: 'assistant' | 'user'; content: string }> {
-  // 50% chance to include a warmup exchange
-  if (Math.random() > 0.5) {
-    return [];
-  }
+  // DISABLED: Warmups were contributing to identity confusion
+  // Agents were adopting other agents' voices (especially Jodie's)
+  // because the warmup + thread context created ambiguous identity signals
+  return [];
 
-  const warmup = genericWarmups[Math.floor(Math.random() * genericWarmups.length)];
-  return warmup.map((msg) => ({ role: msg.role, content: msg.content }));
+  // Original implementation (kept for reference):
+  // if (Math.random() > 0.5) {
+  //   return [];
+  // }
+  // const warmup = genericWarmups[Math.floor(Math.random() * genericWarmups.length)];
+  // return warmup.map((msg) => ({ role: msg.role, content: msg.content }));
 }
 
 /**

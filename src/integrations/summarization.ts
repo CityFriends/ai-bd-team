@@ -159,8 +159,15 @@ SUMMARY:`;
   }
 }
 
+// Agent names for identity labeling
+const AGENT_NAMES = ['maya', 'david', 'rosa', 'james', 'patricia', 'jodie', 'marcus'];
+
 /**
  * Format hierarchical context for inclusion in a prompt
+ *
+ * IMPORTANT: Agent messages are labeled with [AGENT: Name said] to prevent
+ * identity bleeding. Without these labels, agents may adopt the distinctive
+ * voice of other agents (especially Jodie's writing style).
  */
 export function formatHierarchicalContext(context: HierarchicalContext): string {
   const parts: string[] = [];
@@ -174,11 +181,20 @@ export function formatHierarchicalContext(context: HierarchicalContext): string 
     parts.push('');
   }
 
-  // Add recent messages verbatim
+  // Add recent messages with identity labels for agent messages
   if (context.recentMessages.length > 0) {
-    parts.push('RECENT MESSAGES:');
+    parts.push("RECENT MESSAGES (do NOT adopt other agents' voices - respond only as yourself):");
     context.recentMessages.forEach((m) => {
-      parts.push(`${m.author}: ${m.text}`);
+      const authorLower = m.author.toLowerCase();
+      const isAgent = AGENT_NAMES.includes(authorLower);
+
+      if (isAgent) {
+        // Label agent messages clearly to prevent voice adoption
+        parts.push(`[AGENT ${m.author} said]: "${m.text}"`);
+      } else {
+        // Human messages - include normally
+        parts.push(`${m.author}: ${m.text}`);
+      }
     });
   }
 
