@@ -378,14 +378,13 @@ export abstract class LiveAgent {
         console.log(`${this.displayName}: Detected team trigger in message`);
       }
 
-      // Get thread timestamp
+      // Check if this is in a thread we're active in
       const threadTs = msg.thread_ts;
+      const isInActiveThread = threadTs && this.activeThreads.has(threadTs) && !isFromBot;
 
-      // Debug: log thread activity (but don't auto-respond just because we're active)
-      if (threadTs && this.activeThreads.has(threadTs)) {
-        console.log(
-          `${this.displayName}: Message in thread we participated in (not auto-responding)`
-        );
+      // Debug: log thread activity
+      if (isInActiveThread) {
+        console.log(`${this.displayName}: Message in active thread`);
       }
 
       // Check if this is a general channel message (not in a thread) that we should respond to
@@ -694,12 +693,14 @@ export abstract class LiveAgent {
         }
       }
 
-      // Final decision: only handle if DIRECTLY mentioned or team trigger
-      // REMOVED: isInActiveThread alone - this caused over-responding in threads
-      // Agents should only jump into threads when explicitly called upon
+      // Final decision: handle if mentioned, in active thread, team trigger, or proactive
+      // The model decides whether to actually respond via shouldRespond
       // CRITICAL: Never proactively respond to bot messages - that causes pile-ons
       const shouldHandle =
-        isMentioned || isTeamTrigger || (shouldProactivelyRespond && !isFromBot && !threadTs); // No proactive in threads
+        isMentioned ||
+        isInActiveThread ||
+        isTeamTrigger ||
+        (shouldProactivelyRespond && !isFromBot);
 
       if (shouldHandle) {
         // Mark as processed to avoid duplicates
@@ -710,7 +711,9 @@ export abstract class LiveAgent {
           ? 'Directly @mentioned'
           : isTeamTrigger
             ? 'Team trigger (hey team)'
-            : 'Proactive response to channel message';
+            : isInActiveThread
+              ? 'Active thread participant'
+              : 'Proactive response to channel message';
         console.log(`${this.displayName}: ${reason}`);
 
         const message = await this.parseIncomingMessage(event);
