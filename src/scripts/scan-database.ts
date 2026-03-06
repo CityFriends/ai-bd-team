@@ -11,9 +11,6 @@ const TABLES = [
   'opportunities',
   'agencies',
   'companies',
-  'outreach',
-  'conversation_threads',
-  'agent_queue',
   'agent_memory',
   'research_cache',
   'message_claims',
@@ -21,7 +18,6 @@ const TABLES = [
   // Memory & Context
   'user_context',
   'decision_patterns',
-  'conversation_memory',
   'inside_jokes',
   'agent_availability',
   'user_profiles',
@@ -56,6 +52,7 @@ const TABLES = [
   // Memory & Cache
   'agent_memories',
   'tool_cache',
+  'cache_metrics',
 
   // Workflows
   'workflow_instances',
