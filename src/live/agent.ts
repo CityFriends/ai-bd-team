@@ -1530,7 +1530,7 @@ ${this.name !== 'david' ? 'David=<@U0AC0SVD3MH> deep research, incumbents, USASp
 ${this.name !== 'rosa' ? 'Rosa=<@U0ACASZ36BW> teaming, partnerships, introductions' : ''}
 ${this.name !== 'james' ? 'James=<@U0AC582GXBQ> strategy, go/no-go, capture' : ''}
 ${this.name !== 'patricia' ? 'Patricia=<@U0AC79NTDAN> deadlines, action items, tracking' : ''}
-${this.name !== 'jodie' ? 'Jodie=<@U0ACP8LKFB3> proposal writing, compliance, drafts' : ''}
+${this.name !== 'jodie' ? 'Jodie=<@U0AHG13N23W> proposal writing, compliance, drafts' : ''}
 ${this.name !== 'marcus' ? 'Marcus=<@U0ADSL3DL95> engineering lead, GitHub repos, architecture, FedRAMP, ATO, tech stack' : ''}
 
 ${agentMoodLine}
