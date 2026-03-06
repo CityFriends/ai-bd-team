@@ -378,13 +378,14 @@ export abstract class LiveAgent {
         console.log(`${this.displayName}: Detected team trigger in message`);
       }
 
-      // Check if this is in a thread we're active in
+      // Get thread timestamp
       const threadTs = msg.thread_ts;
-      const isInActiveThread = threadTs && this.activeThreads.has(threadTs) && !isFromBot;
 
-      // Debug: log thread activity
+      // Debug: log thread activity (but don't auto-respond just because we're active)
       if (threadTs && this.activeThreads.has(threadTs)) {
-        console.log(`${this.displayName}: Received message in active thread`);
+        console.log(
+          `${this.displayName}: Message in thread we participated in (not auto-responding)`
+        );
       }
 
       // Check if this is a general channel message (not in a thread) that we should respond to
@@ -693,13 +694,12 @@ export abstract class LiveAgent {
         }
       }
 
-      // Final decision: only handle if mentioned, in active thread, team trigger, OR proactively responding
+      // Final decision: only handle if DIRECTLY mentioned or team trigger
+      // REMOVED: isInActiveThread alone - this caused over-responding in threads
+      // Agents should only jump into threads when explicitly called upon
       // CRITICAL: Never proactively respond to bot messages - that causes pile-ons
       const shouldHandle =
-        isMentioned ||
-        isInActiveThread ||
-        isTeamTrigger ||
-        (shouldProactivelyRespond && !isFromBot);
+        isMentioned || isTeamTrigger || (shouldProactivelyRespond && !isFromBot && !threadTs); // No proactive in threads
 
       if (shouldHandle) {
         // Mark as processed to avoid duplicates
@@ -707,12 +707,10 @@ export abstract class LiveAgent {
         setTimeout(() => this.processedMessages.delete(messageId), 5 * 60 * 1000);
 
         const reason = isMentioned
-          ? 'Mentioned by agent'
+          ? 'Directly @mentioned'
           : isTeamTrigger
             ? 'Team trigger (hey team)'
-            : isInActiveThread
-              ? 'Message in active thread'
-              : 'Proactive response to channel message';
+            : 'Proactive response to channel message';
         console.log(`${this.displayName}: ${reason}`);
 
         const message = await this.parseIncomingMessage(event);
@@ -1501,7 +1499,7 @@ Sources: Cite where facts come from. No data = say so. Never invent numbers or l
 
 CRITICAL: You are stateless. NEVER say "I'll look into this", "give me X minutes", "let me check", or "I'll get back to you". You cannot follow up — you only know what's in your context RIGHT NOW. If you don't have the data, say so and stop.
 
-When to respond: If @mentioned, yes. If another agent was @mentioned, no. If your point was already made, stay quiet. For short replies like "yes" — only respond if YOU were the one they're answering.
+When to respond: ONLY if @mentioned directly. If another agent was @mentioned, STAY QUIET. If your point was already made in the thread, STAY QUIET. If it's a short reply like "yes", "thanks", "got it" — STAY QUIET unless they're clearly responding to YOU. When in doubt, don't respond. Less is more.
 
 Confidence: Cite sources for high confidence. Say "pattern suggests" for medium. Say "gut feeling" for low.
 
