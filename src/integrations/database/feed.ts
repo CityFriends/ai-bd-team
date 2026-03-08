@@ -340,6 +340,50 @@ export async function getReactionsForPost(postId: string): Promise<FeedReaction[
   }
 }
 
+/**
+ * Check if an agent has already reacted to a post
+ * Used to skip redundant Claude calls
+ */
+export async function hasAgentReacted(postId: string, agent: string): Promise<boolean> {
+  try {
+    const { count, error } = await getSupabase()
+      .from('agent_feed_reactions')
+      .select('*', { count: 'exact', head: true })
+      .eq('post_id', postId)
+      .eq('reactor', agent);
+
+    if (error) {
+      return false;
+    }
+
+    return (count || 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check if an agent has already replied to a post
+ * Used to skip redundant Claude calls
+ */
+export async function hasAgentReplied(postId: string, agent: string): Promise<boolean> {
+  try {
+    const { count, error } = await getSupabase()
+      .from('agent_feed_posts')
+      .select('*', { count: 'exact', head: true })
+      .eq('reply_to_post_id', postId)
+      .eq('author', agent);
+
+    if (error) {
+      return false;
+    }
+
+    return (count || 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
 // ============================================================
 // Get Posts by Semantic Similarity
 // ============================================================

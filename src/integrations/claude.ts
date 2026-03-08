@@ -2,6 +2,12 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { AgentName } from '../types/index.js';
 import { metrics, MetricNames } from '../lib/metrics.js';
 import { getRequestId } from '../lib/request-context.js';
+import {
+  trackCost,
+  type CallPurpose,
+  getRecommendedModel,
+  type ModelTier,
+} from '../lib/cost-tracker.js';
 
 let anthropic: Anthropic | null = null;
 
@@ -16,34 +22,62 @@ export function getAnthropic(): Anthropic {
   return anthropic;
 }
 
-const MODEL = 'claude-sonnet-4-20250514';
+// Model constants
+const MODEL_SONNET = 'claude-sonnet-4-20250514';
+const MODEL_HAIKU = 'claude-3-5-haiku-20241022';
+
+// Legacy constant for backward compatibility
+const MODEL = MODEL_SONNET;
+
+// Export for use in other modules
+export { MODEL_SONNET, MODEL_HAIKU, getRecommendedModel, type CallPurpose, type ModelTier };
 
 /**
- * Track Claude API usage metrics
+ * Track Claude API usage metrics (in-memory + persistent)
  */
-function trackApiUsage(
+async function trackApiUsage(
   response: Anthropic.Message,
   operation: string,
   durationMs: number,
-  agent?: string
-): void {
+  agent?: string,
+  purpose?: CallPurpose
+): Promise<void> {
   const labels = {
     operation,
     model: response.model,
     ...(agent && { agent }),
   };
 
-  // Track call count
+  // Track in-memory metrics
   metrics.increment(MetricNames.CLAUDE_CALLS, labels);
-
-  // Track latency
   metrics.timing(MetricNames.CLAUDE_LATENCY, durationMs, labels);
 
-  // Track token usage
   if (response.usage) {
     metrics.increment(MetricNames.CLAUDE_TOKENS_INPUT, labels, response.usage.input_tokens);
     metrics.increment(MetricNames.CLAUDE_TOKENS_OUTPUT, labels, response.usage.output_tokens);
+
+    // Persist to database for cost analysis (fire and forget)
+    trackCost({
+      agent,
+      purpose: purpose || mapOperationToPurpose(operation),
+      model: response.model,
+      usage: response.usage,
+      durationMs,
+    }).catch(() => {}); // Ignore errors - don't block main flow
   }
+}
+
+/**
+ * Map legacy operation names to CallPurpose
+ */
+function mapOperationToPurpose(operation: string): CallPurpose {
+  const mapping: Record<string, CallPurpose> = {
+    generateAgentResponse: 'conversation',
+    analyzeOpportunityFit: 'opportunity_analysis',
+    researchAgency: 'research',
+    generateOutreachEmail: 'outreach_draft',
+  };
+  return mapping[operation] || 'other';
 }
 
 /**
@@ -150,7 +184,7 @@ export async function generateAgentResponse(
     });
 
     const durationMs = Date.now() - startTime;
-    trackApiUsage(response, 'generateAgentResponse', durationMs, agent);
+    await trackApiUsage(response, 'generateAgentResponse', durationMs, agent, 'conversation');
 
     // Log token usage for debugging
     if (response.usage) {
@@ -216,7 +250,13 @@ Respond in JSON format:
       messages: [{ role: 'user', content: prompt }],
     });
 
-    trackApiUsage(response, 'analyzeOpportunityFit', Date.now() - startTime);
+    await trackApiUsage(
+      response,
+      'analyzeOpportunityFit',
+      Date.now() - startTime,
+      undefined,
+      'opportunity_analysis'
+    );
 
     const textBlock = response.content.find((block) => block.type === 'text');
     if (!textBlock || textBlock.type !== 'text') {
@@ -281,7 +321,7 @@ Respond in JSON format:
       messages: [{ role: 'user', content: prompt }],
     });
 
-    trackApiUsage(response, 'researchAgency', Date.now() - startTime);
+    await trackApiUsage(response, 'researchAgency', Date.now() - startTime, undefined, 'research');
 
     const textBlock = response.content.find((block) => block.type === 'text');
     if (!textBlock || textBlock.type !== 'text') {
@@ -350,7 +390,13 @@ Respond in JSON format:
       messages: [{ role: 'user', content: prompt }],
     });
 
-    trackApiUsage(response, 'generateOutreachEmail', Date.now() - startTime);
+    await trackApiUsage(
+      response,
+      'generateOutreachEmail',
+      Date.now() - startTime,
+      undefined,
+      'outreach_draft'
+    );
 
     const textBlock = response.content.find((block) => block.type === 'text');
     if (!textBlock || textBlock.type !== 'text') {

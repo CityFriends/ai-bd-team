@@ -17,7 +17,8 @@ import {
   logJobFailed,
   acquireCronLock,
 } from '../integrations/database/cron.js';
-import { getAnthropic } from '../integrations/claude.js';
+import { getAnthropic, MODEL_SONNET } from '../integrations/claude.js';
+import { trackCost } from '../lib/cost-tracker.js';
 import { publishEvent, EventTypes } from '../events/index.js';
 import { getRecentMemories } from '../memory/index.js';
 import {
@@ -264,11 +265,25 @@ async function runThinkingSession(agent: LiveAgentName): Promise<ThinkingResult>
 
   try {
     const client = getAnthropic();
+    const startTime = Date.now();
+
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: MODEL_SONNET, // Thinking sessions need Sonnet-level reasoning
       max_tokens: 500,
       messages: [{ role: 'user', content: prompt }],
     });
+
+    // Track cost
+    if (response.usage) {
+      const durationMs = Date.now() - startTime;
+      trackCost({
+        agent,
+        purpose: 'thinking_session',
+        model: MODEL_SONNET,
+        usage: response.usage,
+        durationMs,
+      }).catch(() => {});
+    }
 
     const textBlock = response.content.find((b) => b.type === 'text');
     if (!textBlock || textBlock.type !== 'text') {

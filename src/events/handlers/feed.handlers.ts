@@ -13,11 +13,14 @@ import {
   type FeedReactionType,
 } from '../eventTypes.js';
 import type { EventHandler, EventHandlerContext, EventHandlerResult } from '../eventProcessor.js';
-import { getAnthropic } from '../../integrations/claude.js';
+import { getAnthropic, MODEL_HAIKU } from '../../integrations/claude.js';
+import { trackCost, shouldSkipClaudeCall } from '../../lib/cost-tracker.js';
 import {
   createFeedPost,
   addReaction,
   checkAgentRateLimit,
+  hasAgentReacted,
+  hasAgentReplied,
   type FeedPostType,
 } from '../../integrations/database/feed.js';
 import { publishEvent } from '../eventBus.js';
@@ -132,8 +135,24 @@ async function decideResponse(
   payload: FeedPostCreatedPayload,
   relevanceScore: number
 ): Promise<ResponseDecision> {
-  // Low relevance = no response
-  if (relevanceScore < 0.3) {
+  // Check local heuristics first - avoid Claude call if we can
+  const skipCheck = shouldSkipClaudeCall({
+    relevanceScore,
+    importance: payload.importance,
+    isOwnPost: payload.author === agent,
+  });
+
+  if (skipCheck.skip) {
+    return { shouldRespond: false, responseType: 'none' };
+  }
+
+  // Check if agent already engaged with this post (no Claude call needed)
+  const [alreadyReacted, alreadyReplied] = await Promise.all([
+    hasAgentReacted(payload.postId, agent),
+    hasAgentReplied(payload.postId, agent),
+  ]);
+
+  if (alreadyReacted || alreadyReplied) {
     return { shouldRespond: false, responseType: 'none' };
   }
 
@@ -151,7 +170,7 @@ async function decideResponse(
     return { shouldRespond: false, responseType: 'none' };
   }
 
-  // Medium relevance = maybe just react
+  // Medium relevance = maybe just react (no Claude call needed)
   if (relevanceScore < 0.5) {
     // 30% chance of reaction
     if (Math.random() < 0.3) {
@@ -165,44 +184,41 @@ async function decideResponse(
   }
 
   // High relevance = consider reply
-  // Use Claude to decide
+  // Use Claude HAIKU for engagement decisions (cheaper, still capable)
   const client = getAnthropic();
   const interests = AGENT_FEED_INTERESTS[agent];
+  const startTime = Date.now();
 
-  const prompt = `You are ${agent}, ${interests.tags.slice(0, 3).join('/')} specialist for a federal contracting team.
+  const prompt = `You are ${agent}, ${interests.tags.slice(0, 3).join('/')} specialist.
 
-A teammate posted this on your internal feed:
+Teammate post: [${payload.author}] (${payload.postType}): "${payload.content}"
 
-[${payload.author}] (${payload.postType}): "${payload.content}"
-Tags: ${(payload.tags || []).join(', ') || 'none'}
+Decide: REPLY (add value), REACT (upvote/curious), BUILD (extend idea), or NONE.
 
-Based on your expertise in ${interests.keywords.slice(0, 5).join(', ')}, decide how to respond:
+Rules: Only reply if you add genuine value. Be concise. 1-2 sentences max.
 
-1. REPLY - You have something valuable to add (expertise, perspective, answer)
-2. REACT - You find it interesting but don't have much to add (upvote, curious)
-3. BUILD - You want to extend the idea with your own take
-4. NONE - Not relevant enough for you to engage
-
-IMPORTANT:
-- Only reply if you genuinely add value
-- Don't just agree for the sake of it
-- Be concise (1-2 sentences for replies)
-- Match their energy level
-
-Respond in JSON:
-{
-  "decision": "reply|react|build|none",
-  "reasoning": "Brief explanation",
-  "reaction": "upvote|curious|important" (if react),
-  "replyContent": "Your reply" (if reply/build)
-}`;
+JSON response:
+{"decision": "reply|react|build|none", "reaction": "upvote|curious", "replyContent": "..."}`;
 
   try {
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 300,
+      model: MODEL_HAIKU, // Use Haiku for engagement decisions (10x cheaper)
+      max_tokens: 200, // Reduced - we only need short responses
       messages: [{ role: 'user', content: prompt }],
     });
+
+    // Track cost
+    if (response.usage) {
+      const durationMs = Date.now() - startTime;
+      trackCost({
+        agent,
+        purpose: 'engagement_decision',
+        model: MODEL_HAIKU,
+        usage: response.usage,
+        durationMs,
+        metadata: { postAuthor: payload.author, postType: payload.postType },
+      }).catch(() => {});
+    }
 
     const textBlock = response.content.find((b) => b.type === 'text');
     if (!textBlock || textBlock.type !== 'text') {
