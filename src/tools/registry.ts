@@ -18,6 +18,7 @@ import { farSearchTools } from './definitions/far-search.tools.js';
 import { samEntityTools } from './definitions/sam-entity.tools.js';
 import { proposalTools } from './definitions/proposal.tools.js';
 import { githubTools } from './definitions/github.tools.js';
+import { notionTools } from './definitions/notion.tools.js';
 
 /**
  * All registered tools
@@ -46,6 +47,9 @@ const ALL_TOOLS: AgentTool[] = [
 
   // GitHub tools (Marcus)
   ...githubTools,
+
+  // Notion tools (Jodie) - case studies and proposal writing
+  ...notionTools,
 ];
 
 /**

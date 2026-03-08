@@ -7,6 +7,7 @@
 
 import type { AgentTool } from '../types.js';
 import { getSupabase } from '../../integrations/supabase.js';
+import { getProposalWritingGuide, getGuideSection } from '../../context/proposal-writing-guide.js';
 
 /**
  * Search proposal snippets
@@ -382,6 +383,64 @@ export const getKeyPersonnelTool: AgentTool = {
 };
 
 /**
+ * Get proposal writing guide
+ */
+export const getProposalWritingGuideTool: AgentTool = {
+  definition: {
+    name: 'get_proposal_writing_guide',
+    description:
+      'Get the proposal writing guide with style guidelines, voice/tone rules, banned words, and section templates. Use this BEFORE drafting any proposal content to ensure consistency.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        section: {
+          type: 'string',
+          description:
+            'Specific section to retrieve: voice, tone, avoid, templates, shipley, formatting, checklist. Leave empty for full guide.',
+          enum: ['voice', 'tone', 'avoid', 'templates', 'shipley', 'formatting', 'checklist'],
+        },
+      },
+      required: [],
+    },
+  },
+  allowedAgents: ['jodie'],
+  sourceName: 'Proposal Writing Guide',
+  execute: async (params) => {
+    console.log('[ProposalTools] get_proposal_writing_guide called with:', JSON.stringify(params));
+
+    try {
+      const section = params.section as
+        | 'voice'
+        | 'tone'
+        | 'avoid'
+        | 'templates'
+        | 'shipley'
+        | 'formatting'
+        | 'checklist'
+        | undefined;
+
+      const content = section ? getGuideSection(section) : getProposalWritingGuide();
+
+      return {
+        success: true,
+        data: {
+          section: section || 'full',
+          content,
+        },
+        sourceCitation: 'FFTC Proposal Writing Guide',
+      };
+    } catch (error) {
+      return {
+        success: false,
+        data: null,
+        error: error instanceof Error ? error.message : 'Failed to load writing guide',
+        sourceCitation: 'Proposal Writing Guide',
+      };
+    }
+  },
+};
+
+/**
  * All proposal tools
  */
 export const proposalTools: AgentTool[] = [
@@ -389,4 +448,5 @@ export const proposalTools: AgentTool[] = [
   getCaseStudyDetailsTool,
   getCompanyCapabilitiesTool,
   getKeyPersonnelTool,
+  getProposalWritingGuideTool,
 ];
