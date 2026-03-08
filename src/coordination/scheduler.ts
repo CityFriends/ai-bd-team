@@ -6,6 +6,7 @@ import { runThinkingTime } from '../cron/agent-thinking.js';
 import { cronFeedSynthesis } from '../cron/feed-synthesis.js';
 import { cronDeadlineMonitor } from '../cron/deadline-monitor.js';
 import { cronWeeklyRollup } from '../cron/weekly-rollup.js';
+import { cronDiscussionProcessor } from '../cron/discussion-processor.js';
 
 // Track scheduled jobs for cleanup
 const scheduledJobs: cron.ScheduledTask[] = [];
@@ -157,6 +158,27 @@ export function scheduleWeeklyRollup(): void {
   console.log('Scheduled weekly rollup for 8:00 AM Monday');
 }
 
+// Schedule Discussion Processor every 2 hours (11am, 1pm, 3pm, 5pm ET)
+export function scheduleDiscussionProcessor(): void {
+  const job = cron.schedule(
+    '0 11,13,15,17 * * 1-5',
+    async () => {
+      console.log('Running scheduled discussion processor...');
+      try {
+        await cronDiscussionProcessor();
+      } catch (error) {
+        console.error('Error in discussion processor:', error);
+      }
+    },
+    {
+      timezone: 'America/New_York',
+    }
+  );
+
+  scheduledJobs.push(job);
+  console.log('Scheduled discussion processor for 11am, 1pm, 3pm, 5pm ET weekdays');
+}
+
 // Start all scheduled jobs
 export function startScheduler(): void {
   console.log('Starting scheduler...');
@@ -167,6 +189,7 @@ export function startScheduler(): void {
   scheduleFeedSynthesis();
   scheduleDeadlineMonitor();
   scheduleWeeklyRollup();
+  scheduleDiscussionProcessor();
   console.log('Scheduler started');
 }
 
@@ -220,4 +243,10 @@ export async function runDeadlineMonitorNow(): Promise<void> {
 export async function runWeeklyRollupNow(): Promise<void> {
   console.log('Running weekly rollup immediately...');
   await cronWeeklyRollup();
+}
+
+// Run discussion processor immediately (for testing or manual trigger)
+export async function runDiscussionProcessorNow(): Promise<void> {
+  console.log('Running discussion processor immediately...');
+  await cronDiscussionProcessor();
 }

@@ -26,6 +26,8 @@ export type CallPurpose =
   | 'outreach_draft' // Writing emails
   | 'conversation' // Slack/live conversation
   | 'summarization' // Memory/context summarization
+  | 'discussion' // Multi-agent opportunity discussion
+  | 'synthesis' // Deliverable generation from discussion
   | 'other';
 
 export interface CostRecord {
