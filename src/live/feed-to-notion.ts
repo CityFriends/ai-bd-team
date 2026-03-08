@@ -200,13 +200,30 @@ export async function postToNotion(post: FeedPost): Promise<string | null> {
 // Update Notion Page (for engagement updates)
 // ============================================================
 
+interface NotionBlock {
+  id: string;
+  type: string;
+  callout?: {
+    rich_text: Array<{ type: string; text?: { content: string } }>;
+    icon?: { type: string; emoji?: string };
+  };
+}
+
+interface NotionBlocksResponse {
+  results: NotionBlock[];
+}
+
 export async function updateNotionPost(post: FeedPost): Promise<boolean> {
   if (!post.notion_page_id) return false;
 
-  const body = {
+  const agentInfo = AGENT_INFO[post.author] || { emoji: '🤖', role: 'Agent' };
+  const engagement = post.upvotes + post.builds + post.challenges;
+
+  // Update database properties
+  const propsBody = {
     properties: {
       Engagement: {
-        number: post.upvotes + post.builds + post.challenges,
+        number: engagement,
       },
       Replies: {
         number: post.reply_count,
@@ -214,8 +231,42 @@ export async function updateNotionPost(post: FeedPost): Promise<boolean> {
     },
   };
 
-  const result = await notionRequest(`/pages/${post.notion_page_id}`, 'PATCH', body);
-  return result !== null;
+  const propsResult = await notionRequest(`/pages/${post.notion_page_id}`, 'PATCH', propsBody);
+  if (!propsResult) return false;
+
+  // Find and update the callout block with engagement stats
+  const blocksResponse = (await notionRequest(
+    `/blocks/${post.notion_page_id}/children`,
+    'GET'
+  )) as NotionBlocksResponse | null;
+
+  if (!blocksResponse?.results) return true; // Props updated, blocks fetch failed
+
+  // Find the callout block
+  const calloutBlock = blocksResponse.results.find(
+    (block) => block.type === 'callout' && block.callout?.icon?.emoji === agentInfo.emoji
+  );
+
+  if (calloutBlock) {
+    // Update callout with new engagement
+    const calloutBody = {
+      callout: {
+        rich_text: [
+          {
+            type: 'text',
+            text: {
+              content: `${engagement} engagement | ${post.reply_count} replies | Importance: ${post.importance}/10`,
+            },
+          },
+        ],
+      },
+    };
+
+    await notionRequest(`/blocks/${calloutBlock.id}`, 'PATCH', calloutBody);
+    console.log(`[FeedToNotion] Updated engagement for ${post.author}'s post: ${engagement}`);
+  }
+
+  return true;
 }
 
 // ============================================================
