@@ -78,3 +78,67 @@ export async function setOpportunityDecision(id: string, decision: Decision): Pr
     status: decision === 'go' ? 'pursuing' : decision === 'no_go' ? 'passed' : 'researching',
   });
 }
+
+/**
+ * Get opportunities with upcoming deadlines
+ */
+export async function getUpcomingDeadlines(daysAhead: number = 14): Promise<Opportunity[]> {
+  const now = new Date();
+  const future = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000);
+
+  const { data, error } = await getSupabase()
+    .from('opportunities')
+    .select()
+    .in('status', ['new', 'researching', 'pursuing'])
+    .not('due_date', 'is', null)
+    .gte('due_date', now.toISOString().split('T')[0])
+    .lte('due_date', future.toISOString().split('T')[0])
+    .order('due_date', { ascending: true });
+
+  if (error) throw error;
+  return data || [];
+}
+
+/**
+ * Get opportunities with no recent activity
+ */
+export async function getStaleOpportunities(daysSinceActivity: number = 7): Promise<Opportunity[]> {
+  const threshold = new Date(Date.now() - daysSinceActivity * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data, error } = await getSupabase()
+    .from('opportunities')
+    .select()
+    .in('status', ['new', 'researching', 'pursuing'])
+    .lt('updated_at', threshold)
+    .order('updated_at', { ascending: true });
+
+  if (error) throw error;
+  return data || [];
+}
+
+/**
+ * Get pipeline summary counts
+ */
+export async function getPipelineSummary(): Promise<{
+  byStatus: Record<string, number>;
+  total: number;
+  withDeadlines: number;
+}> {
+  const { data, error } = await getSupabase().from('opportunities').select('status, due_date');
+
+  if (error) throw error;
+
+  const byStatus: Record<string, number> = {};
+  let withDeadlines = 0;
+
+  for (const opp of data || []) {
+    byStatus[opp.status] = (byStatus[opp.status] || 0) + 1;
+    if (opp.due_date) withDeadlines++;
+  }
+
+  return {
+    byStatus,
+    total: data?.length || 0,
+    withDeadlines,
+  };
+}

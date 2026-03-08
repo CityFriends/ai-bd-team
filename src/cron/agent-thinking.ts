@@ -37,6 +37,10 @@ import { storeMemory } from '../memory/index.js';
 import type { LiveAgentName } from '../live/types.js';
 import { feedHandlersByAgent } from '../events/handlers/feed.handlers.js';
 import type { ClaimedEvent } from '../events/eventTypes.js';
+import {
+  getActiveDirectives,
+  formatDirectivesForContext,
+} from '../integrations/database/directives.js';
 
 // ============================================================
 // Configuration
@@ -111,6 +115,7 @@ interface ThinkingContext {
   questionsYouWereCuriousAbout: string[];
   curiousQuestionsNeedingAnswers: string[];
   trendingTags: string[];
+  teamDirectives: string;
 }
 
 async function buildThinkingContext(agent: LiveAgentName): Promise<ThinkingContext> {
@@ -122,6 +127,7 @@ async function buildThinkingContext(agent: LiveAgentName): Promise<ThinkingConte
     curiousQuestions,
     postsAgentWasCurious,
     trending,
+    directives,
   ] = await Promise.all([
     getRecentMemories(agent, 15),
     getFeedPosts({ sinceHoursAgo: 48, limit: 20, excludeReplies: true }),
@@ -130,6 +136,7 @@ async function buildThinkingContext(agent: LiveAgentName): Promise<ThinkingConte
     getQuestionsWithCuriousReactions({ minCurious: 1, sinceHoursAgo: 48 }),
     getPostsAgentWasCuriousAbout(agent, { sinceHoursAgo: 48 }),
     getTrendingTags(48),
+    getActiveDirectives(),
   ]);
 
   return {
@@ -154,6 +161,7 @@ async function buildThinkingContext(agent: LiveAgentName): Promise<ThinkingConte
       .filter((q) => q.author !== agent && q.reply_count === 0)
       .map((q) => `[${q.author}] ${q.content} (${q.curious_agents.length} curious)`),
     trendingTags: trending,
+    teamDirectives: formatDirectivesForContext(directives),
   };
 }
 
@@ -191,9 +199,11 @@ ${context.unansweredQuestions.length > 0 ? context.unansweredQuestions.join('\n'
 
 TRENDING TOPICS: ${context.trendingTags.join(', ') || '(None)'}
 
+${context.teamDirectives}
+
 ---
 
-Based on your recent work and the feed activity, decide if you have something worth posting. You DON'T have to post - only post if you have a genuine insight, question, or observation.
+Based on your recent work, the feed activity, and team directives, decide if you have something worth posting. You DON'T have to post - only post if you have a genuine insight, question, or observation.
 
 If you decide to post, choose ONE of these post types:
 - observation: Something you noticed in your recent work
