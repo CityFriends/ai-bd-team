@@ -1044,8 +1044,22 @@ export abstract class LiveAgent {
     const response = await this.generateResponse(message, handoffContext);
     console.log(`${this.displayName}: Response generated, shouldRespond=${response.shouldRespond}`);
 
-    // Add reaction if specified (even if not responding with text)
-    if (response.reaction) {
+    // OVERRIDE: When directly @mentioned, ALWAYS respond with substance
+    // Don't allow emoji-only responses for direct mentions
+    if (message.isDirectMention && !response.shouldRespond) {
+      console.log(`${this.displayName}: Direct mention override - forcing response`);
+      if (response.text && response.text.trim().length > 0) {
+        // Claude gave us text but said not to respond - override that
+        response.shouldRespond = true;
+      } else {
+        // Claude didn't give us text - generate a fallback
+        response.shouldRespond = true;
+        response.text = `Hey! What do you need from me?`;
+      }
+    }
+
+    // Add reaction if specified (but only if also responding with text, or not directly mentioned)
+    if (response.reaction && (!message.isDirectMention || response.shouldRespond)) {
       await this.addReaction(response.reaction, message.messageTs);
       console.log(`${this.displayName}: Added :${response.reaction}: reaction`);
     }
