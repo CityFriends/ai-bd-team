@@ -909,28 +909,22 @@ export abstract class LiveAgent {
   // Main message handler
   async handleMessage(message: IncomingMessage): Promise<void> {
     // WORKING HOURS GATE: Check if we should respond based on time
-    // Skip check for team triggers since those are handled specially
-    if (!message.isTeamTrigger) {
+    // Skip check for team triggers and DIRECT MENTIONS - always respond when explicitly tagged
+    if (!message.isTeamTrigger && !message.isDirectMention) {
       const workingHoursCheck = checkWorkingHoursGate(message.text, message.isDirectMention);
 
       if (!workingHoursCheck.shouldRespond) {
         console.log(
           `${this.displayName}: ${workingHoursCheck.reason || 'Outside working hours'} - not responding`
         );
-
-        // For direct mentions outside hours, post a brief acknowledgment
-        if (message.isDirectMention && workingHoursCheck.offHoursMessage) {
-          await this.addReaction('clock3', message.messageTs);
-          // Don't post a message - just the reaction to acknowledge
-          // The reaction indicates "noted, will respond during work hours"
-        }
-
         return;
       }
 
       if (workingHoursCheck.reason) {
         console.log(`${this.displayName}: ${workingHoursCheck.reason}`);
       }
+    } else if (message.isDirectMention) {
+      console.log(`${this.displayName}: Direct mention - bypassing working hours check`);
     }
 
     // RESPONSE GATING: Check if we should respond based on domain and mentions
