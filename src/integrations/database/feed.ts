@@ -576,3 +576,210 @@ export async function checkAgentRateLimit(
     return { canPost: true };
   }
 }
+
+// ============================================================
+// Get High-Engagement Posts (for memory prioritization)
+// ============================================================
+
+export async function getHighEngagementPosts(
+  options: {
+    minEngagement?: number;
+    minImportance?: number;
+    sinceHoursAgo?: number;
+    limit?: number;
+  } = {}
+): Promise<FeedPost[]> {
+  const { minEngagement = 3, minImportance = 7, sinceHoursAgo = 48, limit = 20 } = options;
+
+  try {
+    const since = new Date(Date.now() - sinceHoursAgo * 60 * 60 * 1000).toISOString();
+
+    const { data, error } = await getSupabase()
+      .from('agent_feed_posts')
+      .select('*')
+      .gte('created_at', since)
+      .gte('importance', minImportance)
+      .order('created_at', { ascending: false })
+      .limit(limit * 2); // Get more, then filter
+
+    if (error) {
+      console.error('[Feed] Failed to get high-engagement posts:', error.message);
+      return [];
+    }
+
+    // Filter by total engagement
+    const filtered = (data || []).filter((post) => {
+      const engagement = post.upvotes + post.builds + post.challenges;
+      return engagement >= minEngagement;
+    });
+
+    return filtered.slice(0, limit) as FeedPost[];
+  } catch (err) {
+    console.error('[Feed] Error getting high-engagement posts:', err);
+    return [];
+  }
+}
+
+// ============================================================
+// Get Questions with Curious Reactions (for routing)
+// ============================================================
+
+export async function getQuestionsWithCuriousReactions(
+  options: {
+    minCurious?: number;
+    sinceHoursAgo?: number;
+    limit?: number;
+  } = {}
+): Promise<Array<FeedPost & { curious_agents: string[] }>> {
+  const { minCurious = 1, sinceHoursAgo = 48, limit = 10 } = options;
+
+  try {
+    const since = new Date(Date.now() - sinceHoursAgo * 60 * 60 * 1000).toISOString();
+
+    // Get questions
+    const { data: questions, error: qError } = await getSupabase()
+      .from('agent_feed_posts')
+      .select('*')
+      .eq('post_type', 'question')
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(limit * 2);
+
+    if (qError || !questions) {
+      console.error('[Feed] Failed to get questions:', qError?.message);
+      return [];
+    }
+
+    // Get curious reactions for each question
+    const results: Array<FeedPost & { curious_agents: string[] }> = [];
+
+    for (const question of questions) {
+      const { data: reactions } = await getSupabase()
+        .from('agent_feed_reactions')
+        .select('reactor')
+        .eq('post_id', question.id)
+        .eq('reaction_type', 'curious');
+
+      const curiousAgents = (reactions || []).map((r) => r.reactor);
+
+      if (curiousAgents.length >= minCurious) {
+        results.push({ ...question, curious_agents: curiousAgents } as FeedPost & {
+          curious_agents: string[];
+        });
+      }
+
+      if (results.length >= limit) break;
+    }
+
+    return results;
+  } catch (err) {
+    console.error('[Feed] Error getting curious questions:', err);
+    return [];
+  }
+}
+
+// ============================================================
+// Get Posts Agent Was Curious About (for context)
+// ============================================================
+
+export async function getPostsAgentWasCuriousAbout(
+  agent: string,
+  options: { sinceHoursAgo?: number; limit?: number } = {}
+): Promise<FeedPost[]> {
+  const { sinceHoursAgo = 48, limit = 10 } = options;
+
+  try {
+    const since = new Date(Date.now() - sinceHoursAgo * 60 * 60 * 1000).toISOString();
+
+    // Get reactions by this agent
+    const { data: reactions, error: rError } = await getSupabase()
+      .from('agent_feed_reactions')
+      .select('post_id')
+      .eq('reactor', agent)
+      .eq('reaction_type', 'curious')
+      .gte('created_at', since);
+
+    if (rError || !reactions || reactions.length === 0) {
+      return [];
+    }
+
+    const postIds = reactions.map((r) => r.post_id);
+
+    // Get the actual posts
+    const { data: posts, error: pError } = await getSupabase()
+      .from('agent_feed_posts')
+      .select('*')
+      .in('id', postIds)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (pError) {
+      console.error('[Feed] Failed to get curious posts:', pError.message);
+      return [];
+    }
+
+    return (posts || []) as FeedPost[];
+  } catch (err) {
+    console.error('[Feed] Error getting curious posts:', err);
+    return [];
+  }
+}
+
+// ============================================================
+// Get Thread Chain (for build development)
+// ============================================================
+
+export async function getThreadChain(postId: string): Promise<FeedPost[]> {
+  try {
+    const chain: FeedPost[] = [];
+    const visited = new Set<string>();
+
+    // Get the initial post
+    const { data: post, error } = await getSupabase()
+      .from('agent_feed_posts')
+      .select('*')
+      .eq('id', postId)
+      .single();
+
+    if (error || !post) return [];
+
+    // Walk up the chain (parents)
+    let current = post as FeedPost;
+    while (current.reply_to_post_id && !visited.has(current.reply_to_post_id)) {
+      visited.add(current.id);
+
+      const { data: parent } = await getSupabase()
+        .from('agent_feed_posts')
+        .select('*')
+        .eq('id', current.reply_to_post_id)
+        .single();
+
+      if (parent) {
+        chain.unshift(parent as FeedPost);
+        current = parent as FeedPost;
+      } else {
+        break;
+      }
+    }
+
+    // Add the original post
+    chain.push(post as FeedPost);
+    visited.add(post.id);
+
+    // Get all replies (children)
+    const { data: replies } = await getSupabase()
+      .from('agent_feed_posts')
+      .select('*')
+      .eq('reply_to_post_id', postId)
+      .order('created_at', { ascending: true });
+
+    if (replies) {
+      chain.push(...(replies as FeedPost[]));
+    }
+
+    return chain;
+  } catch (err) {
+    console.error('[Feed] Error getting thread chain:', err);
+    return [];
+  }
+}

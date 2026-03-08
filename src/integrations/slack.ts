@@ -86,6 +86,12 @@ const AGENT_INFO: Record<
     icon_url:
       'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/Marcus.jpeg',
   },
+  writer: {
+    username: 'Jodie',
+    displayName: 'Writer',
+    icon_url:
+      'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/Jodie.jpeg',
+  },
 };
 
 // Post a message as an agent with custom username and profile picture

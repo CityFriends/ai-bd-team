@@ -1,5 +1,12 @@
 // Agent types
-export type AgentName = 'scout' | 'analyst' | 'connector' | 'strategist' | 'pm' | 'engineer';
+export type AgentName =
+  | 'scout'
+  | 'analyst'
+  | 'connector'
+  | 'strategist'
+  | 'pm'
+  | 'engineer'
+  | 'writer';
 
 export interface Agent {
   name: AgentName;
@@ -14,6 +21,7 @@ export const AGENTS: Record<AgentName, Agent> = {
   strategist: { name: 'strategist', displayName: 'Strategist', emoji: '🎯' },
   pm: { name: 'pm', displayName: 'PM', emoji: '📋' },
   engineer: { name: 'engineer', displayName: 'Engineer', emoji: '⚙️' },
+  writer: { name: 'writer', displayName: 'Writer', emoji: '✍️' },
 };
 
 // Opportunity types

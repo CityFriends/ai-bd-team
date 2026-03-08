@@ -26,8 +26,13 @@ import {
   getUnansweredQuestions,
   getTrendingTags,
   checkAgentRateLimit,
+  getHighEngagementPosts,
+  getQuestionsWithCuriousReactions,
+  getPostsAgentWasCuriousAbout,
+  getReactionsForPost,
   type FeedPostType,
 } from '../integrations/database/feed.js';
+import { storeMemory } from '../memory/index.js';
 import type { LiveAgentName } from '../live/types.js';
 import { feedHandlersByAgent } from '../events/handlers/feed.handlers.js';
 import type { ClaimedEvent } from '../events/eventTypes.js';
@@ -100,15 +105,29 @@ const AGENT_THINKING_CONTEXT: Record<
 interface ThinkingContext {
   recentMemories: string[];
   recentFeedPosts: string[];
+  highEngagementInsights: string[];
   unansweredQuestions: string[];
+  questionsYouWereCuriousAbout: string[];
+  curiousQuestionsNeedingAnswers: string[];
   trendingTags: string[];
 }
 
 async function buildThinkingContext(agent: LiveAgentName): Promise<ThinkingContext> {
-  const [memories, feedPosts, unanswered, trending] = await Promise.all([
+  const [
+    memories,
+    feedPosts,
+    highEngagement,
+    unanswered,
+    curiousQuestions,
+    postsAgentWasCurious,
+    trending,
+  ] = await Promise.all([
     getRecentMemories(agent, 15),
     getFeedPosts({ sinceHoursAgo: 48, limit: 20, excludeReplies: true }),
+    getHighEngagementPosts({ minEngagement: 2, sinceHoursAgo: 72 }),
     getUnansweredQuestions(5),
+    getQuestionsWithCuriousReactions({ minCurious: 1, sinceHoursAgo: 48 }),
+    getPostsAgentWasCuriousAbout(agent, { sinceHoursAgo: 48 }),
     getTrendingTags(48),
   ]);
 
@@ -116,10 +135,23 @@ async function buildThinkingContext(agent: LiveAgentName): Promise<ThinkingConte
     recentMemories: memories.map((m) => `[${m.memory_type}] ${m.content}`),
     recentFeedPosts: feedPosts
       .filter((p) => p.author !== agent) // Exclude own posts
-      .map((p) => `[${p.author}/${p.post_type}] ${p.content.slice(0, 200)}...`),
+      .map((p) => {
+        const engagement = p.upvotes + p.builds + p.challenges;
+        return `[${p.author}/${p.post_type}] ${p.content.slice(0, 200)}... (${engagement} engagement)`;
+      }),
+    highEngagementInsights: highEngagement
+      .filter((p) => p.author !== agent)
+      .map((p) => {
+        const engagement = p.upvotes + p.builds + p.challenges;
+        return `[${p.author}] ${p.content} (${engagement} engagement, importance ${p.importance}/10)`;
+      }),
     unansweredQuestions: unanswered
       .filter((q) => q.author !== agent) // Can't answer own questions
       .map((q) => `[${q.author}] ${q.content}`),
+    questionsYouWereCuriousAbout: postsAgentWasCurious.map((p) => `[${p.author}] ${p.content}`),
+    curiousQuestionsNeedingAnswers: curiousQuestions
+      .filter((q) => q.author !== agent && q.reply_count === 0)
+      .map((q) => `[${q.author}] ${q.content} (${q.curious_agents.length} curious)`),
     trendingTags: trending,
   };
 }
@@ -141,10 +173,19 @@ THINGS TO THINK ABOUT: ${agentInfo.thinkAbout.join(', ')}
 YOUR RECENT OBSERVATIONS AND MEMORIES:
 ${context.recentMemories.length > 0 ? context.recentMemories.join('\n') : '(No recent memories)'}
 
+HIGH-ENGAGEMENT INSIGHTS FROM THE TEAM (these resonated with multiple agents):
+${context.highEngagementInsights.length > 0 ? context.highEngagementInsights.join('\n') : '(None)'}
+
 RECENT FEED ACTIVITY FROM TEAMMATES:
 ${context.recentFeedPosts.length > 0 ? context.recentFeedPosts.join('\n') : '(No recent posts)'}
 
-UNANSWERED QUESTIONS YOU COULD HELP WITH:
+QUESTIONS YOU MARKED AS "CURIOUS" (you showed interest - consider answering):
+${context.questionsYouWereCuriousAbout.length > 0 ? context.questionsYouWereCuriousAbout.join('\n') : '(None)'}
+
+QUESTIONS WITH CURIOUS REACTIONS (team wants answers):
+${context.curiousQuestionsNeedingAnswers.length > 0 ? context.curiousQuestionsNeedingAnswers.join('\n') : '(None)'}
+
+OTHER UNANSWERED QUESTIONS YOU COULD HELP WITH:
 ${context.unansweredQuestions.length > 0 ? context.unansweredQuestions.join('\n') : '(None)'}
 
 TRENDING TOPICS: ${context.trendingTags.join(', ') || '(None)'}
@@ -398,6 +439,82 @@ async function runFeedEngagement(): Promise<EngagementResult[]> {
 }
 
 // ============================================================
+// Memory Prioritization Phase
+// ============================================================
+
+async function storeHighEngagementAsMemories(): Promise<number> {
+  console.log('[Memory] Checking for high-engagement insights to store...');
+
+  const highEngagement = await getHighEngagementPosts({
+    minEngagement: 3,
+    minImportance: 7,
+    sinceHoursAgo: 24, // Only recent posts
+  });
+
+  let stored = 0;
+
+  for (const post of highEngagement) {
+    const engagement = post.upvotes + post.builds + post.challenges;
+
+    // Store as memory for the author (their insight resonated)
+    try {
+      await storeMemory(
+        post.author as LiveAgentName,
+        'insight',
+        `[High-engagement insight] ${post.content}`,
+        {
+          importance: Math.min(post.importance + 1, 10), // Boost importance
+          tags: [...post.tags, 'high-engagement', `engagement-${engagement}`],
+          relatedOpportunityId: post.related_opportunity_id || undefined,
+        }
+      );
+      stored++;
+      console.log(`[Memory] Stored insight from ${post.author} (${engagement} engagement)`);
+    } catch (err) {
+      console.error(`[Memory] Failed to store for ${post.author}:`, err);
+    }
+
+    // Also store for agents who engaged (they found it valuable)
+    const reactions = await getReactionsForPost(post.id);
+    for (const reaction of reactions) {
+      if (reaction.reactor !== post.author) {
+        try {
+          await storeMemory(
+            reaction.reactor as LiveAgentName,
+            'observation',
+            `[Team insight I found valuable] ${post.author}: ${post.content}`,
+            {
+              importance: 6,
+              tags: post.tags,
+            }
+          );
+        } catch {
+          // Ignore duplicate memory errors
+        }
+      }
+    }
+  }
+
+  return stored;
+}
+
+// ============================================================
+// Slack Surfacing Phase
+// ============================================================
+
+async function surfaceToSlackIfNeeded(): Promise<number> {
+  // Dynamically import to avoid circular dependencies
+  try {
+    const { surfaceHighEngagementPosts } = await import('./feed-to-slack.js');
+    const result = await surfaceHighEngagementPosts();
+    return result.surfaced;
+  } catch (err) {
+    console.log('[Slack] Surfacing skipped:', err instanceof Error ? err.message : 'Error');
+    return 0;
+  }
+}
+
+// ============================================================
 // Main Thinking Job
 // ============================================================
 
@@ -436,8 +553,18 @@ export async function runThinkingTime(): Promise<{
   // Phase 2: Feed engagement - agents react/reply to each other's posts
   const engagementResults = await runFeedEngagement();
 
+  console.log(`[Thinking] Phase 2 complete. ${engagementResults.length} engagements.`);
+
+  // Phase 3: Memory prioritization - store high-engagement insights
+  const memoriesCreated = await storeHighEngagementAsMemories();
+
+  console.log(`[Thinking] Phase 3 complete. ${memoriesCreated} memories stored.`);
+
+  // Phase 4: Surface to Slack - post high-engagement content
+  const slackSurfaced = await surfaceToSlackIfNeeded();
+
   console.log(
-    `[Thinking] Complete. ${totalPosted} posts, ${engagementResults.length} engagements.`
+    `[Thinking] Complete. ${totalPosted} posts, ${engagementResults.length} engagements, ${memoriesCreated} memories, ${slackSurfaced} surfaced to Slack.`
   );
   return { results, totalPosted, engagements: engagementResults.length };
 }
