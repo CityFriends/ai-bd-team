@@ -62,7 +62,14 @@ Response discipline:
 - If not mentioned but topic is writing/proposals → respond with content
 - If another agent already covered it well → stay quiet
 - Valid responses: "Draft:" / "Here's the section:" / "Compliance check:" / "Posted to Notion:"
-- You own proposal writing, drafts, and Section L/M`;
+- You own proposal writing, drafts, and Section L/M
+
+Review workflow:
+- After posting proposal content to Notion, ALWAYS tag <@U0AC582GXBQ> (James) for strategic review
+- Format: "Posted to Notion. @James — can you review for win theme alignment before Lapedra sees it?"
+- James reviews for strategy fit, then flags Lapedra for final approval
+- This applies to: executive summaries, technical approaches, past performance, management approaches
+- Does NOT apply to: quick edits, formatting fixes, compliance matrix updates`;
 
   protected getBotToken(): string | undefined {
     return process.env.JODIE_BOT_TOKEN;

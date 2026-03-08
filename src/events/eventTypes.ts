@@ -33,6 +33,9 @@ export const EventTypes = {
 
   // Learning
   OUTCOME_RECORDED: 'OUTCOME_RECORDED',
+
+  // Proposal workflow
+  PROPOSAL_CONTENT_POSTED: 'PROPOSAL_CONTENT_POSTED',
 } as const;
 
 export type EventType = (typeof EventTypes)[keyof typeof EventTypes];
@@ -519,6 +522,38 @@ export const OutcomeRecordedPayloadSchema = z.object({
 export type OutcomeRecordedPayload = z.infer<typeof OutcomeRecordedPayloadSchema>;
 
 // ============================================================
+// Proposal Workflow Schemas
+// ============================================================
+export const ProposalContentPostedPayloadSchema = z.object({
+  // Opportunity context
+  noticeId: z.string().optional(),
+  opportunityTitle: z.string(),
+  opportunityPageUrl: z.string().optional(),
+
+  // Content details
+  sectionType: z.enum([
+    'executive_summary',
+    'technical_approach',
+    'management_approach',
+    'past_performance',
+    'staffing_plan',
+    'other',
+  ]),
+  sectionTitle: z.string(),
+  contentPreview: z.string(), // First 500 chars for review context
+
+  // Writer context
+  writtenBy: z.literal('jodie'),
+  postedAt: z.string(),
+
+  // Review request
+  reviewRequested: z.boolean(),
+  reviewNotes: z.string().optional(),
+});
+
+export type ProposalContentPostedPayload = z.infer<typeof ProposalContentPostedPayloadSchema>;
+
+// ============================================================
 // Event Payload Union
 // ============================================================
 export const EventPayloadSchema = z.union([
@@ -535,6 +570,7 @@ export const EventPayloadSchema = z.union([
   SystemHealthCheckPayloadSchema,
   RiskAlertPayloadSchema,
   OutcomeRecordedPayloadSchema,
+  ProposalContentPostedPayloadSchema,
 ]);
 
 // ============================================================
@@ -604,6 +640,7 @@ export const PayloadValidators: Record<EventType, z.ZodSchema> = {
   [EventTypes.SYSTEM_HEALTH_CHECK]: SystemHealthCheckPayloadSchema,
   [EventTypes.RISK_ALERT]: RiskAlertPayloadSchema,
   [EventTypes.OUTCOME_RECORDED]: OutcomeRecordedPayloadSchema,
+  [EventTypes.PROPOSAL_CONTENT_POSTED]: ProposalContentPostedPayloadSchema,
 };
 
 // ============================================================

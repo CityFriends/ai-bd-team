@@ -9,6 +9,7 @@ import {
   TechAssessmentCompletePayload,
   RelationshipCheckCompletePayload,
   GoNoGoDecisionPayload,
+  ProposalContentPostedPayload,
   ClaimedEvent,
 } from '../eventTypes.js';
 import { EventHandler, EventHandlerContext, EventHandlerResult } from '../eventProcessor.js';
@@ -770,10 +771,133 @@ function formatDecisionForSlack(decision: DecisionResult, payload: GoNoGoDecisio
 }
 
 // ============================================================
+// PROPOSAL_CONTENT_POSTED Handler
+// Strategic review of Jodie's proposal content before human review
+// ============================================================
+const handleProposalContentPosted: EventHandler = async (
+  context: EventHandlerContext
+): Promise<EventHandlerResult> => {
+  const { event } = context;
+  const payload = event.payload as ProposalContentPostedPayload;
+
+  console.log(
+    `[James:Handler] Reviewing proposal content: ${payload.sectionType} for "${payload.opportunityTitle}"`
+  );
+
+  try {
+    const client = getAnthropic();
+
+    const prompt = `You are James, the BD strategist. Jodie just posted proposal content and needs your strategic review before Lapedra sees it.
+
+OPPORTUNITY: ${payload.opportunityTitle}
+SECTION: ${payload.sectionType.replace('_', ' ')}
+TITLE: ${payload.sectionTitle}
+
+CONTENT PREVIEW:
+${payload.contentPreview}
+
+${payload.reviewNotes ? `JODIE'S NOTES: ${payload.reviewNotes}` : ''}
+
+Review this content for STRATEGIC ALIGNMENT:
+1. Win theme alignment - Does it hit our discriminators?
+2. Evaluator focus - Will this resonate with scoring criteria?
+3. Proof points - Are claims backed with evidence?
+4. Competitive positioning - Does it differentiate us?
+
+Be specific and actionable. You're not editing prose - you're checking strategy fit.
+
+Respond in JSON:
+{
+  "approved": boolean,
+  "strategicScore": 1-10,
+  "strengths": ["what's working well"],
+  "concerns": ["specific issues to address"],
+  "suggestions": ["actionable improvements"],
+  "readyForLapedra": boolean,
+  "summary": "1-2 sentence strategic assessment"
+}`;
+
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 800,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const textBlock = response.content.find((b) => b.type === 'text');
+    if (!textBlock || textBlock.type !== 'text') {
+      throw new Error('No text response from Claude');
+    }
+
+    const jsonMatch = textBlock.text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('No JSON found in response');
+    }
+
+    const review = JSON.parse(jsonMatch[0]);
+
+    // Post review to Slack thread
+    if (event.thread_ts) {
+      const statusEmoji = review.approved ? '✅' : review.readyForLapedra ? '🟡' : '🔴';
+      let slackMessage = `${statusEmoji} *Strategic Review*\n\n`;
+      slackMessage += `*Score:* ${review.strategicScore}/10\n`;
+      slackMessage += `*Assessment:* ${review.summary}\n\n`;
+
+      if (review.strengths.length > 0) {
+        slackMessage += `*Strengths:*\n`;
+        for (const s of review.strengths.slice(0, 3)) {
+          slackMessage += `• ${s}\n`;
+        }
+      }
+
+      if (review.concerns.length > 0) {
+        slackMessage += `\n*Concerns:*\n`;
+        for (const c of review.concerns.slice(0, 3)) {
+          slackMessage += `• ${c}\n`;
+        }
+      }
+
+      if (review.suggestions.length > 0 && !review.approved) {
+        slackMessage += `\n*Suggestions:*\n`;
+        for (const s of review.suggestions.slice(0, 2)) {
+          slackMessage += `• ${s}\n`;
+        }
+      }
+
+      if (review.readyForLapedra) {
+        slackMessage += `\n@Lapedra — reviewed and ready for your eyes.`;
+      } else {
+        slackMessage += `\n@Jodie — address concerns above, then I'll flag Lapedra.`;
+      }
+
+      await replyInThread('strategist', slackMessage, event.thread_ts);
+      console.log(`[James:Handler] Posted proposal review to thread`);
+    }
+
+    return {
+      success: true,
+      result: {
+        opportunityTitle: payload.opportunityTitle,
+        sectionType: payload.sectionType,
+        approved: review.approved,
+        strategicScore: review.strategicScore,
+        readyForLapedra: review.readyForLapedra,
+      },
+    };
+  } catch (err) {
+    console.error(`[James:Handler] Proposal review failed:`, err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Proposal review failed',
+    };
+  }
+};
+
+// ============================================================
 // Export Handler Map
 // ============================================================
 export const jamesHandlers: Map<EventType, EventHandler> = new Map([
   [EventTypes.RESEARCH_COMPLETE, handleResearchComplete],
   [EventTypes.TECH_ASSESSMENT_COMPLETE, handleTechAssessmentComplete],
   [EventTypes.RELATIONSHIP_CHECK_COMPLETE, handleRelationshipCheckComplete],
+  [EventTypes.PROPOSAL_CONTENT_POSTED, handleProposalContentPosted],
 ]);
