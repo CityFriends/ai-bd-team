@@ -36,6 +36,12 @@ export const EventTypes = {
 
   // Proposal workflow
   PROPOSAL_CONTENT_POSTED: 'PROPOSAL_CONTENT_POSTED',
+
+  // Internal Agent Feed
+  FEED_POST_CREATED: 'FEED_POST_CREATED',
+  FEED_POST_REACTION: 'FEED_POST_REACTION',
+  FEED_POST_REPLY: 'FEED_POST_REPLY',
+  FEED_THINKING_TIME: 'FEED_THINKING_TIME',
 } as const;
 
 export type EventType = (typeof EventTypes)[keyof typeof EventTypes];
@@ -554,6 +560,94 @@ export const ProposalContentPostedPayloadSchema = z.object({
 export type ProposalContentPostedPayload = z.infer<typeof ProposalContentPostedPayloadSchema>;
 
 // ============================================================
+// Internal Agent Feed Schemas
+// ============================================================
+
+// Feed post types
+export const FeedPostType = {
+  OBSERVATION: 'observation',
+  QUESTION: 'question',
+  IDEA: 'idea',
+  BUILD: 'build',
+  CHALLENGE: 'challenge',
+  PATTERN: 'pattern',
+  PREDICTION: 'prediction',
+} as const;
+
+export type FeedPostTypeValue = (typeof FeedPostType)[keyof typeof FeedPostType];
+
+export const FeedPostTypeSchema = z.enum([
+  'observation',
+  'question',
+  'idea',
+  'build',
+  'challenge',
+  'pattern',
+  'prediction',
+]);
+
+export const FeedReactionTypeSchema = z.enum([
+  'upvote',
+  'build',
+  'challenge',
+  'important',
+  'curious',
+]);
+
+export type FeedReactionType = z.infer<typeof FeedReactionTypeSchema>;
+
+// FEED_POST_CREATED payload
+export const FeedPostCreatedPayloadSchema = z.object({
+  postId: z.string().uuid(),
+  author: AgentNameSchema,
+  postType: FeedPostTypeSchema,
+  content: z.string().min(1).max(2000),
+  tags: z.array(z.string()).optional(),
+  relatedOpportunityId: z.string().optional().nullable(),
+  replyToPostId: z.string().uuid().optional().nullable(),
+  buildOnPostId: z.string().uuid().optional().nullable(),
+  importance: z.number().min(1).max(10).default(5),
+  visibility: z.enum(['internal', 'slack_eligible']).default('internal'),
+});
+
+export type FeedPostCreatedPayload = z.infer<typeof FeedPostCreatedPayloadSchema>;
+
+// FEED_POST_REACTION payload
+export const FeedPostReactionPayloadSchema = z.object({
+  postId: z.string().uuid(),
+  reactor: AgentNameSchema,
+  reactionType: FeedReactionTypeSchema,
+});
+
+export type FeedPostReactionPayload = z.infer<typeof FeedPostReactionPayloadSchema>;
+
+// FEED_POST_REPLY payload
+export const FeedPostReplyPayloadSchema = z.object({
+  parentPostId: z.string().uuid(),
+  replyPostId: z.string().uuid(),
+  author: AgentNameSchema,
+  content: z.string().min(1).max(2000),
+  replyType: z.enum(['agree', 'disagree', 'question', 'build', 'clarify']),
+});
+
+export type FeedPostReplyPayload = z.infer<typeof FeedPostReplyPayloadSchema>;
+
+// FEED_THINKING_TIME payload (cron trigger)
+export const FeedThinkingTimePayloadSchema = z.object({
+  triggeredAt: z.string(),
+  targetAgents: z.array(AgentNameSchema).optional(),
+  context: z
+    .object({
+      recentFeedActivity: z.number(),
+      unansweredQuestions: z.number(),
+      trendingTags: z.array(z.string()).optional(),
+    })
+    .optional(),
+});
+
+export type FeedThinkingTimePayload = z.infer<typeof FeedThinkingTimePayloadSchema>;
+
+// ============================================================
 // Event Payload Union
 // ============================================================
 export const EventPayloadSchema = z.union([
@@ -571,6 +665,10 @@ export const EventPayloadSchema = z.union([
   RiskAlertPayloadSchema,
   OutcomeRecordedPayloadSchema,
   ProposalContentPostedPayloadSchema,
+  FeedPostCreatedPayloadSchema,
+  FeedPostReactionPayloadSchema,
+  FeedPostReplyPayloadSchema,
+  FeedThinkingTimePayloadSchema,
 ]);
 
 // ============================================================
@@ -641,6 +739,10 @@ export const PayloadValidators: Record<EventType, z.ZodSchema> = {
   [EventTypes.RISK_ALERT]: RiskAlertPayloadSchema,
   [EventTypes.OUTCOME_RECORDED]: OutcomeRecordedPayloadSchema,
   [EventTypes.PROPOSAL_CONTENT_POSTED]: ProposalContentPostedPayloadSchema,
+  [EventTypes.FEED_POST_CREATED]: FeedPostCreatedPayloadSchema,
+  [EventTypes.FEED_POST_REACTION]: FeedPostReactionPayloadSchema,
+  [EventTypes.FEED_POST_REPLY]: FeedPostReplyPayloadSchema,
+  [EventTypes.FEED_THINKING_TIME]: FeedThinkingTimePayloadSchema,
 };
 
 // ============================================================

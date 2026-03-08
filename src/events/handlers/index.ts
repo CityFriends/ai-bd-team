@@ -13,6 +13,9 @@ import { rosaHandlers } from './rosa.handlers.js';
 import { jamesHandlers } from './james.handlers.js';
 import { patriciaHandlers } from './patricia.handlers.js';
 
+// Import feed handlers (for agent-to-agent interaction)
+import { feedHandlersByAgent } from './feed.handlers.js';
+
 // Import system handlers (non-agent)
 import { workflowHandlers } from './workflow-auto-create.js';
 
@@ -21,17 +24,28 @@ import { workflowHandlers } from './workflow-auto-create.js';
 // ============================================================
 export type AgentHandlerMap = Map<EventType, EventHandler>;
 
+/**
+ * Merge multiple handler maps into one
+ */
+function mergeHandlerMaps(...maps: AgentHandlerMap[]): AgentHandlerMap {
+  const merged = new Map<EventType, EventHandler>();
+  for (const map of maps) {
+    for (const [eventType, handler] of map) {
+      merged.set(eventType, handler);
+    }
+  }
+  return merged;
+}
+
+// Core handlers + feed handlers merged together
 const handlersByAgent: Record<LiveAgentName, AgentHandlerMap> = {
-  maya: mayaHandlers,
-  david: davidHandlers,
-  marcus: marcusHandlers,
-  rosa: rosaHandlers,
-  james: jamesHandlers,
-  patricia: patriciaHandlers,
-  // Jodie is the strategic advisor - she responds to direct questions in Slack
-  // rather than reacting to events. Event handlers are intentionally empty.
-  // If Jodie needs to react to events in the future, create jodie.handlers.ts
-  jodie: new Map(),
+  maya: mergeHandlerMaps(mayaHandlers, feedHandlersByAgent.maya),
+  david: mergeHandlerMaps(davidHandlers, feedHandlersByAgent.david),
+  marcus: mergeHandlerMaps(marcusHandlers, feedHandlersByAgent.marcus),
+  rosa: mergeHandlerMaps(rosaHandlers, feedHandlersByAgent.rosa),
+  james: mergeHandlerMaps(jamesHandlers, feedHandlersByAgent.james),
+  patricia: mergeHandlerMaps(patriciaHandlers, feedHandlersByAgent.patricia),
+  jodie: feedHandlersByAgent.jodie, // Jodie now has feed handlers
 };
 
 /**
