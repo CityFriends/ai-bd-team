@@ -5,3 +5,4 @@ dist/
 *.log
 data/
 coverage/
+supabase/.temp/
