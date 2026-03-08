@@ -29,6 +29,8 @@ import {
   type FeedPostType,
 } from '../integrations/database/feed.js';
 import type { LiveAgentName } from '../live/types.js';
+import { feedHandlersByAgent } from '../events/handlers/feed.handlers.js';
+import type { ClaimedEvent } from '../events/eventTypes.js';
 
 // ============================================================
 // Configuration
@@ -304,19 +306,112 @@ async function runThinkingSession(agent: LiveAgentName): Promise<ThinkingResult>
 }
 
 // ============================================================
+// Feed Engagement Phase
+// ============================================================
+
+interface EngagementResult {
+  agent: LiveAgentName;
+  postId: string;
+  action: string;
+}
+
+async function runFeedEngagement(): Promise<EngagementResult[]> {
+  console.log('[Engagement] Processing feed engagement...');
+
+  const results: EngagementResult[] = [];
+
+  // Get recent posts to evaluate (last 4 hours, so we catch posts from this session)
+  const recentPosts = await getFeedPosts({
+    sinceHoursAgo: 4,
+    limit: 20,
+    excludeReplies: true,
+  });
+
+  if (recentPosts.length === 0) {
+    console.log('[Engagement] No recent posts to engage with');
+    return results;
+  }
+
+  console.log(`[Engagement] Found ${recentPosts.length} recent posts to evaluate`);
+
+  // For each post, let other agents evaluate and potentially respond
+  for (const post of recentPosts) {
+    for (const agent of THINKING_AGENTS) {
+      // Skip if this is the agent's own post
+      if (agent === post.author) continue;
+
+      // Build a mock event for the handler
+      const event: ClaimedEvent = {
+        id: `engagement-${post.id}-${agent}`,
+        event_type: EventTypes.FEED_POST_CREATED,
+        source_agent: post.author,
+        payload: {
+          postId: post.id,
+          author: post.author,
+          postType: post.post_type,
+          content: post.content,
+          tags: post.tags,
+          importance: post.importance,
+          replyToPostId: post.reply_to_post_id,
+        },
+        parent_event_id: null,
+        root_event_id: null,
+        chain_depth: 0,
+        priority: 5,
+        channel_id: null,
+        thread_ts: null,
+        created_at: new Date().toISOString(),
+      };
+
+      // Get the agent's feed handler
+      const handlers = feedHandlersByAgent[agent];
+      const handler = handlers?.get(EventTypes.FEED_POST_CREATED);
+
+      if (handler) {
+        try {
+          const result = await handler({
+            event,
+            agent,
+            publishChainEvent: async () => ({ success: true }), // No-op for engagement phase
+          });
+
+          if (result.success && result.result) {
+            const r = result.result as Record<string, unknown>;
+            if (r.reacted || r.replied) {
+              const action = r.reacted ? `reacted: ${r.reacted}` : 'replied';
+              console.log(`[Engagement] ${agent} ${action} to ${post.author}'s post`);
+              results.push({ agent, postId: post.id, action });
+            }
+          }
+        } catch (err) {
+          console.error(`[Engagement] Error for ${agent}:`, err);
+        }
+      }
+
+      // Small delay to avoid API rate limits
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+
+  console.log(`[Engagement] Complete. ${results.length} engagements.`);
+  return results;
+}
+
+// ============================================================
 // Main Thinking Job
 // ============================================================
 
 export async function runThinkingTime(): Promise<{
   results: ThinkingResult[];
   totalPosted: number;
+  engagements: number;
 }> {
   console.log('[Thinking] Starting thinking time for all agents...');
 
   const results: ThinkingResult[] = [];
   let totalPosted = 0;
 
-  // Run thinking sessions sequentially to avoid overwhelming the API
+  // Phase 1: Run thinking sessions sequentially to avoid overwhelming the API
   // and to let agents see each other's posts
   for (const agent of THINKING_AGENTS) {
     try {
@@ -336,8 +431,15 @@ export async function runThinkingTime(): Promise<{
     }
   }
 
-  console.log(`[Thinking] Complete. ${totalPosted} posts created.`);
-  return { results, totalPosted };
+  console.log(`[Thinking] Phase 1 complete. ${totalPosted} posts created.`);
+
+  // Phase 2: Feed engagement - agents react/reply to each other's posts
+  const engagementResults = await runFeedEngagement();
+
+  console.log(
+    `[Thinking] Complete. ${totalPosted} posts, ${engagementResults.length} engagements.`
+  );
+  return { results, totalPosted, engagements: engagementResults.length };
 }
 
 // ============================================================
@@ -359,13 +461,13 @@ export async function cronThinkingTime(): Promise<void> {
 
     if (runId) {
       await logJobComplete(runId, {
-        itemsProcessed: result.totalPosted,
+        itemsProcessed: result.totalPosted + result.engagements,
         notes: `${
           result.results
             .filter((r) => r.posted)
             .map((r) => r.agent)
             .join(', ') || 'None'
-        } posted`,
+        } posted, ${result.engagements} engagements`,
       });
     }
   } catch (err) {
