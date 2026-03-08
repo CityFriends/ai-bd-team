@@ -3,6 +3,9 @@ import { scout } from '../agents/scout.js';
 import { strategist } from '../agents/strategist.js';
 import { runMemoryReflection } from '../cron/memory-reflection.js';
 import { runThinkingTime } from '../cron/agent-thinking.js';
+import { cronFeedSynthesis } from '../cron/feed-synthesis.js';
+import { cronDeadlineMonitor } from '../cron/deadline-monitor.js';
+import { cronWeeklyRollup } from '../cron/weekly-rollup.js';
 
 // Track scheduled jobs for cleanup
 const scheduledJobs: cron.ScheduledTask[] = [];
@@ -91,6 +94,69 @@ export function scheduleAgentThinkingTime(): void {
   console.log('Scheduled agent thinking time for 9am, 1pm, 5pm ET weekdays');
 }
 
+// Schedule Feed Synthesis every 2 hours during business hours (10am, 12pm, 2pm, 4pm ET)
+export function scheduleFeedSynthesis(): void {
+  const job = cron.schedule(
+    '0 10,12,14,16 * * 1-5',
+    async () => {
+      console.log('Running scheduled feed synthesis...');
+      try {
+        await cronFeedSynthesis();
+      } catch (error) {
+        console.error('Error in feed synthesis:', error);
+      }
+    },
+    {
+      timezone: 'America/New_York',
+    }
+  );
+
+  scheduledJobs.push(job);
+  console.log('Scheduled feed synthesis for 10am, 12pm, 2pm, 4pm ET weekdays');
+}
+
+// Schedule Deadline Monitor at 9am daily
+export function scheduleDeadlineMonitor(): void {
+  const job = cron.schedule(
+    '0 9 * * *',
+    async () => {
+      console.log('Running scheduled deadline monitor...');
+      try {
+        await cronDeadlineMonitor();
+      } catch (error) {
+        console.error('Error in deadline monitor:', error);
+      }
+    },
+    {
+      timezone: 'America/New_York',
+    }
+  );
+
+  scheduledJobs.push(job);
+  console.log('Scheduled deadline monitor for 9:00 AM daily');
+}
+
+// Schedule Weekly Rollup at 8am Monday
+export function scheduleWeeklyRollup(): void {
+  const job = cron.schedule(
+    '0 8 * * 1',
+    async () => {
+      console.log('Running scheduled weekly rollup...');
+      try {
+        await cronWeeklyRollup();
+      } catch (error) {
+        console.error('Error in weekly rollup:', error);
+      }
+    },
+    {
+      timezone: 'America/New_York',
+    }
+  );
+
+  scheduledJobs.push(job);
+  console.log('Scheduled weekly rollup for 8:00 AM Monday');
+}
+
 // Start all scheduled jobs
 export function startScheduler(): void {
   console.log('Starting scheduler...');
@@ -98,6 +164,9 @@ export function startScheduler(): void {
   scheduleStrategistStandup();
   scheduleMemoryReflection();
   scheduleAgentThinkingTime();
+  scheduleFeedSynthesis();
+  scheduleDeadlineMonitor();
+  scheduleWeeklyRollup();
   console.log('Scheduler started');
 }
 
@@ -133,4 +202,22 @@ export async function runMemoryReflectionNow(): Promise<void> {
 export async function runThinkingTimeNow(): Promise<void> {
   console.log('Running agent thinking time immediately...');
   await runThinkingTime();
+}
+
+// Run feed synthesis immediately (for testing or manual trigger)
+export async function runFeedSynthesisNow(): Promise<void> {
+  console.log('Running feed synthesis immediately...');
+  await cronFeedSynthesis();
+}
+
+// Run deadline monitor immediately (for testing or manual trigger)
+export async function runDeadlineMonitorNow(): Promise<void> {
+  console.log('Running deadline monitor immediately...');
+  await cronDeadlineMonitor();
+}
+
+// Run weekly rollup immediately (for testing or manual trigger)
+export async function runWeeklyRollupNow(): Promise<void> {
+  console.log('Running weekly rollup immediately...');
+  await cronWeeklyRollup();
 }
