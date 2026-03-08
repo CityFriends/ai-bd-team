@@ -46,6 +46,16 @@ import {
   detectAgentTag,
 } from './handoff.js';
 import { buildWarmupMessages, formatAgentMoodLine } from './warmups.js';
+import { checkWorkingHoursGate } from './working-hours.js';
+import { checkResponseGate } from './response-gating.js';
+import {
+  checkOwnershipGate,
+  claimThreadOwnership,
+  recordThreadActivity,
+  detectOwnershipClaim,
+  detectThreadClose,
+  closeThread,
+} from './thread-ownership.js';
 import { parseActionFromResponse, createAction } from '../integrations/agent-actions.js';
 import { loadSharedContext, formatSharedContextForPrompt } from './shared-context.js';
 import {
@@ -898,6 +908,80 @@ export abstract class LiveAgent {
 
   // Main message handler
   async handleMessage(message: IncomingMessage): Promise<void> {
+    // WORKING HOURS GATE: Check if we should respond based on time
+    // Skip check for team triggers since those are handled specially
+    if (!message.isTeamTrigger) {
+      const workingHoursCheck = checkWorkingHoursGate(message.text, message.isDirectMention);
+
+      if (!workingHoursCheck.shouldRespond) {
+        console.log(
+          `${this.displayName}: ${workingHoursCheck.reason || 'Outside working hours'} - not responding`
+        );
+
+        // For direct mentions outside hours, post a brief acknowledgment
+        if (message.isDirectMention && workingHoursCheck.offHoursMessage) {
+          await this.addReaction('clock3', message.messageTs);
+          // Don't post a message - just the reaction to acknowledge
+          // The reaction indicates "noted, will respond during work hours"
+        }
+
+        return;
+      }
+
+      if (workingHoursCheck.reason) {
+        console.log(`${this.displayName}: ${workingHoursCheck.reason}`);
+      }
+    }
+
+    // RESPONSE GATING: Check if we should respond based on domain and mentions
+    // Skip for team triggers (everyone responds) and direct mentions (handled by gate)
+    if (!message.isTeamTrigger && !message.isTeamMention) {
+      const otherAgentMentioned = this.checkIfOtherAgentMentioned(message.text);
+      const gateCheck = checkResponseGate(
+        this.name,
+        message.text,
+        message.isDirectMention,
+        otherAgentMentioned
+      );
+
+      if (!gateCheck.shouldRespond) {
+        console.log(`${this.displayName}: Response gate closed - ${gateCheck.reason}`);
+        return;
+      }
+
+      if (gateCheck.domainMatch?.isMatch) {
+        console.log(
+          `${this.displayName}: Domain match (${gateCheck.domainMatch.confidence}): ${gateCheck.domainMatch.keywords.join(', ')}`
+        );
+      }
+    }
+
+    // THREAD OWNERSHIP: Check if we should respond based on who owns the thread
+    if (message.threadTs && !message.isTeamTrigger && !message.isTeamMention) {
+      const ownershipCheck = checkOwnershipGate(
+        message.threadTs,
+        this.name,
+        message.isDirectMention
+      );
+
+      if (!ownershipCheck.shouldRespond) {
+        console.log(`${this.displayName}: Ownership gate closed - ${ownershipCheck.reason}`);
+        return;
+      }
+
+      if (ownershipCheck.warning) {
+        console.log(`${this.displayName}: Ownership warning - ${ownershipCheck.warning}`);
+      }
+
+      // If this agent is responding and no owner exists, claim ownership
+      if (!ownershipCheck.isOwner && message.isDirectMention) {
+        const claim = claimThreadOwnership(message.threadTs, this.name);
+        if (claim.success) {
+          console.log(`${this.displayName}: ${claim.message}`);
+        }
+      }
+    }
+
     // Agent-to-agent duplicate prevention: Only skip if we JUST responded (within 5 seconds)
     // This prevents true duplicates but allows legitimate handoffs when agents @mention each other
     if (message.isDirectMention && message.isFromBot && message.threadTs) {
@@ -1091,6 +1175,29 @@ export abstract class LiveAgent {
         console.log(
           `${this.displayName}: Sources: ${response.sources.join(', ')} (${response.confidenceLevel} confidence)`
         );
+      }
+
+      // Thread ownership: Check if response claims ownership or closes thread
+      if (message.threadTs) {
+        // Record activity in the thread
+        recordThreadActivity(message.threadTs, this.name);
+
+        // Check for ownership claim
+        if (detectOwnershipClaim(response.text)) {
+          const claim = claimThreadOwnership(message.threadTs, this.name);
+          if (claim.success) {
+            console.log(`${this.displayName}: Claimed thread ownership`);
+          }
+        }
+
+        // Check for thread close
+        const closeCheck = detectThreadClose(response.text);
+        if (closeCheck.isClose) {
+          const closed = closeThread(message.threadTs, this.name, closeCheck.reason || 'Closed');
+          if (closed) {
+            console.log(`${this.displayName}: Closed thread - ${closeCheck.reason}`);
+          }
+        }
       }
     }
   }
