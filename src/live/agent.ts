@@ -48,6 +48,8 @@ import {
 import { buildWarmupMessages, formatAgentMoodLine } from './warmups.js';
 import { checkWorkingHoursGate } from './working-hours.js';
 import { checkResponseGate } from './response-gating.js';
+import { recordResponseDecision, type GateBlockReason } from './response-monitoring.js';
+import { queueForDigest } from './morning-digest.js';
 import {
   checkOwnershipGate,
   claimThreadOwnership,
@@ -917,6 +919,27 @@ export abstract class LiveAgent {
         console.log(
           `${this.displayName}: ${workingHoursCheck.reason || 'Outside working hours'} - not responding`
         );
+        recordResponseDecision(this.name, message.channelId, message.messageTs, 'blocked', {
+          threadTs: message.threadTs,
+          blockReason: 'working_hours',
+          details: workingHoursCheck.reason,
+          messageText: message.text,
+        });
+
+        // Queue for morning digest (only once per message, not per agent)
+        // Patricia handles the digest, so only she queues
+        if (this.name === 'patricia') {
+          queueForDigest({
+            channelId: message.channelId,
+            threadTs: message.threadTs,
+            messageTs: message.messageTs,
+            userId: message.userId,
+            userName: message.userName,
+            text: message.text,
+            mentionedAgents: message.mentionedAgents,
+          });
+        }
+
         return;
       }
 
@@ -940,6 +963,19 @@ export abstract class LiveAgent {
 
       if (!gateCheck.shouldRespond) {
         console.log(`${this.displayName}: Response gate closed - ${gateCheck.reason}`);
+        // Determine block reason from gate check
+        let blockReason: GateBlockReason = 'domain_mismatch';
+        if (gateCheck.reason?.includes('better match')) {
+          blockReason = 'better_agent_match';
+        } else if (gateCheck.reason?.includes('Another agent')) {
+          blockReason = 'other_agent_mentioned';
+        }
+        recordResponseDecision(this.name, message.channelId, message.messageTs, 'blocked', {
+          threadTs: message.threadTs,
+          blockReason,
+          details: gateCheck.reason,
+          messageText: message.text,
+        });
         return;
       }
 
@@ -960,6 +996,12 @@ export abstract class LiveAgent {
 
       if (!ownershipCheck.shouldRespond) {
         console.log(`${this.displayName}: Ownership gate closed - ${ownershipCheck.reason}`);
+        recordResponseDecision(this.name, message.channelId, message.messageTs, 'blocked', {
+          threadTs: message.threadTs,
+          blockReason: 'thread_ownership',
+          details: ownershipCheck.reason,
+          messageText: message.text,
+        });
         return;
       }
 
@@ -1124,6 +1166,12 @@ export abstract class LiveAgent {
           message.text, // original question
           message.threadTs
         );
+
+        // Record successful response for monitoring
+        recordResponseDecision(this.name, message.channelId, message.messageTs, 'responded', {
+          threadTs: message.threadTs,
+          messageText: message.text,
+        });
       }
 
       // Log to agent_memory for auditing

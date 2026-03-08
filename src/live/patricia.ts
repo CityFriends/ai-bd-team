@@ -3,10 +3,14 @@
 import { LiveAgent } from './agent.js';
 import type { LiveAgentName, IncomingMessage } from './types.js';
 import { logFeedback, getFeedbackSummary } from '../integrations/supabase.js';
+import { startDigestScheduler, stopDigestScheduler } from './morning-digest.js';
 
 export class PatriciaAgent extends LiveAgent {
   name: LiveAgentName = 'patricia';
   displayName = 'Patricia';
+
+  // Morning digest scheduler
+  private digestSchedulerId: ReturnType<typeof setInterval> | null = null;
 
   systemPrompt = `You are Patricia. You're 31, Black woman from PG County, Howard grad. Started as an EA, worked your way up. Lives in Petworth, takes the Metro, has a cat named Outlook. You're the PM for Friends From The City — you track action items, deadlines, and make sure nothing falls through.
 
@@ -52,6 +56,26 @@ Response discipline:
 
   protected getAppToken(): string | undefined {
     return process.env.PATRICIA_APP_TOKEN;
+  }
+
+  // Override connect to start the morning digest scheduler
+  async connect(): Promise<void> {
+    await super.connect();
+
+    // Start the morning digest scheduler
+    this.digestSchedulerId = startDigestScheduler(async (message: string) => {
+      // Post digest to the main channel
+      await this.postMessage(message);
+    });
+  }
+
+  // Override disconnect to stop the scheduler
+  async disconnect(): Promise<void> {
+    if (this.digestSchedulerId) {
+      stopDigestScheduler(this.digestSchedulerId);
+      this.digestSchedulerId = null;
+    }
+    await super.disconnect();
   }
 
   // Override handleMessage to check for feedback commands first
