@@ -10,7 +10,6 @@
 
 import {
   getFeedPosts,
-  getFeedPost,
   updatePostNotionId,
   getPostWithReplies,
   type FeedPost,
@@ -38,15 +37,15 @@ const AGENT_INFO: Record<string, { emoji: string; role: string }> = {
   patricia: { emoji: '📋', role: 'PM' },
 };
 
-// Post type emojis
-const POST_TYPE_EMOJI: Record<string, string> = {
-  observation: '👁️',
-  question: '❓',
-  idea: '💡',
-  build: '🏗️',
-  challenge: '🤔',
-  pattern: '🔄',
-  prediction: '🔮',
+// Post type display info
+const POST_TYPE_INFO: Record<string, { emoji: string; name: string }> = {
+  observation: { emoji: '👁️', name: 'Observation' },
+  question: { emoji: '❓', name: 'Question' },
+  idea: { emoji: '💡', name: 'Idea' },
+  build: { emoji: '🏗️', name: 'Build' },
+  challenge: { emoji: '🤔', name: 'Challenge' },
+  pattern: { emoji: '🔄', name: 'Pattern' },
+  prediction: { emoji: '🔮', name: 'Prediction' },
 };
 
 // ============================================================
@@ -88,80 +87,17 @@ async function notionRequest(
 }
 
 // ============================================================
-// Create Agent Feed Database
+// Initialize Database ID
 // ============================================================
-
-interface CreateDatabaseResult {
-  id: string;
-}
 
 export async function createAgentFeedDatabase(parentPageId: string): Promise<string | null> {
-  console.log('[FeedToNotion] Creating Agent Feed database...');
-
-  const body = {
-    parent: { page_id: parentPageId },
-    title: [{ text: { content: 'Agent Feed' } }],
-    icon: { type: 'emoji', emoji: '🤖' },
-    properties: {
-      // Title/Content preview
-      Title: { title: {} },
-
-      // Agent who posted
-      Agent: {
-        select: {
-          options: Object.entries(AGENT_INFO).map(([name, info]) => ({
-            name: `${info.emoji} ${name.charAt(0).toUpperCase() + name.slice(1)}`,
-            color: 'default',
-          })),
-        },
-      },
-
-      // Post type
-      Type: {
-        select: {
-          options: Object.entries(POST_TYPE_EMOJI).map(([type, emoji]) => ({
-            name: `${emoji} ${type.charAt(0).toUpperCase() + type.slice(1)}`,
-            color: 'default',
-          })),
-        },
-      },
-
-      // Tags
-      Tags: { multi_select: { options: [] } },
-
-      // Engagement metrics
-      Engagement: { number: { format: 'number' } },
-
-      // Replies count
-      Replies: { number: { format: 'number' } },
-
-      // Importance (1-10)
-      Importance: { number: { format: 'number' } },
-
-      // Is this a reply to another post?
-      'Reply To': { url: {} },
-
-      // Timestamp
-      Posted: { date: {} },
-
-      // Database post ID (for linking)
-      'Post ID': { rich_text: {} },
-    },
-  };
-
-  const result = (await notionRequest('/databases', 'POST', body)) as CreateDatabaseResult | null;
-
-  if (result?.id) {
-    console.log(`[FeedToNotion] Created database: ${result.id}`);
-    FEED_DATABASE_ID = result.id;
-    return result.id;
-  }
-
-  return null;
+  console.log('[FeedToNotion] Using existing database ID:', parentPageId);
+  FEED_DATABASE_ID = parentPageId;
+  return parentPageId;
 }
 
 // ============================================================
-// Post to Notion
+// Post to Notion Database
 // ============================================================
 
 interface NotionPage {
@@ -176,18 +112,21 @@ export async function postToNotion(post: FeedPost): Promise<string | null> {
   }
 
   const agentInfo = AGENT_INFO[post.author] || { emoji: '🤖', role: 'Agent' };
-  const typeEmoji = POST_TYPE_EMOJI[post.post_type] || '💬';
-  const engagement = post.upvotes + post.builds + post.challenges;
+  const typeInfo = POST_TYPE_INFO[post.post_type] || { emoji: '💬', name: 'Post' };
 
-  // Create a title from the first 50 chars of content
-  const titlePreview = post.content.slice(0, 50) + (post.content.length > 50 ? '...' : '');
-
+  // Create database entry with page content
   const body = {
     parent: { database_id: FEED_DATABASE_ID },
     icon: { type: 'emoji', emoji: agentInfo.emoji },
     properties: {
       Title: {
-        title: [{ text: { content: titlePreview } }],
+        title: [
+          {
+            text: {
+              content: post.content.slice(0, 100) + (post.content.length > 100 ? '...' : ''),
+            },
+          },
+        ],
       },
       Agent: {
         select: {
@@ -195,21 +134,29 @@ export async function postToNotion(post: FeedPost): Promise<string | null> {
         },
       },
       Type: {
-        select: {
-          name: `${typeEmoji} ${post.post_type.charAt(0).toUpperCase() + post.post_type.slice(1)}`,
-        },
+        select: { name: `${typeInfo.emoji} ${typeInfo.name}` },
       },
       Tags: {
-        multi_select: post.tags.slice(0, 10).map((tag) => ({ name: tag })),
+        multi_select: post.tags.map((tag) => ({ name: tag })),
       },
-      Engagement: { number: engagement },
-      Replies: { number: post.reply_count },
-      Importance: { number: post.importance },
-      Posted: { date: { start: post.created_at } },
-      'Post ID': { rich_text: [{ text: { content: post.id } }] },
+      Posted: {
+        date: { start: post.created_at },
+      },
+      Importance: {
+        number: post.importance,
+      },
+      Engagement: {
+        number: post.upvotes + post.builds + post.challenges,
+      },
+      Replies: {
+        number: post.reply_count,
+      },
+      'Post ID': {
+        rich_text: [{ text: { content: post.id } }],
+      },
     },
     children: [
-      // Full content as a paragraph block
+      // Main content as the page body
       {
         object: 'block',
         type: 'paragraph',
@@ -219,17 +166,17 @@ export async function postToNotion(post: FeedPost): Promise<string | null> {
       },
       // Divider
       { object: 'block', type: 'divider', divider: {} },
-      // Metadata callout
+      // Engagement callout
       {
         object: 'block',
         type: 'callout',
         callout: {
-          icon: { type: 'emoji', emoji: '📊' },
+          icon: { type: 'emoji', emoji: agentInfo.emoji },
           rich_text: [
             {
               type: 'text',
               text: {
-                content: `${engagement} engagement | ${post.reply_count} replies | Importance: ${post.importance}/10`,
+                content: `${post.upvotes + post.builds + post.challenges} engagement | ${post.reply_count} replies | Importance: ${post.importance}/10`,
               },
             },
           ],
@@ -238,24 +185,11 @@ export async function postToNotion(post: FeedPost): Promise<string | null> {
     ],
   };
 
-  // Add reply link if this is a reply
-  if (post.reply_to_post_id) {
-    const parentPost = await getFeedPost(post.reply_to_post_id);
-    if (parentPost?.notion_page_id) {
-      (body.properties as Record<string, unknown>)['Reply To'] = {
-        url: `https://notion.so/${parentPost.notion_page_id.replace(/-/g, '')}`,
-      };
-    }
-  }
-
   const result = (await notionRequest('/pages', 'POST', body)) as NotionPage | null;
 
   if (result?.id) {
     console.log(`[FeedToNotion] Created Notion page: ${result.id}`);
-
-    // Update the database record with the Notion page ID
     await updatePostNotionId(post.id, result.id);
-
     return result.id;
   }
 
@@ -267,16 +201,16 @@ export async function postToNotion(post: FeedPost): Promise<string | null> {
 // ============================================================
 
 export async function updateNotionPost(post: FeedPost): Promise<boolean> {
-  if (!post.notion_page_id) {
-    return false;
-  }
-
-  const engagement = post.upvotes + post.builds + post.challenges;
+  if (!post.notion_page_id) return false;
 
   const body = {
     properties: {
-      Engagement: { number: engagement },
-      Replies: { number: post.reply_count },
+      Engagement: {
+        number: post.upvotes + post.builds + post.challenges,
+      },
+      Replies: {
+        number: post.reply_count,
+      },
     },
   };
 
