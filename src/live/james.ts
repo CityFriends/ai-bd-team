@@ -1,7 +1,12 @@
 // James (Strategist) - Live conversational agent
 
 import { LiveAgent } from './agent.js';
-import type { LiveAgentName } from './types.js';
+import type { LiveAgentName, IncomingMessage } from './types.js';
+import {
+  shouldTriggerSynthesis,
+  generateOneVoiceResponse,
+  formatSynthesizedResponse,
+} from './one-voice.js';
 
 export class JamesAgent extends LiveAgent {
   name: LiveAgentName = 'james';
@@ -35,12 +40,11 @@ Hard rules:
 - Be the strategist, not the hedger
 
 Response discipline:
-- Only respond when you have something ACTIONABLE — a recommendation, a decision, a synthesis
-- If another agent already covered it, don't pile on with "I agree" or "Great point"
-- Valid responses: "Here's my read..." / "Recommendation:" / "Decision needed:" / "Handing to @agent"
-- Invalid responses: "Perfect timing!" / "I agree with Rosa" / "Here are three reasons..."
-- If you're not adding new information or a decision, stay quiet or react with emoji
-- You own strategy — if it's not a strategy question, let the domain expert handle it`;
+- If @mentioned directly → ALWAYS respond with substance (never just an emoji)
+- If not mentioned but topic is strategy/go-no-go → respond with a recommendation
+- If another agent already covered it well → stay quiet
+- Valid responses: "Here's my read..." / "Recommendation:" / "Decision needed:"
+- You own strategy, go/no-go calls, and team synthesis`;
 
   protected getBotToken(): string | undefined {
     return process.env.JAMES_BOT_TOKEN;
@@ -48,6 +52,53 @@ Response discipline:
 
   protected getAppToken(): string | undefined {
     return process.env.JAMES_APP_TOKEN;
+  }
+
+  // Override handleMessage to check for One Voice synthesis triggers
+  async handleMessage(message: IncomingMessage): Promise<void> {
+    // Check if this should trigger team synthesis
+    const isFromHuman = !message.isFromBot;
+    const shouldSynthesize = shouldTriggerSynthesis(
+      message.text,
+      isFromHuman,
+      message.isTeamMention || message.isTeamTrigger
+    );
+
+    if (shouldSynthesize && message.isDirectMention) {
+      console.log(`James: One Voice synthesis triggered`);
+
+      try {
+        // Build context from thread if available
+        let context = '';
+        if (message.threadTs) {
+          const threadContext = await this.loadThreadContext(message.threadTs, message.channelId);
+          context = threadContext.messages.map((m) => `${m.author}: ${m.text}`).join('\n');
+        }
+
+        // Generate synthesized response
+        const { synthesizedResponse, teamInput } = await generateOneVoiceResponse(
+          message.text,
+          context
+        );
+
+        const agentsConsulted = teamInput.map((t) => t.agent);
+        const formattedResponse = formatSynthesizedResponse(synthesizedResponse, agentsConsulted);
+
+        // Post the synthesized response
+        await this.postMessage(formattedResponse, message.threadTs || message.messageTs);
+
+        console.log(
+          `James: Posted One Voice synthesis (consulted ${agentsConsulted.length} agents)`
+        );
+        return;
+      } catch (error) {
+        console.error('James: One Voice synthesis failed, falling back to normal response:', error);
+        // Fall through to normal handling
+      }
+    }
+
+    // Normal message handling
+    await super.handleMessage(message);
   }
 }
 

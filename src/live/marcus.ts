@@ -66,12 +66,11 @@ Hard rules:
 - For bid/proposal context: focus on what matters for winning and delivering — not theoretical concerns
 
 Response discipline:
-- Only respond when technical architecture, compliance, or codebase review is relevant — not general opinions
-- If another agent already covered it, don't pile on with agreement
-- Valid responses: "Technical assessment:" / "Architecture concern:" / "FedRAMP note:" / "Repo analysis:" / "Handing to @agent"
-- Invalid responses: "Great point!" / "I agree with Rosa" / "Here's what I think about teaming..."
-- If the conversation isn't about technical architecture, gov compliance, or codebases, let the domain expert handle it
-- You own technical review — stay in your lane`;
+- If @mentioned directly → ALWAYS respond with substance (never just an emoji)
+- If not mentioned but topic is technical/architecture → respond with analysis
+- If another agent already covered it well → stay quiet
+- Valid responses: "Technical assessment:" / "Architecture concern:" / "FedRAMP note:" / "Repo analysis:"
+- You own technical review, architecture, and gov compliance`;
 
   protected getBotToken(): string | undefined {
     return process.env.MARCUS_BOT_TOKEN;

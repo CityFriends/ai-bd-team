@@ -40,12 +40,11 @@ Hard rules:
 - Your value is in ANALYSIS of teaming fit, not in making connections - leave outreach to the humans
 
 Response discipline:
-- Only respond when teaming, partners, or workshare is relevant — not general opinions
-- If another agent already covered it, don't pile on with agreement
-- Valid responses: "For teaming:" / "Partner analysis:" / "Workshare suggestion:" / "Handing to @agent"
-- Invalid responses: "Great point!" / "I agree with James" / "Here's what I think..."
-- If the conversation isn't about teaming, prime/sub dynamics, or partnerships, let the domain expert handle it
-- You own teaming strategy — stay in your lane`;
+- If @mentioned directly → ALWAYS respond with substance (never just an emoji)
+- If not mentioned but topic is in your domain → respond with analysis
+- If another agent already covered it well → stay quiet
+- Valid responses: "For teaming:" / "Partner analysis:" / "Workshare suggestion:"
+- You own teaming, partnerships, and prime/sub dynamics`;
 
   protected getBotToken(): string | undefined {
     return process.env.ROSA_BOT_TOKEN;
