@@ -126,7 +126,83 @@ function blocksToMarkdown(blocks: Array<{ type: string; [key: string]: unknown }
   return lines.join('\n').trim();
 }
 
-// Convert markdown to Notion blocks
+// Parse inline markdown formatting into Notion rich_text array
+function parseInlineFormatting(text: string): Array<Record<string, unknown>> {
+  const richText: Array<Record<string, unknown>> = [];
+
+  // Regex to match inline formatting: **bold**, *italic*, `code`, ~~strikethrough~~
+  // Process in order of specificity (longer patterns first)
+  const pattern = /(\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`|~~(.+?)~~)/g;
+
+  let lastIndex = 0;
+  let match;
+
+  while ((match = pattern.exec(text)) !== null) {
+    // Add plain text before this match
+    if (match.index > lastIndex) {
+      const plainText = text.slice(lastIndex, match.index);
+      if (plainText) {
+        richText.push({
+          type: 'text',
+          text: { content: plainText },
+        });
+      }
+    }
+
+    // Determine which format matched
+    if (match[2]) {
+      // **bold**
+      richText.push({
+        type: 'text',
+        text: { content: match[2] },
+        annotations: { bold: true },
+      });
+    } else if (match[3]) {
+      // *italic*
+      richText.push({
+        type: 'text',
+        text: { content: match[3] },
+        annotations: { italic: true },
+      });
+    } else if (match[4]) {
+      // `code`
+      richText.push({
+        type: 'text',
+        text: { content: match[4] },
+        annotations: { code: true },
+      });
+    } else if (match[5]) {
+      // ~~strikethrough~~
+      richText.push({
+        type: 'text',
+        text: { content: match[5] },
+        annotations: { strikethrough: true },
+      });
+    }
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Add remaining plain text
+  if (lastIndex < text.length) {
+    const remaining = text.slice(lastIndex);
+    if (remaining) {
+      richText.push({
+        type: 'text',
+        text: { content: remaining },
+      });
+    }
+  }
+
+  // If no formatting was found, return simple text
+  if (richText.length === 0) {
+    return [{ type: 'text', text: { content: text } }];
+  }
+
+  return richText;
+}
+
+// Convert markdown to Notion blocks with full formatting support
 function markdownToBlocks(markdown: string): Array<Record<string, unknown>> {
   const lines = markdown.split('\n');
   const blocks: Array<Record<string, unknown>> = [];
@@ -140,7 +216,7 @@ function markdownToBlocks(markdown: string): Array<Record<string, unknown>> {
         object: 'block',
         type: 'heading_1',
         heading_1: {
-          rich_text: [{ type: 'text', text: { content: trimmed.slice(2) } }],
+          rich_text: parseInlineFormatting(trimmed.slice(2)),
         },
       });
     } else if (trimmed.startsWith('## ')) {
@@ -148,7 +224,7 @@ function markdownToBlocks(markdown: string): Array<Record<string, unknown>> {
         object: 'block',
         type: 'heading_2',
         heading_2: {
-          rich_text: [{ type: 'text', text: { content: trimmed.slice(3) } }],
+          rich_text: parseInlineFormatting(trimmed.slice(3)),
         },
       });
     } else if (trimmed.startsWith('### ')) {
@@ -156,7 +232,7 @@ function markdownToBlocks(markdown: string): Array<Record<string, unknown>> {
         object: 'block',
         type: 'heading_3',
         heading_3: {
-          rich_text: [{ type: 'text', text: { content: trimmed.slice(4) } }],
+          rich_text: parseInlineFormatting(trimmed.slice(4)),
         },
       });
     } else if (trimmed.startsWith('• ') || trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
@@ -164,7 +240,7 @@ function markdownToBlocks(markdown: string): Array<Record<string, unknown>> {
         object: 'block',
         type: 'bulleted_list_item',
         bulleted_list_item: {
-          rich_text: [{ type: 'text', text: { content: trimmed.slice(2) } }],
+          rich_text: parseInlineFormatting(trimmed.slice(2)),
         },
       });
     } else if (/^\d+\.\s/.test(trimmed)) {
@@ -172,7 +248,7 @@ function markdownToBlocks(markdown: string): Array<Record<string, unknown>> {
         object: 'block',
         type: 'numbered_list_item',
         numbered_list_item: {
-          rich_text: [{ type: 'text', text: { content: trimmed.replace(/^\d+\.\s/, '') } }],
+          rich_text: parseInlineFormatting(trimmed.replace(/^\d+\.\s/, '')),
         },
       });
     } else if (trimmed.startsWith('> ')) {
@@ -180,7 +256,7 @@ function markdownToBlocks(markdown: string): Array<Record<string, unknown>> {
         object: 'block',
         type: 'quote',
         quote: {
-          rich_text: [{ type: 'text', text: { content: trimmed.slice(2) } }],
+          rich_text: parseInlineFormatting(trimmed.slice(2)),
         },
       });
     } else if (trimmed === '---') {
@@ -195,7 +271,7 @@ function markdownToBlocks(markdown: string): Array<Record<string, unknown>> {
         object: 'block',
         type: 'paragraph',
         paragraph: {
-          rich_text: [{ type: 'text', text: { content: trimmed } }],
+          rich_text: parseInlineFormatting(trimmed),
         },
       });
     }
@@ -735,6 +811,141 @@ export const writeOpportunityContentTool: AgentTool = {
 };
 
 /**
+ * Rewrite content based on feedback - appends revision below original
+ */
+export const rewriteOpportunityContentTool: AgentTool = {
+  definition: {
+    name: 'rewrite_opportunity_content',
+    description:
+      'Rewrite or revise existing content on an opportunity page based on feedback. The revision is APPENDED below the original content with a clear "Revision" header, so reviewers can compare both versions. Use this when asked to revise, rewrite, or improve previously posted content.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        opportunity_id: {
+          type: 'string',
+          description: 'The Notion page ID of the opportunity (from search results)',
+        },
+        original_section: {
+          type: 'string',
+          description:
+            'Brief description of what section is being revised (e.g., "Past Performance", "Technical Approach")',
+        },
+        feedback_summary: {
+          type: 'string',
+          description:
+            'Summary of the feedback or suggestions that prompted this revision (e.g., "Add more specific metrics", "Strengthen win themes")',
+        },
+        revised_content: {
+          type: 'string',
+          description:
+            'The revised/rewritten content in markdown format. Use **bold**, *italic*, ## headers, • bullets, etc.',
+        },
+      },
+      required: ['opportunity_id', 'original_section', 'revised_content'],
+    },
+  },
+  allowedAgents: ['jodie'],
+  sourceName: 'Notion Pipeline',
+  execute: async (params) => {
+    console.log('[NotionTools] rewrite_opportunity_content called with:', JSON.stringify(params));
+
+    try {
+      const pageId = params.opportunity_id as string;
+      const originalSection = params.original_section as string;
+      const feedbackSummary = params.feedback_summary as string | undefined;
+      const revisedContent = params.revised_content as string;
+
+      // Build blocks to append
+      const blocks: Array<Record<string, unknown>> = [];
+
+      // Add revision header with divider
+      blocks.push({
+        object: 'block',
+        type: 'divider',
+        divider: {},
+      });
+
+      blocks.push({
+        object: 'block',
+        type: 'heading_2',
+        heading_2: {
+          rich_text: [
+            {
+              type: 'text',
+              text: { content: `✏️ Revision: ${originalSection}` },
+            },
+          ],
+        },
+      });
+
+      // Add metadata about the revision
+      const revisionDate = new Date().toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+
+      const metaText = feedbackSummary
+        ? `Revised by Jodie on ${revisionDate}\nBased on feedback: ${feedbackSummary}`
+        : `Revised by Jodie on ${revisionDate}`;
+
+      blocks.push({
+        object: 'block',
+        type: 'callout',
+        callout: {
+          icon: { type: 'emoji', emoji: '📝' },
+          rich_text: [
+            {
+              type: 'text',
+              text: { content: metaText },
+              annotations: { italic: true, color: 'gray' },
+            },
+          ],
+        },
+      });
+
+      // Convert revised content to Notion blocks
+      const contentBlocks = markdownToBlocks(revisedContent);
+      blocks.push(...contentBlocks);
+
+      // Append blocks to the page
+      await notionRequest(`/blocks/${pageId}/children`, 'PATCH', {
+        children: blocks,
+      });
+
+      // Get the page name for confirmation
+      const page = (await notionRequest(`/pages/${pageId}`)) as {
+        url: string;
+        properties: { Name?: { title: Array<{ plain_text: string }> } };
+      };
+      const pageName = extractPlainText(page.properties.Name?.title) || 'Unknown';
+
+      return {
+        success: true,
+        data: {
+          pageId,
+          pageName,
+          pageUrl: page.url,
+          blocksWritten: blocks.length,
+          section: originalSection,
+          message: `Successfully appended revision for "${originalSection}" to "${pageName}"`,
+        },
+        sourceCitation: `Notion Pipeline: ${pageName}`,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        data: null,
+        error: error instanceof Error ? error.message : 'Failed to write revision',
+        sourceCitation: 'Notion Pipeline',
+      };
+    }
+  },
+};
+
+/**
  * All Notion tools
  */
 export const notionTools: AgentTool[] = [
@@ -745,4 +956,5 @@ export const notionTools: AgentTool[] = [
   searchNotionOpportunitiesTool,
   getNotionOpportunityDetailsTool,
   writeOpportunityContentTool,
+  rewriteOpportunityContentTool,
 ];
