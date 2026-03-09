@@ -2010,7 +2010,7 @@ REMINDER: You are ${this.displayName}. Respond as ${this.displayName} — NOT as
     const maxRetries = 3;
     let lastError: unknown = null;
 
-    while (toolIteration <= maxToolIterations) {
+    toolLoop: while (toolIteration <= maxToolIterations) {
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
           // Build API call - add tools if agent has any
@@ -2068,13 +2068,16 @@ REMINDER: You are ${this.displayName}. Respond as ${this.displayName} — NOT as
               content: toolResultMessages,
             } as MessageParam);
 
-            // Continue the loop to get Claude's final response
-            continue;
+            // Continue the outer tool loop to get Claude's final response
+            continue toolLoop;
           }
 
           // Normal response (end_turn) - extract text
           const textBlock = response.content.find((b) => b.type === 'text');
           if (!textBlock || textBlock.type !== 'text') {
+            console.warn(
+              `${this.displayName}: No text block in response, content types: ${response.content.map((b) => b.type).join(', ')}`
+            );
             return {
               text: '',
               shouldRespond: false,
@@ -2088,12 +2091,25 @@ REMINDER: You are ${this.displayName}. Respond as ${this.displayName} — NOT as
 
           // Parse JSON response
           let jsonText = textBlock.text;
+          console.log(
+            `${this.displayName}: Raw response (first 500 chars): ${jsonText.slice(0, 500)}`
+          );
+
           const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
           if (jsonMatch) {
             jsonText = jsonMatch[0];
+          } else {
+            console.warn(`${this.displayName}: No JSON object found in response`);
           }
 
-          const parsed = JSON.parse(jsonText);
+          let parsed;
+          try {
+            parsed = JSON.parse(jsonText);
+          } catch (parseError) {
+            console.error(`${this.displayName}: JSON parse failed:`, parseError);
+            console.error(`${this.displayName}: Attempted to parse: ${jsonText.slice(0, 300)}`);
+            throw parseError;
+          }
           console.log(
             `${this.displayName}: Claude returned shouldRespond=${parsed.shouldRespond}, response length=${(parsed.response || '').length}`
           );
