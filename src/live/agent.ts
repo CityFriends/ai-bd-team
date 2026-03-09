@@ -1088,9 +1088,9 @@ export abstract class LiveAgent {
         // Claude gave us text but said not to respond - override that
         response.shouldRespond = true;
       } else {
-        // Claude didn't give us text - generate a fallback
+        // Claude didn't give us text - generate a fallback that asks for clarification
         response.shouldRespond = true;
-        response.text = `Hey! What do you need from me?`;
+        response.text = `I got your message but I'm not sure how to help with that. Can you give me more specifics? For example, which opportunity or case study are you asking about?`;
       }
     }
 
@@ -2001,8 +2001,9 @@ REMINDER: You are ${this.displayName}. Respond as ${this.displayName} — NOT as
       { role: 'user', content: operationalContext },
     ];
 
-    // Tool use loop (max 3 iterations to prevent runaway)
-    const maxToolIterations = 3;
+    // Tool use loop - Jodie's writing workflow needs 5-6 iterations:
+    // 1. Search case studies, 2-3. Get case study contents, 4. Search opportunity, 5. Write content
+    const maxToolIterations = 6;
     let toolIteration = 0;
 
     // Retry logic for transient errors (429, 529)
@@ -2029,7 +2030,16 @@ REMINDER: You are ${this.displayName}. Respond as ${this.displayName} — NOT as
               console.warn(
                 `${this.displayName}: Max tool iterations reached (${maxToolIterations})`
               );
-              break;
+              // Return a helpful message instead of falling through to empty response
+              return {
+                text: `I started working on this but hit my tool limit (${maxToolIterations} operations). This task needs more steps than I can do in one go. Can you break it into smaller pieces? For example, ask me to draft the content first, then in a follow-up ask me to post it to Notion.`,
+                shouldRespond: true,
+                delayMs: 1000,
+                confidence: 0.5,
+                sources: toolSources,
+                confidenceLevel: 'LOW' as const,
+                reaction: null,
+              };
             }
 
             console.log(`${this.displayName}: Tool use requested (iteration ${toolIteration})`);
