@@ -132,6 +132,96 @@ async function runMemoryReflection() {
   await cronMemoryReflection();
 }
 
+// Agent thinking time - proactive insights and observations
+async function runAgentThinkingTime() {
+  const { acquireCronLock, releaseCronLock } = await import('../integrations/database/cron.js');
+  const lock = await acquireCronLock('agent-thinking-time', 10);
+  if (!lock.acquired) {
+    console.log('[CRON] Agent thinking time: Another instance already running, skipping');
+    return;
+  }
+  try {
+    const { runThinkingTime } = await import('../cron/agent-thinking.js');
+    await runThinkingTime();
+  } finally {
+    if (lock.lockId) {
+      await releaseCronLock(lock.lockId);
+    }
+  }
+}
+
+// Feed synthesis - aggregate agent observations into feed
+async function runFeedSynthesis() {
+  const { acquireCronLock, releaseCronLock } = await import('../integrations/database/cron.js');
+  const lock = await acquireCronLock('feed-synthesis', 10);
+  if (!lock.acquired) {
+    console.log('[CRON] Feed synthesis: Another instance already running, skipping');
+    return;
+  }
+  try {
+    const { cronFeedSynthesis } = await import('../cron/feed-synthesis.js');
+    await cronFeedSynthesis();
+  } finally {
+    if (lock.lockId) {
+      await releaseCronLock(lock.lockId);
+    }
+  }
+}
+
+// Deadline monitor - check for upcoming deadlines and alert
+async function runDeadlineMonitor() {
+  const { acquireCronLock, releaseCronLock } = await import('../integrations/database/cron.js');
+  const lock = await acquireCronLock('deadline-monitor', 10);
+  if (!lock.acquired) {
+    console.log('[CRON] Deadline monitor: Another instance already running, skipping');
+    return;
+  }
+  try {
+    const { cronDeadlineMonitor } = await import('../cron/deadline-monitor.js');
+    await cronDeadlineMonitor();
+  } finally {
+    if (lock.lockId) {
+      await releaseCronLock(lock.lockId);
+    }
+  }
+}
+
+// Weekly rollup - summarize the week's activity
+async function runWeeklyRollup() {
+  const { acquireCronLock, releaseCronLock } = await import('../integrations/database/cron.js');
+  const lock = await acquireCronLock('weekly-rollup', 15);
+  if (!lock.acquired) {
+    console.log('[CRON] Weekly rollup: Another instance already running, skipping');
+    return;
+  }
+  try {
+    const { cronWeeklyRollup } = await import('../cron/weekly-rollup.js');
+    await cronWeeklyRollup();
+  } finally {
+    if (lock.lockId) {
+      await releaseCronLock(lock.lockId);
+    }
+  }
+}
+
+// Discussion processor - process opportunity discussions from Notion
+async function runDiscussionProcessor() {
+  const { acquireCronLock, releaseCronLock } = await import('../integrations/database/cron.js');
+  const lock = await acquireCronLock('discussion-processor', 10);
+  if (!lock.acquired) {
+    console.log('[CRON] Discussion processor: Another instance already running, skipping');
+    return;
+  }
+  try {
+    const { cronDiscussionProcessor } = await import('../cron/discussion-processor.js');
+    await cronDiscussionProcessor();
+  } finally {
+    if (lock.lockId) {
+      await releaseCronLock(lock.lockId);
+    }
+  }
+}
+
 // System event processor for workflow auto-creation
 async function runSystemEventProcessor() {
   const { acquireCronLock, releaseCronLock } = await import('../integrations/database/cron.js');
@@ -352,6 +442,68 @@ async function main() {
     }
   });
 
+  // ============================================================
+  // SCHEDULED JOBS - Agent Intelligence Layer
+  // ============================================================
+
+  // Agent thinking time: 8am, 12pm, 4pm CST Mon-Fri (14:00, 18:00, 22:00 UTC)
+  cron.schedule('0 14,18,22 * * 1-5', async () => {
+    console.log(`[${new Date().toLocaleString()}] Thinking: Running agent thinking time...`);
+    try {
+      await runWithLogging('agent-thinking-time', runAgentThinkingTime);
+      console.log(`[${new Date().toLocaleString()}] Thinking: Agent thinking time complete`);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Thinking: Agent thinking time failed:`, err);
+    }
+  });
+
+  // Feed synthesis: 9am, 11am, 1pm, 3pm CST Mon-Fri (15:00, 17:00, 19:00, 21:00 UTC)
+  cron.schedule('0 15,17,19,21 * * 1-5', async () => {
+    console.log(`[${new Date().toLocaleString()}] Feed: Running feed synthesis...`);
+    try {
+      await runWithLogging('feed-synthesis', runFeedSynthesis);
+      console.log(`[${new Date().toLocaleString()}] Feed: Feed synthesis complete`);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Feed: Feed synthesis failed:`, err);
+    }
+  });
+
+  // Deadline monitor: 8:30am CST daily (14:30 UTC) - offset from Maya scan
+  cron.schedule('30 14 * * *', async () => {
+    console.log(`[${new Date().toLocaleString()}] Deadlines: Running deadline monitor...`);
+    try {
+      await runWithLogging('deadline-monitor', runDeadlineMonitor);
+      console.log(`[${new Date().toLocaleString()}] Deadlines: Deadline monitor complete`);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Deadlines: Deadline monitor failed:`, err);
+    }
+  });
+
+  // Weekly rollup: 7am CST Monday (13:00 UTC)
+  cron.schedule('0 13 * * 1', async () => {
+    console.log(`[${new Date().toLocaleString()}] Rollup: Running weekly rollup...`);
+    try {
+      await runWithLogging('weekly-rollup', runWeeklyRollup);
+      console.log(`[${new Date().toLocaleString()}] Rollup: Weekly rollup complete`);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Rollup: Weekly rollup failed:`, err);
+    }
+  });
+
+  // Discussion processor: 10am, 12pm, 2pm, 4pm CST Mon-Fri (16:00, 18:00, 20:00, 22:00 UTC)
+  cron.schedule('0 16,18,20,22 * * 1-5', async () => {
+    console.log(`[${new Date().toLocaleString()}] Discussions: Running discussion processor...`);
+    try {
+      await runWithLogging('discussion-processor', runDiscussionProcessor);
+      console.log(`[${new Date().toLocaleString()}] Discussions: Discussion processor complete`);
+    } catch (err) {
+      console.error(
+        `[${new Date().toLocaleString()}] Discussions: Discussion processor failed:`,
+        err
+      );
+    }
+  });
+
   // System event processor: Every minute (for fast workflow creation)
   cron.schedule('* * * * *', async () => {
     try {
@@ -373,6 +525,12 @@ async function main() {
   console.log('    - David news digest: 10:00 AM Mon/Wed/Fri');
   console.log('    - Patricia standup: 11:00 AM Mon-Fri');
   console.log('    - Patricia health summary: 9:00 AM Mon-Fri');
+  console.log('  Agent Intelligence Layer:');
+  console.log('    - Agent thinking time: 8am, 12pm, 4pm Mon-Fri');
+  console.log('    - Feed synthesis: 9am, 11am, 1pm, 3pm Mon-Fri');
+  console.log('    - Deadline monitor: 8:30 AM daily');
+  console.log('    - Weekly rollup: 7:00 AM Monday');
+  console.log('    - Discussion processor: 10am, 12pm, 2pm, 4pm Mon-Fri');
   console.log('  System Jobs:');
   console.log('    - Action scheduler: Every 15 minutes');
   console.log('    - Workflow timeouts: Every 5 minutes');
