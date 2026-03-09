@@ -2001,9 +2001,9 @@ REMINDER: You are ${this.displayName}. Respond as ${this.displayName} — NOT as
       { role: 'user', content: operationalContext },
     ];
 
-    // Tool use loop - Jodie's writing workflow needs 5-6 iterations:
-    // 1. Search case studies, 2-3. Get case study contents, 4. Search opportunity, 5. Write content
-    const maxToolIterations = 6;
+    // Tool use loop - Complex workflows (revisions, multi-source writing) need up to 10 iterations:
+    // Search opp, get details, search case studies, get 2-3 case study contents, get writing guide, write/rewrite
+    const maxToolIterations = 10;
     let toolIteration = 0;
 
     // Retry logic for transient errors (429, 529)
