@@ -365,3 +365,291 @@ export function detectBacklogIntent(
   console.log('[Notion] detectBacklogIntent is deprecated - using confirmation flow');
   return null;
 }
+
+// ============================================================
+// OPPORTUNITY UPDATE FUNCTIONS
+// ============================================================
+
+/**
+ * Valid stages for the Pipeline
+ */
+export const VALID_STAGES = [
+  'Under Review',
+  'Response In Progress',
+  'Downselected',
+  'RFI/SSN Submitted',
+  'RFP Submitted',
+  'Won',
+  'Lost',
+  'No Bid',
+  'Canceled',
+] as const;
+
+export type PipelineStage = (typeof VALID_STAGES)[number];
+
+/**
+ * Valid deal health statuses
+ */
+export const VALID_DEAL_HEALTH = [
+  '🟢 On Track',
+  '🟡 At Risk',
+  '🔴 Stalled',
+  '⚪ Not Started',
+] as const;
+
+export type DealHealth = (typeof VALID_DEAL_HEALTH)[number];
+
+/**
+ * Properties that agents can update on an opportunity
+ */
+export interface OpportunityUpdate {
+  stage?: PipelineStage;
+  dealHealth?: DealHealth;
+  techReviewCompleted?: boolean;
+  complianceMatrixReady?: boolean;
+  pastPerformanceMatch?: boolean;
+  expectedNextStep?: string;
+  agentNotes?: string;
+}
+
+/**
+ * Find an opportunity in the Pipeline by name (partial match)
+ * Returns the page ID and current properties if found
+ */
+export async function findOpportunityByName(
+  name: string
+): Promise<{ pageId: string; name: string; stage: string; url: string } | null> {
+  if (!NOTION_API_KEY) {
+    console.warn('[Notion] NOTION_API_KEY not set');
+    return null;
+  }
+
+  try {
+    const response = await notionRequest(`/databases/${PIPELINE_DATABASE_ID}/query`, 'POST', {
+      filter: {
+        property: 'Name',
+        title: {
+          contains: name.substring(0, 50),
+        },
+      },
+      page_size: 5,
+    });
+
+    if (response.results && response.results.length > 0) {
+      // Find best match
+      for (const page of response.results) {
+        const existingName = page.properties?.Name?.title?.[0]?.plain_text || '';
+        const existingStage = page.properties?.Stage?.status?.name || 'Unknown';
+        const pageUrl = page.url || '';
+
+        // Exact match (case-insensitive)
+        if (existingName.toLowerCase() === name.toLowerCase()) {
+          return { pageId: page.id, name: existingName, stage: existingStage, url: pageUrl };
+        }
+      }
+
+      // Return first partial match
+      const first = response.results[0];
+      return {
+        pageId: first.id,
+        name: first.properties?.Name?.title?.[0]?.plain_text || name,
+        stage: first.properties?.Stage?.status?.name || 'Unknown',
+        url: first.url || '',
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.warn('[Notion] Could not find opportunity:', error);
+    return null;
+  }
+}
+
+/**
+ * Update an opportunity's properties in the Pipeline
+ * Agents use this to update status, mark completions, add notes
+ */
+export async function updateOpportunity(
+  pageId: string,
+  updates: OpportunityUpdate,
+  updatedBy: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!NOTION_API_KEY) {
+    console.warn('[Notion] NOTION_API_KEY not set');
+    return { success: false, error: 'NOTION_API_KEY not set' };
+  }
+
+  try {
+    const properties: Record<string, any> = {};
+
+    // Stage update
+    if (updates.stage && VALID_STAGES.includes(updates.stage)) {
+      properties['Stage'] = {
+        status: { name: updates.stage },
+      };
+    }
+
+    // Deal Health update
+    if (updates.dealHealth && VALID_DEAL_HEALTH.includes(updates.dealHealth)) {
+      properties['Deal Health'] = {
+        status: { name: updates.dealHealth },
+      };
+    }
+
+    // Tech Review Completed (checkbox)
+    if (updates.techReviewCompleted !== undefined) {
+      properties['Tech Review Completed'] = {
+        checkbox: updates.techReviewCompleted,
+      };
+    }
+
+    // Compliance Matrix Ready (checkbox)
+    if (updates.complianceMatrixReady !== undefined) {
+      properties['Compliance Matrix Ready'] = {
+        checkbox: updates.complianceMatrixReady,
+      };
+    }
+
+    // Past Performance Match (checkbox)
+    if (updates.pastPerformanceMatch !== undefined) {
+      properties['Past Performance Match'] = {
+        checkbox: updates.pastPerformanceMatch,
+      };
+    }
+
+    // Expected Next Step (rich_text)
+    if (updates.expectedNextStep) {
+      properties['Expected Next Step'] = {
+        rich_text: [{ text: { content: updates.expectedNextStep } }],
+      };
+    }
+
+    // Nothing to update
+    if (Object.keys(properties).length === 0) {
+      return { success: false, error: 'No valid updates provided' };
+    }
+
+    console.log(
+      `[Notion] Updating opportunity ${pageId} by ${updatedBy}:`,
+      Object.keys(properties)
+    );
+
+    await notionRequest(`/pages/${pageId}`, 'PATCH', { properties });
+
+    console.log(`[Notion] Successfully updated opportunity`);
+    return { success: true };
+  } catch (error) {
+    console.error('[Notion] Failed to update opportunity:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Update opportunity stage by name (convenience wrapper)
+ * Returns success and the found opportunity details
+ */
+export async function updateOpportunityStage(
+  opportunityName: string,
+  newStage: PipelineStage,
+  updatedBy: string
+): Promise<{ success: boolean; opportunity?: { name: string; url: string }; error?: string }> {
+  const found = await findOpportunityByName(opportunityName);
+  if (!found) {
+    return { success: false, error: `Opportunity "${opportunityName}" not found in Pipeline` };
+  }
+
+  const result = await updateOpportunity(found.pageId, { stage: newStage }, updatedBy);
+  if (result.success) {
+    return { success: true, opportunity: { name: found.name, url: found.url } };
+  }
+  return result;
+}
+
+/**
+ * Mark a milestone as completed on an opportunity
+ * Milestones: techReview, complianceMatrix, pastPerformance
+ */
+export async function markMilestoneCompleted(
+  opportunityName: string,
+  milestone: 'techReview' | 'complianceMatrix' | 'pastPerformance',
+  completed: boolean,
+  updatedBy: string
+): Promise<{ success: boolean; opportunity?: { name: string; url: string }; error?: string }> {
+  const found = await findOpportunityByName(opportunityName);
+  if (!found) {
+    return { success: false, error: `Opportunity "${opportunityName}" not found in Pipeline` };
+  }
+
+  const updates: OpportunityUpdate = {};
+  switch (milestone) {
+    case 'techReview':
+      updates.techReviewCompleted = completed;
+      break;
+    case 'complianceMatrix':
+      updates.complianceMatrixReady = completed;
+      break;
+    case 'pastPerformance':
+      updates.pastPerformanceMatch = completed;
+      break;
+  }
+
+  const result = await updateOpportunity(found.pageId, updates, updatedBy);
+  if (result.success) {
+    return { success: true, opportunity: { name: found.name, url: found.url } };
+  }
+  return result;
+}
+
+/**
+ * Get current status of an opportunity (for agents to check before updating)
+ */
+export async function getOpportunityStatus(opportunityName: string): Promise<{
+  found: boolean;
+  name?: string;
+  stage?: string;
+  dealHealth?: string;
+  techReviewCompleted?: boolean;
+  complianceMatrixReady?: boolean;
+  pastPerformanceMatch?: boolean;
+  url?: string;
+}> {
+  if (!NOTION_API_KEY) {
+    return { found: false };
+  }
+
+  try {
+    const response = await notionRequest(`/databases/${PIPELINE_DATABASE_ID}/query`, 'POST', {
+      filter: {
+        property: 'Name',
+        title: {
+          contains: opportunityName.substring(0, 50),
+        },
+      },
+      page_size: 1,
+    });
+
+    if (response.results && response.results.length > 0) {
+      const page = response.results[0];
+      const props = page.properties || {};
+
+      return {
+        found: true,
+        name: props.Name?.title?.[0]?.plain_text,
+        stage: props.Stage?.status?.name,
+        dealHealth: props['Deal Health']?.status?.name,
+        techReviewCompleted: props['Tech Review Completed']?.checkbox,
+        complianceMatrixReady: props['Compliance Matrix Ready']?.checkbox,
+        pastPerformanceMatch: props['Past Performance Match']?.checkbox,
+        url: page.url,
+      };
+    }
+
+    return { found: false };
+  } catch (error) {
+    console.warn('[Notion] Could not get opportunity status:', error);
+    return { found: false };
+  }
+}

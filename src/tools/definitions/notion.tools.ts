@@ -946,6 +946,281 @@ export const rewriteOpportunityContentTool: AgentTool = {
 };
 
 /**
+ * Update opportunity status/properties in the Pipeline
+ * Allows agents to update Stage, Deal Health, and milestone completions
+ */
+export const updateOpportunityStatusTool: AgentTool = {
+  definition: {
+    name: 'update_opportunity_status',
+    description:
+      "Update an opportunity's status, stage, deal health, or milestone completions in the Notion Pipeline. Use this when an opportunity changes stage, when you complete a review task, or when deal health needs updating. Only update fields that have actually changed.",
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        opportunity_name: {
+          type: 'string',
+          description:
+            'The name (or partial name) of the opportunity to update. Will search for the best match.',
+        },
+        stage: {
+          type: 'string',
+          enum: [
+            'Under Review',
+            'Response In Progress',
+            'Downselected',
+            'RFI/SSN Submitted',
+            'RFP Submitted',
+            'Won',
+            'Lost',
+            'No Bid',
+            'Canceled',
+          ],
+          description: 'New stage for the opportunity. Only set if stage is actually changing.',
+        },
+        deal_health: {
+          type: 'string',
+          enum: ['🟢 On Track', '🟡 At Risk', '🔴 Stalled', '⚪ Not Started'],
+          description: 'Deal health status. Update when opportunity health changes.',
+        },
+        tech_review_completed: {
+          type: 'boolean',
+          description:
+            'Mark tech review as completed (true) or not (false). Use when Marcus completes technical review.',
+        },
+        compliance_matrix_ready: {
+          type: 'boolean',
+          description:
+            'Mark compliance matrix as ready (true) or not (false). Use when Jodie completes compliance matrix.',
+        },
+        past_performance_match: {
+          type: 'boolean',
+          description:
+            'Mark past performance as matched (true) or not (false). Use when Rosa identifies matching past performance.',
+        },
+        expected_next_step: {
+          type: 'string',
+          description:
+            'Brief description of the expected next action (e.g., "Awaiting Q&A period", "Schedule capture review", "Submit by March 15").',
+        },
+      },
+      required: ['opportunity_name'],
+    },
+  },
+  // All agents can update status - they each have different responsibilities
+  allowedAgents: ['maya', 'david', 'rosa', 'james', 'patricia', 'jodie', 'marcus'],
+  sourceName: 'Notion Pipeline',
+  execute: async (params) => {
+    console.log('[NotionTools] update_opportunity_status called with:', JSON.stringify(params));
+
+    try {
+      const opportunityName = params.opportunity_name as string;
+
+      // Import the update functions from notion-actions
+      const notionActions = await import('../../live/notion-actions.js');
+      const { findOpportunityByName, updateOpportunity, VALID_STAGES, VALID_DEAL_HEALTH } =
+        notionActions;
+
+      type PipelineStage = (typeof VALID_STAGES)[number];
+      type DealHealth = (typeof VALID_DEAL_HEALTH)[number];
+
+      // Find the opportunity
+      const found = await findOpportunityByName(opportunityName);
+      if (!found) {
+        return {
+          success: false,
+          data: null,
+          error: `Opportunity "${opportunityName}" not found in Pipeline. Try a different search term or check the exact name in Notion.`,
+          sourceCitation: 'Notion Pipeline',
+        };
+      }
+
+      // Build the update object with proper types
+      const updates: {
+        stage?: PipelineStage;
+        dealHealth?: DealHealth;
+        techReviewCompleted?: boolean;
+        complianceMatrixReady?: boolean;
+        pastPerformanceMatch?: boolean;
+        expectedNextStep?: string;
+      } = {};
+
+      // Validate and add stage
+      if (params.stage) {
+        const stage = params.stage as string;
+        if (VALID_STAGES.includes(stage as PipelineStage)) {
+          updates.stage = stage as PipelineStage;
+        } else {
+          return {
+            success: false,
+            data: null,
+            error: `Invalid stage: "${stage}". Valid stages: ${VALID_STAGES.join(', ')}`,
+            sourceCitation: 'Notion Pipeline',
+          };
+        }
+      }
+
+      // Validate and add deal health
+      if (params.deal_health) {
+        const health = params.deal_health as string;
+        if (VALID_DEAL_HEALTH.includes(health as DealHealth)) {
+          updates.dealHealth = health as DealHealth;
+        } else {
+          return {
+            success: false,
+            data: null,
+            error: `Invalid deal health: "${health}". Valid values: ${VALID_DEAL_HEALTH.join(', ')}`,
+            sourceCitation: 'Notion Pipeline',
+          };
+        }
+      }
+
+      // Add boolean fields
+      if (typeof params.tech_review_completed === 'boolean') {
+        updates.techReviewCompleted = params.tech_review_completed;
+      }
+      if (typeof params.compliance_matrix_ready === 'boolean') {
+        updates.complianceMatrixReady = params.compliance_matrix_ready;
+      }
+      if (typeof params.past_performance_match === 'boolean') {
+        updates.pastPerformanceMatch = params.past_performance_match;
+      }
+
+      // Add expected next step
+      if (params.expected_next_step) {
+        updates.expectedNextStep = params.expected_next_step as string;
+      }
+
+      // Check if there's anything to update
+      if (Object.keys(updates).length === 0) {
+        return {
+          success: false,
+          data: null,
+          error:
+            'No valid updates provided. Specify at least one field to update (stage, deal_health, tech_review_completed, etc.).',
+          sourceCitation: 'Notion Pipeline',
+        };
+      }
+
+      // Perform the update
+      const result = await updateOpportunity(found.pageId, updates, 'agent');
+
+      if (!result.success) {
+        return {
+          success: false,
+          data: null,
+          error: result.error || 'Update failed',
+          sourceCitation: 'Notion Pipeline',
+        };
+      }
+
+      // Build a summary of what was updated
+      const updatedFields: string[] = [];
+      if (updates.stage) updatedFields.push(`Stage → ${updates.stage}`);
+      if (updates.dealHealth) updatedFields.push(`Deal Health → ${updates.dealHealth}`);
+      if (updates.techReviewCompleted !== undefined)
+        updatedFields.push(
+          `Tech Review → ${updates.techReviewCompleted ? '✅ Complete' : '❌ Incomplete'}`
+        );
+      if (updates.complianceMatrixReady !== undefined)
+        updatedFields.push(
+          `Compliance Matrix → ${updates.complianceMatrixReady ? '✅ Ready' : '❌ Not Ready'}`
+        );
+      if (updates.pastPerformanceMatch !== undefined)
+        updatedFields.push(
+          `Past Performance → ${updates.pastPerformanceMatch ? '✅ Matched' : '❌ No Match'}`
+        );
+      if (updates.expectedNextStep) updatedFields.push(`Next Step → ${updates.expectedNextStep}`);
+
+      return {
+        success: true,
+        data: {
+          opportunityName: found.name,
+          opportunityUrl: found.url,
+          previousStage: found.stage,
+          updatedFields,
+          message: `Successfully updated "${found.name}": ${updatedFields.join(', ')}`,
+        },
+        sourceCitation: `Notion Pipeline: ${found.name}`,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        data: null,
+        error: error instanceof Error ? error.message : 'Failed to update opportunity',
+        sourceCitation: 'Notion Pipeline',
+      };
+    }
+  },
+};
+
+/**
+ * Get current status of an opportunity
+ * Useful for agents to check before deciding on updates
+ */
+export const getOpportunityStatusTool: AgentTool = {
+  definition: {
+    name: 'get_opportunity_status',
+    description:
+      'Get the current status and milestone completions for an opportunity. Use this before updating to see current values and avoid unnecessary updates.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        opportunity_name: {
+          type: 'string',
+          description: 'The name (or partial name) of the opportunity to check.',
+        },
+      },
+      required: ['opportunity_name'],
+    },
+  },
+  allowedAgents: ['maya', 'david', 'rosa', 'james', 'patricia', 'jodie', 'marcus'],
+  sourceName: 'Notion Pipeline',
+  execute: async (params) => {
+    console.log('[NotionTools] get_opportunity_status called with:', JSON.stringify(params));
+
+    try {
+      const opportunityName = params.opportunity_name as string;
+
+      const { getOpportunityStatus } = await import('../../live/notion-actions.js');
+
+      const status = await getOpportunityStatus(opportunityName);
+
+      if (!status.found) {
+        return {
+          success: false,
+          data: null,
+          error: `Opportunity "${opportunityName}" not found in Pipeline.`,
+          sourceCitation: 'Notion Pipeline',
+        };
+      }
+
+      return {
+        success: true,
+        data: {
+          name: status.name,
+          url: status.url,
+          stage: status.stage || 'Not Set',
+          dealHealth: status.dealHealth || 'Not Set',
+          milestones: {
+            techReviewCompleted: status.techReviewCompleted ?? false,
+            complianceMatrixReady: status.complianceMatrixReady ?? false,
+            pastPerformanceMatch: status.pastPerformanceMatch ?? false,
+          },
+        },
+        sourceCitation: `Notion Pipeline: ${status.name}`,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        data: null,
+        error: error instanceof Error ? error.message : 'Failed to get opportunity status',
+        sourceCitation: 'Notion Pipeline',
+      };
+    }
+  },
+};
+
+/**
  * All Notion tools
  */
 export const notionTools: AgentTool[] = [
@@ -957,4 +1232,7 @@ export const notionTools: AgentTool[] = [
   getNotionOpportunityDetailsTool,
   writeOpportunityContentTool,
   rewriteOpportunityContentTool,
+  // Status update tools (all agents)
+  updateOpportunityStatusTool,
+  getOpportunityStatusTool,
 ];
