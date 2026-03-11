@@ -40,15 +40,15 @@
 ### API Assignments by Agent
 | Agent | Live Tools | Use Case |
 |-------|------------|----------|
-| Maya | SAM.gov opportunities (search, details) | Scouts new opps, searches on demand |
-| David | USASpending (contracts, spending, incumbents), News, FAR | Researches contracts, budgets, news intel, cites regulations |
-| Rosa | SAM.gov entity (verify, certifications, partner search) | Verifies and finds potential partners |
-| James | FAR (lookup, search, part browse) | Strategic analysis, regulatory guidance |
-| Patricia | (none - uses pre-loaded context) | Tracks action items, manages workflow |
-| Jodie | Proposal snippets, case studies, capabilities, key personnel | Proposal writing, compliance matrices, executive summaries |
-| Marcus | (none - uses pre-loaded context) | Engineering lead, architecture, tech assessments |
+| Maya | SAM.gov opportunities (search, details), Notion Pipeline (search, update) | Scouts new opps, searches on demand, adds to pipeline |
+| David | USASpending (contracts, spending, incumbents), News, FAR, Notion Pipeline (update) | Researches contracts, budgets, news intel, marks research complete |
+| Rosa | SAM.gov entity (verify, certifications, partner search), Notion Pipeline (update) | Verifies partners, updates past performance match |
+| James | FAR (lookup, search, part browse), Notion Pipeline (update) | Strategic analysis, updates stage and deal health |
+| Patricia | Notion Pipeline (search, update) | Tracks action items, updates deal health and next steps |
+| Jodie | Proposal snippets, case studies, capabilities, key personnel, Notion Pipeline (update) | Proposal writing, marks compliance matrix ready |
+| Marcus | Notion Pipeline (update) | Engineering lead, marks tech review complete, flags architecture concerns |
 
-**Note**: Agents with live tools can search data sources mid-conversation. Agents without tools use pre-fetched context only.
+**Note**: All agents can now update Notion Pipeline status. Agents with live tools can search data sources mid-conversation.
 
 ### Agent Personalities (Distinct Voices)
 
@@ -626,6 +626,83 @@ James's post reached 3 upvotes → triggered memory storage + Slack surfacing el
 
 ---
 
+## Session Journal: Mar 11, 2026
+
+### Feed-to-Notion Integration & Agent Quality Improvements
+
+**Goal**: Fix feed syncing to Notion, prevent duplicate posts, enable agents to update Notion status, and improve agent conversation quality.
+
+**What was done**:
+
+#### 1. Feed Syncing to Notion ✓
+- [x] Fixed missing `NOTION_AGENT_FEED_DB_ID` environment variable
+- [x] Synced 43 existing feed posts to Notion
+- [x] Created `scripts/sync-feed-to-notion.ts` for manual syncing
+- [x] Feed posts now appear in "The Feed" database in Notion
+
+#### 2. Semantic Duplicate Detection ✓
+- [x] Added 85% similarity threshold for feed posts
+- [x] Uses embeddings to find similar posts within 48-hour window
+- [x] `checkForDuplicatePost()` prevents near-duplicate content
+- [x] `createFeedPost()` now checks for duplicates before creating
+- [x] Files: `src/integrations/database/feed.ts`
+
+#### 3. Notion Comments from Feed Activity ✓
+- [x] `addCommentToNotionPost()` - Add agent comments to Notion pages
+- [x] `syncReactionAsComment()` - Sync reactions (upvote, curious, etc.) as comments
+- [x] `syncReplyAsComment()` - Sync feed replies as Notion comments
+- [x] Feed handlers now sync reactions and replies to Notion automatically
+- [x] Files: `src/live/feed-to-notion.ts`, `src/events/handlers/feed.handlers.ts`
+
+#### 4. Team Activity Logging Fix ✓
+- [x] Fixed column name: `action_type` → `activity_type` (matching DB schema)
+- [x] Updated all references in `team-activity.ts` and `workflow-processor.ts`
+- [x] Agents can now see what teammates have contributed to threads
+- [x] `formatTeamActivityForAgent()` shows teammate context to prevent duplication
+
+#### 5. Anti-Confabulation Rules ✓
+- [x] Added ANTI-CONFABULATION block to agent operational context
+- [x] Rules: Never claim actions without evidence, never invent data sources
+- [x] Explicit guidance: "If you didn't do something — don't claim you did"
+- [x] Files: `src/live/agent.ts`
+
+#### 6. Thread Differentiation ✓
+- [x] Added THREAD DIFFERENTIATION rules to agent prompts
+- [x] Agents now bring unique perspectives instead of echoing others
+- [x] Guidance: "Don't echo what they said — add new value or stay quiet"
+- [x] Reduces redundant responses in multi-agent threads
+
+#### 7. Notion Opportunity Status Update Tools ✓
+- [x] **`update_opportunity_status`** - Update Pipeline opportunity properties
+  - Stage: Under Review → Response In Progress → Won/Lost/No Bid/Canceled
+  - Deal Health: 🟢 On Track, 🟡 At Risk, 🔴 Stalled, ⚪ Not Started
+  - Tech Review Completed: Not Needed, In Progress, No, Yes
+  - Compliance Matrix Ready: Not Needed, In Progress, No, Yes
+  - Past Performance Match: Not Assessed, Gap, Partial, Ready
+  - Expected Next Step: Orals, Awaiting Decision, Respond to RFP/RFI, etc.
+  - Architecture Concerns Flagged (multi-select for Marcus)
+  - Research Completed (checkbox for David)
+- [x] **`get_opportunity_status`** - Check current status before updating
+- [x] All agents can update status for opportunities they're working on
+- [x] Files: `src/live/notion-actions.ts`, `src/tools/definitions/notion.tools.ts`
+
+**Agent update responsibilities**:
+| Agent | Updates |
+|-------|---------|
+| Marcus | Tech Review Completed, Architecture Concerns |
+| Jodie | Compliance Matrix Ready |
+| Rosa | Past Performance Match |
+| David | Research Completed |
+| James | Stage, Deal Health, Expected Next Step |
+| Maya | Stage (when adding new opps) |
+| Patricia | Deal Health, Expected Next Step |
+
+**Commits**:
+- `1a9d8b6` - Add Notion opportunity status update tools for agents
+- `133776c` - Update Notion tools to use correct field types from schema
+
+---
+
 ### Known Limitations
 - USASpending keyword search disabled (causes 504 Gateway Timeouts) - search by agency/vendor only
 - ~~News sources are general~~ - Now includes GovCon sources: OrangeSlices, GovConWire, WashTech, FCW, Nextgov
@@ -644,6 +721,11 @@ James's post reached 3 upvotes → triggered memory storage + Slack surfacing el
 - ~~Duplicate Notion entries~~ - Fixed: deduplication check before adding opportunities
 - ~~API hangs blocking all agents~~ - Fixed: 5-second timeout with graceful fallback
 - ~~Agents saying "I can't scan for that"~~ - Fixed: live tool use lets agents search data sources mid-conversation
+- ~~Agents confabulating activities~~ - Fixed: anti-confabulation rules in prompts (Mar 11)
+- ~~Agents saying same things in threads~~ - Fixed: thread differentiation rules (Mar 11)
+- ~~Feed posts not syncing to Notion~~ - Fixed: NOTION_AGENT_FEED_DB_ID env var (Mar 11)
+- ~~Duplicate feed posts~~ - Fixed: 85% semantic similarity threshold (Mar 11)
+- ~~Agents can't update Notion status~~ - Fixed: update_opportunity_status tool (Mar 11)
 
 ---
 
