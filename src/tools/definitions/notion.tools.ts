@@ -983,24 +983,55 @@ export const updateOpportunityStatusTool: AgentTool = {
           description: 'Deal health status. Update when opportunity health changes.',
         },
         tech_review_completed: {
-          type: 'boolean',
-          description:
-            'Mark tech review as completed (true) or not (false). Use when Marcus completes technical review.',
+          type: 'string',
+          enum: ['Not Needed', 'In Progress', 'No', 'Yes'],
+          description: 'Tech review status. Use when Marcus updates technical review progress.',
         },
         compliance_matrix_ready: {
-          type: 'boolean',
+          type: 'string',
+          enum: ['Not Needed', 'In Progress', 'No', 'Yes'],
           description:
-            'Mark compliance matrix as ready (true) or not (false). Use when Jodie completes compliance matrix.',
+            'Compliance matrix status. Use when Jodie updates compliance matrix progress.',
         },
         past_performance_match: {
-          type: 'boolean',
+          type: 'string',
+          enum: ['Not Assessed', 'Gap', 'Partial', 'Ready'],
           description:
-            'Mark past performance as matched (true) or not (false). Use when Rosa identifies matching past performance.',
+            'Past performance match status. Use when Rosa assesses past performance fit.',
         },
         expected_next_step: {
           type: 'string',
+          enum: [
+            'Orals',
+            'Awaiting Decision',
+            'Respond to RFP/RFI',
+            'Sub Engagement',
+            'Unknown',
+            'Prime Engagement',
+            'Monitoring Only',
+            'Awaiting RFP',
+          ],
+          description: 'Expected next step in the opportunity lifecycle.',
+        },
+        architecture_concerns: {
+          type: 'array',
+          items: {
+            type: 'string',
+            enum: [
+              "Technology Stack Mismatch - Tech choices don't fit government environment",
+              'Overengineering Alert - Solution more complex than problem requires',
+              'Technical Debt Risk - Maintenance burden that affects timeline/budget',
+              'Integration Complexity - API dependencies legacy system connections beyond scope',
+              "Scalability/Performance - Architecture won't handle expected load or growth",
+              'Security/Compliance - FedRAMP ATO Section 508 issues that need strategy input',
+            ],
+          },
+          description: 'Architecture concerns flagged by Marcus. Can select multiple concerns.',
+        },
+        research_completed: {
+          type: 'boolean',
           description:
-            'Brief description of the expected next action (e.g., "Awaiting Q&A period", "Schedule capture review", "Submit by March 15").',
+            'Mark research as completed (true) or not (false). Use when David completes due diligence research.',
         },
       },
       required: ['opportunity_name'],
@@ -1017,11 +1048,25 @@ export const updateOpportunityStatusTool: AgentTool = {
 
       // Import the update functions from notion-actions
       const notionActions = await import('../../live/notion-actions.js');
-      const { findOpportunityByName, updateOpportunity, VALID_STAGES, VALID_DEAL_HEALTH } =
-        notionActions;
+      const {
+        findOpportunityByName,
+        updateOpportunity,
+        VALID_STAGES,
+        VALID_DEAL_HEALTH,
+        VALID_TECH_REVIEW_STATUS,
+        VALID_COMPLIANCE_MATRIX_STATUS,
+        VALID_PAST_PERFORMANCE_STATUS,
+        VALID_NEXT_STEPS,
+        VALID_ARCHITECTURE_CONCERNS,
+      } = notionActions;
 
       type PipelineStage = (typeof VALID_STAGES)[number];
       type DealHealth = (typeof VALID_DEAL_HEALTH)[number];
+      type TechReviewStatus = (typeof VALID_TECH_REVIEW_STATUS)[number];
+      type ComplianceMatrixStatus = (typeof VALID_COMPLIANCE_MATRIX_STATUS)[number];
+      type PastPerformanceStatus = (typeof VALID_PAST_PERFORMANCE_STATUS)[number];
+      type ExpectedNextStep = (typeof VALID_NEXT_STEPS)[number];
+      type ArchitectureConcern = (typeof VALID_ARCHITECTURE_CONCERNS)[number];
 
       // Find the opportunity
       const found = await findOpportunityByName(opportunityName);
@@ -1038,10 +1083,12 @@ export const updateOpportunityStatusTool: AgentTool = {
       const updates: {
         stage?: PipelineStage;
         dealHealth?: DealHealth;
-        techReviewCompleted?: boolean;
-        complianceMatrixReady?: boolean;
-        pastPerformanceMatch?: boolean;
-        expectedNextStep?: string;
+        techReviewCompleted?: TechReviewStatus;
+        complianceMatrixReady?: ComplianceMatrixStatus;
+        pastPerformanceMatch?: PastPerformanceStatus;
+        expectedNextStep?: ExpectedNextStep;
+        architectureConcerns?: ArchitectureConcern[];
+        researchCompleted?: boolean;
       } = {};
 
       // Validate and add stage
@@ -1074,20 +1121,52 @@ export const updateOpportunityStatusTool: AgentTool = {
         }
       }
 
-      // Add boolean fields
-      if (typeof params.tech_review_completed === 'boolean') {
-        updates.techReviewCompleted = params.tech_review_completed;
-      }
-      if (typeof params.compliance_matrix_ready === 'boolean') {
-        updates.complianceMatrixReady = params.compliance_matrix_ready;
-      }
-      if (typeof params.past_performance_match === 'boolean') {
-        updates.pastPerformanceMatch = params.past_performance_match;
+      // Validate and add tech review status
+      if (params.tech_review_completed) {
+        const status = params.tech_review_completed as string;
+        if (VALID_TECH_REVIEW_STATUS.includes(status as TechReviewStatus)) {
+          updates.techReviewCompleted = status as TechReviewStatus;
+        }
       }
 
-      // Add expected next step
+      // Validate and add compliance matrix status
+      if (params.compliance_matrix_ready) {
+        const status = params.compliance_matrix_ready as string;
+        if (VALID_COMPLIANCE_MATRIX_STATUS.includes(status as ComplianceMatrixStatus)) {
+          updates.complianceMatrixReady = status as ComplianceMatrixStatus;
+        }
+      }
+
+      // Validate and add past performance status
+      if (params.past_performance_match) {
+        const status = params.past_performance_match as string;
+        if (VALID_PAST_PERFORMANCE_STATUS.includes(status as PastPerformanceStatus)) {
+          updates.pastPerformanceMatch = status as PastPerformanceStatus;
+        }
+      }
+
+      // Validate and add expected next step
       if (params.expected_next_step) {
-        updates.expectedNextStep = params.expected_next_step as string;
+        const step = params.expected_next_step as string;
+        if (VALID_NEXT_STEPS.includes(step as ExpectedNextStep)) {
+          updates.expectedNextStep = step as ExpectedNextStep;
+        }
+      }
+
+      // Validate and add architecture concerns (multi-select)
+      if (params.architecture_concerns && Array.isArray(params.architecture_concerns)) {
+        const concerns = params.architecture_concerns as string[];
+        const validConcerns = concerns.filter((c) =>
+          VALID_ARCHITECTURE_CONCERNS.includes(c as ArchitectureConcern)
+        ) as ArchitectureConcern[];
+        if (validConcerns.length > 0) {
+          updates.architectureConcerns = validConcerns;
+        }
+      }
+
+      // Add research completed (checkbox for David)
+      if (typeof params.research_completed === 'boolean') {
+        updates.researchCompleted = params.research_completed;
       }
 
       // Check if there's anything to update
@@ -1117,19 +1196,21 @@ export const updateOpportunityStatusTool: AgentTool = {
       const updatedFields: string[] = [];
       if (updates.stage) updatedFields.push(`Stage → ${updates.stage}`);
       if (updates.dealHealth) updatedFields.push(`Deal Health → ${updates.dealHealth}`);
-      if (updates.techReviewCompleted !== undefined)
-        updatedFields.push(
-          `Tech Review → ${updates.techReviewCompleted ? '✅ Complete' : '❌ Incomplete'}`
-        );
-      if (updates.complianceMatrixReady !== undefined)
-        updatedFields.push(
-          `Compliance Matrix → ${updates.complianceMatrixReady ? '✅ Ready' : '❌ Not Ready'}`
-        );
-      if (updates.pastPerformanceMatch !== undefined)
-        updatedFields.push(
-          `Past Performance → ${updates.pastPerformanceMatch ? '✅ Matched' : '❌ No Match'}`
-        );
+      if (updates.techReviewCompleted)
+        updatedFields.push(`Tech Review → ${updates.techReviewCompleted}`);
+      if (updates.complianceMatrixReady)
+        updatedFields.push(`Compliance Matrix → ${updates.complianceMatrixReady}`);
+      if (updates.pastPerformanceMatch)
+        updatedFields.push(`Past Performance → ${updates.pastPerformanceMatch}`);
       if (updates.expectedNextStep) updatedFields.push(`Next Step → ${updates.expectedNextStep}`);
+      if (updates.architectureConcerns && updates.architectureConcerns.length > 0)
+        updatedFields.push(
+          `Architecture Concerns → ${updates.architectureConcerns.length} flagged`
+        );
+      if (updates.researchCompleted !== undefined)
+        updatedFields.push(
+          `Research → ${updates.researchCompleted ? '✅ Complete' : '❌ Incomplete'}`
+        );
 
       return {
         success: true,
@@ -1201,11 +1282,14 @@ export const getOpportunityStatusTool: AgentTool = {
           url: status.url,
           stage: status.stage || 'Not Set',
           dealHealth: status.dealHealth || 'Not Set',
+          expectedNextStep: status.expectedNextStep || 'Not Set',
           milestones: {
-            techReviewCompleted: status.techReviewCompleted ?? false,
-            complianceMatrixReady: status.complianceMatrixReady ?? false,
-            pastPerformanceMatch: status.pastPerformanceMatch ?? false,
+            techReviewCompleted: status.techReviewCompleted || 'Not Set',
+            complianceMatrixReady: status.complianceMatrixReady || 'Not Set',
+            pastPerformanceMatch: status.pastPerformanceMatch || 'Not Set',
+            researchCompleted: status.researchCompleted ?? false,
           },
+          architectureConcerns: status.architectureConcerns || [],
         },
         sourceCitation: `Notion Pipeline: ${status.name}`,
       };

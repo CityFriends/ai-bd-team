@@ -400,16 +400,63 @@ export const VALID_DEAL_HEALTH = [
 export type DealHealth = (typeof VALID_DEAL_HEALTH)[number];
 
 /**
+ * Valid tech review status options
+ */
+export const VALID_TECH_REVIEW_STATUS = ['Not Needed', 'In Progress', 'No', 'Yes'] as const;
+export type TechReviewStatus = (typeof VALID_TECH_REVIEW_STATUS)[number];
+
+/**
+ * Valid compliance matrix status options
+ */
+export const VALID_COMPLIANCE_MATRIX_STATUS = ['Not Needed', 'In Progress', 'No', 'Yes'] as const;
+export type ComplianceMatrixStatus = (typeof VALID_COMPLIANCE_MATRIX_STATUS)[number];
+
+/**
+ * Valid past performance match status options
+ */
+export const VALID_PAST_PERFORMANCE_STATUS = ['Not Assessed', 'Gap', 'Partial', 'Ready'] as const;
+export type PastPerformanceStatus = (typeof VALID_PAST_PERFORMANCE_STATUS)[number];
+
+/**
+ * Valid expected next step options
+ */
+export const VALID_NEXT_STEPS = [
+  'Orals',
+  'Awaiting Decision',
+  'Respond to RFP/RFI',
+  'Sub Engagement',
+  'Unknown',
+  'Prime Engagement',
+  'Monitoring Only',
+  'Awaiting RFP',
+] as const;
+export type ExpectedNextStep = (typeof VALID_NEXT_STEPS)[number];
+
+/**
+ * Valid architecture concerns (multi-select)
+ */
+export const VALID_ARCHITECTURE_CONCERNS = [
+  "Technology Stack Mismatch - Tech choices don't fit government environment",
+  'Overengineering Alert - Solution more complex than problem requires',
+  'Technical Debt Risk - Maintenance burden that affects timeline/budget',
+  'Integration Complexity - API dependencies legacy system connections beyond scope',
+  "Scalability/Performance - Architecture won't handle expected load or growth",
+  'Security/Compliance - FedRAMP ATO Section 508 issues that need strategy input',
+] as const;
+export type ArchitectureConcern = (typeof VALID_ARCHITECTURE_CONCERNS)[number];
+
+/**
  * Properties that agents can update on an opportunity
  */
 export interface OpportunityUpdate {
   stage?: PipelineStage;
   dealHealth?: DealHealth;
-  techReviewCompleted?: boolean;
-  complianceMatrixReady?: boolean;
-  pastPerformanceMatch?: boolean;
-  expectedNextStep?: string;
-  agentNotes?: string;
+  techReviewCompleted?: TechReviewStatus;
+  complianceMatrixReady?: ComplianceMatrixStatus;
+  pastPerformanceMatch?: PastPerformanceStatus;
+  expectedNextStep?: ExpectedNextStep;
+  architectureConcerns?: ArchitectureConcern[];
+  researchCompleted?: boolean; // Checkbox for David
 }
 
 /**
@@ -489,38 +536,61 @@ export async function updateOpportunity(
       };
     }
 
-    // Deal Health update
+    // Deal Health update (select)
     if (updates.dealHealth && VALID_DEAL_HEALTH.includes(updates.dealHealth)) {
       properties['Deal Health'] = {
-        status: { name: updates.dealHealth },
+        select: { name: updates.dealHealth },
       };
     }
 
-    // Tech Review Completed (checkbox)
-    if (updates.techReviewCompleted !== undefined) {
+    // Tech Review Completed (select: Not Needed, In Progress, No, Yes)
+    if (
+      updates.techReviewCompleted &&
+      VALID_TECH_REVIEW_STATUS.includes(updates.techReviewCompleted)
+    ) {
       properties['Tech Review Completed'] = {
-        checkbox: updates.techReviewCompleted,
+        select: { name: updates.techReviewCompleted },
       };
     }
 
-    // Compliance Matrix Ready (checkbox)
-    if (updates.complianceMatrixReady !== undefined) {
+    // Compliance Matrix Ready (select: Not Needed, In Progress, No, Yes)
+    if (
+      updates.complianceMatrixReady &&
+      VALID_COMPLIANCE_MATRIX_STATUS.includes(updates.complianceMatrixReady)
+    ) {
       properties['Compliance Matrix Ready'] = {
-        checkbox: updates.complianceMatrixReady,
+        select: { name: updates.complianceMatrixReady },
       };
     }
 
-    // Past Performance Match (checkbox)
-    if (updates.pastPerformanceMatch !== undefined) {
+    // Past Performance Match (select: Not Assessed, Gap, Partial, Ready)
+    if (
+      updates.pastPerformanceMatch &&
+      VALID_PAST_PERFORMANCE_STATUS.includes(updates.pastPerformanceMatch)
+    ) {
       properties['Past Performance Match'] = {
-        checkbox: updates.pastPerformanceMatch,
+        select: { name: updates.pastPerformanceMatch },
       };
     }
 
-    // Expected Next Step (rich_text)
-    if (updates.expectedNextStep) {
+    // Expected Next Step (select)
+    if (updates.expectedNextStep && VALID_NEXT_STEPS.includes(updates.expectedNextStep)) {
       properties['Expected Next Step'] = {
-        rich_text: [{ text: { content: updates.expectedNextStep } }],
+        select: { name: updates.expectedNextStep },
+      };
+    }
+
+    // Architecture Concerns Flagged (multi-select)
+    if (updates.architectureConcerns && updates.architectureConcerns.length > 0) {
+      properties["ARCHITECTURE CONCERNS FLAGGED'"] = {
+        multi_select: updates.architectureConcerns.map((concern) => ({ name: concern })),
+      };
+    }
+
+    // Research Completed (checkbox - for David)
+    if (updates.researchCompleted !== undefined) {
+      properties['Research Completed'] = {
+        checkbox: updates.researchCompleted,
       };
     }
 
@@ -569,41 +639,6 @@ export async function updateOpportunityStage(
 }
 
 /**
- * Mark a milestone as completed on an opportunity
- * Milestones: techReview, complianceMatrix, pastPerformance
- */
-export async function markMilestoneCompleted(
-  opportunityName: string,
-  milestone: 'techReview' | 'complianceMatrix' | 'pastPerformance',
-  completed: boolean,
-  updatedBy: string
-): Promise<{ success: boolean; opportunity?: { name: string; url: string }; error?: string }> {
-  const found = await findOpportunityByName(opportunityName);
-  if (!found) {
-    return { success: false, error: `Opportunity "${opportunityName}" not found in Pipeline` };
-  }
-
-  const updates: OpportunityUpdate = {};
-  switch (milestone) {
-    case 'techReview':
-      updates.techReviewCompleted = completed;
-      break;
-    case 'complianceMatrix':
-      updates.complianceMatrixReady = completed;
-      break;
-    case 'pastPerformance':
-      updates.pastPerformanceMatch = completed;
-      break;
-  }
-
-  const result = await updateOpportunity(found.pageId, updates, updatedBy);
-  if (result.success) {
-    return { success: true, opportunity: { name: found.name, url: found.url } };
-  }
-  return result;
-}
-
-/**
  * Get current status of an opportunity (for agents to check before updating)
  */
 export async function getOpportunityStatus(opportunityName: string): Promise<{
@@ -611,9 +646,12 @@ export async function getOpportunityStatus(opportunityName: string): Promise<{
   name?: string;
   stage?: string;
   dealHealth?: string;
-  techReviewCompleted?: boolean;
-  complianceMatrixReady?: boolean;
-  pastPerformanceMatch?: boolean;
+  techReviewCompleted?: string;
+  complianceMatrixReady?: string;
+  pastPerformanceMatch?: string;
+  expectedNextStep?: string;
+  researchCompleted?: boolean;
+  architectureConcerns?: string[];
   url?: string;
 }> {
   if (!NOTION_API_KEY) {
@@ -635,14 +673,23 @@ export async function getOpportunityStatus(opportunityName: string): Promise<{
       const page = response.results[0];
       const props = page.properties || {};
 
+      // Extract multi-select architecture concerns
+      const archConcerns =
+        props["ARCHITECTURE CONCERNS FLAGGED'"]?.multi_select?.map(
+          (item: { name: string }) => item.name
+        ) || [];
+
       return {
         found: true,
         name: props.Name?.title?.[0]?.plain_text,
         stage: props.Stage?.status?.name,
-        dealHealth: props['Deal Health']?.status?.name,
-        techReviewCompleted: props['Tech Review Completed']?.checkbox,
-        complianceMatrixReady: props['Compliance Matrix Ready']?.checkbox,
-        pastPerformanceMatch: props['Past Performance Match']?.checkbox,
+        dealHealth: props['Deal Health']?.select?.name,
+        techReviewCompleted: props['Tech Review Completed']?.select?.name,
+        complianceMatrixReady: props['Compliance Matrix Ready']?.select?.name,
+        pastPerformanceMatch: props['Past Performance Match']?.select?.name,
+        expectedNextStep: props['Expected Next Step']?.select?.name,
+        researchCompleted: props['Research Completed']?.checkbox,
+        architectureConcerns: archConcerns,
         url: page.url,
       };
     }
