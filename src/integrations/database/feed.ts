@@ -60,6 +60,72 @@ export interface CreateFeedPostOptions {
   importance?: number;
   visibility?: 'internal' | 'slack_eligible';
   generateEmbedding?: boolean;
+  skipDuplicateCheck?: boolean;
+}
+
+// ============================================================
+// Duplicate Detection
+// ============================================================
+
+const DUPLICATE_SIMILARITY_THRESHOLD = 0.85; // 85% similar = duplicate
+const DUPLICATE_CHECK_HOURS = 48; // Check posts from last 48 hours
+
+export interface DuplicateCheckResult {
+  isDuplicate: boolean;
+  similarPost?: FeedPost & { similarity: number };
+  reason?: string;
+}
+
+/**
+ * Check if a post is semantically similar to existing posts
+ * Returns true if a highly similar post already exists
+ */
+export async function checkForDuplicatePost(
+  content: string,
+  options: { hoursBack?: number; similarityThreshold?: number } = {}
+): Promise<DuplicateCheckResult> {
+  const {
+    hoursBack = DUPLICATE_CHECK_HOURS,
+    similarityThreshold = DUPLICATE_SIMILARITY_THRESHOLD,
+  } = options;
+
+  try {
+    const queryEmbedding = await embed(content);
+    const embeddingStr = formatForPgVector(queryEmbedding);
+    const since = new Date(Date.now() - hoursBack * 60 * 60 * 1000).toISOString();
+
+    // Use RPC for vector similarity search with time filter
+    const { data, error } = await getSupabase().rpc('match_feed_posts', {
+      query_embedding: embeddingStr,
+      match_threshold: similarityThreshold,
+      match_count: 1,
+    });
+
+    if (error) {
+      console.warn('[Feed] Duplicate check failed:', error.message);
+      return { isDuplicate: false };
+    }
+
+    if (data && data.length > 0) {
+      const match = data[0] as FeedPost & { similarity: number };
+      // Also check if within time window
+      if (new Date(match.created_at) >= new Date(since)) {
+        console.log(
+          `[Feed] Duplicate detected: ${(match.similarity * 100).toFixed(1)}% similar to "${match.content.slice(0, 50)}..."`
+        );
+        return {
+          isDuplicate: true,
+          similarPost: match,
+          reason: `${(match.similarity * 100).toFixed(0)}% similar to existing post by ${match.author}`,
+        };
+      }
+    }
+
+    return { isDuplicate: false };
+  } catch (err) {
+    console.error('[Feed] Error checking for duplicates:', err);
+    return { isDuplicate: false }; // Allow post if check fails
+  }
 }
 
 // ============================================================
@@ -78,9 +144,19 @@ export async function createFeedPost(options: CreateFeedPostOptions): Promise<Fe
     importance = 5,
     visibility = 'internal',
     generateEmbedding = true,
+    skipDuplicateCheck = false,
   } = options;
 
   try {
+    // Check for duplicates unless explicitly skipped (e.g., for replies)
+    if (!skipDuplicateCheck && !replyToPostId) {
+      const duplicateCheck = await checkForDuplicatePost(content);
+      if (duplicateCheck.isDuplicate) {
+        console.log(`[Feed] Skipping duplicate post by ${author}: ${duplicateCheck.reason}`);
+        return null;
+      }
+    }
+
     const insertData: Record<string, unknown> = {
       author,
       post_type: postType,

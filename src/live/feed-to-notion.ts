@@ -365,3 +365,112 @@ export async function handleNewFeedPost(post: FeedPost): Promise<void> {
     console.error('[FeedToNotion] Failed to sync new post:', err);
   }
 }
+
+// ============================================================
+// Notion Comments
+// ============================================================
+
+/**
+ * Add a comment to a feed post's Notion page
+ * Used when agents reply or react to posts
+ */
+export async function addCommentToNotionPost(
+  notionPageId: string,
+  agent: string,
+  commentType: 'reply' | 'reaction' | 'build' | 'challenge',
+  content: string
+): Promise<boolean> {
+  if (!NOTION_API_KEY) {
+    console.warn('[FeedToNotion] NOTION_API_KEY not set');
+    return false;
+  }
+
+  const agentInfo = AGENT_INFO[agent] || { emoji: '🤖', role: 'Agent' };
+  const typeLabels: Record<string, string> = {
+    reply: '💬 Reply',
+    reaction: '👍 Reaction',
+    build: '🏗️ Build',
+    challenge: '🤔 Challenge',
+  };
+
+  const commentText = `${agentInfo.emoji} **${agent.charAt(0).toUpperCase() + agent.slice(1)}** (${typeLabels[commentType]}): ${content}`;
+
+  try {
+    const body = {
+      parent: { page_id: notionPageId },
+      rich_text: [
+        {
+          type: 'text',
+          text: { content: commentText },
+        },
+      ],
+    };
+
+    const response = await fetch(`${NOTION_API}/comments`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${NOTION_API_KEY}`,
+        'Notion-Version': NOTION_VERSION,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error(`[FeedToNotion] Comment error: ${response.status} - ${error}`);
+      return false;
+    }
+
+    console.log(`[FeedToNotion] Added ${commentType} comment from ${agent}`);
+    return true;
+  } catch (err) {
+    console.error('[FeedToNotion] Failed to add comment:', err);
+    return false;
+  }
+}
+
+/**
+ * Sync a reply to Notion as a comment on the parent post
+ */
+export async function syncReplyAsComment(
+  parentPost: FeedPost,
+  replyPost: FeedPost
+): Promise<boolean> {
+  if (!parentPost.notion_page_id) {
+    console.log('[FeedToNotion] Parent post not synced to Notion, skipping comment');
+    return false;
+  }
+
+  return addCommentToNotionPost(
+    parentPost.notion_page_id,
+    replyPost.author,
+    replyPost.post_type === 'build' ? 'build' : 'reply',
+    replyPost.content
+  );
+}
+
+/**
+ * Sync a reaction to Notion as a comment
+ */
+export async function syncReactionAsComment(
+  post: FeedPost,
+  reactor: string,
+  reactionType: string
+): Promise<boolean> {
+  if (!post.notion_page_id) {
+    return false;
+  }
+
+  const reactionLabels: Record<string, string> = {
+    upvote: '👍 Upvoted this',
+    curious: '🤔 Curious about this',
+    build: '🏗️ Wants to build on this',
+    challenge: '⚡ Challenges this',
+    important: '⭐ Marked as important',
+  };
+
+  const label = reactionLabels[reactionType] || reactionType;
+
+  return addCommentToNotionPost(post.notion_page_id, reactor, 'reaction', label);
+}

@@ -21,10 +21,12 @@ import {
   checkAgentRateLimit,
   hasAgentReacted,
   hasAgentReplied,
+  getFeedPost,
   type FeedPostType,
 } from '../../integrations/database/feed.js';
 import { publishEvent } from '../eventBus.js';
 import type { LiveAgentName } from '../../live/types.js';
+import { syncReactionAsComment, syncReplyAsComment } from '../../live/feed-to-notion.js';
 
 // ============================================================
 // Domain-based Relevance Mapping
@@ -289,6 +291,15 @@ function createFeedPostHandler(agent: LiveAgentName): EventHandler {
       if (decision.responseType === 'reaction' && decision.reactionType) {
         await addReaction(payload.postId, agent, decision.reactionType);
         console.log(`[FeedHandler:${agent}] Added ${decision.reactionType} reaction`);
+
+        // Sync reaction to Notion as a comment
+        const parentPost = await getFeedPost(payload.postId);
+        if (parentPost) {
+          syncReactionAsComment(parentPost, agent, decision.reactionType).catch((err) => {
+            console.warn(`[FeedHandler:${agent}] Failed to sync reaction to Notion:`, err);
+          });
+        }
+
         return { success: true, result: { reacted: decision.reactionType } };
       }
 
@@ -306,6 +317,14 @@ function createFeedPostHandler(agent: LiveAgentName): EventHandler {
 
         if (replyPost) {
           console.log(`[FeedHandler:${agent}] Posted reply: ${replyPost.content.slice(0, 50)}...`);
+
+          // Sync reply to Notion as a comment on parent post
+          const parentPost = await getFeedPost(payload.postId);
+          if (parentPost) {
+            syncReplyAsComment(parentPost, replyPost).catch((err) => {
+              console.warn(`[FeedHandler:${agent}] Failed to sync reply to Notion:`, err);
+            });
+          }
 
           // Publish event so other agents can see the reply
           await publishEvent({

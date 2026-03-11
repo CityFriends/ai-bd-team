@@ -1,18 +1,28 @@
+// Sync feed posts to Notion
 import 'dotenv/config';
-import { setFeedDatabaseId, syncRecentPostsToNotion } from '../src/live/feed-to-notion.js';
+import { syncRecentPostsToNotion, setFeedDatabaseId } from '../src/live/feed-to-notion.js';
 
 async function main() {
   const dbId = process.env.NOTION_AGENT_FEED_DB_ID;
+
   if (!dbId) {
     console.error('NOTION_AGENT_FEED_DB_ID not set');
     process.exit(1);
   }
 
+  console.log('Using Feed database:', dbId);
   setFeedDatabaseId(dbId);
-  console.log('Syncing feed posts to Notion...');
 
-  const result = await syncRecentPostsToNotion(48); // Last 48 hours
-  console.log(`Synced: ${result.synced}, Failed: ${result.failed}`);
+  const hoursBack = parseInt(process.argv[2] || '72', 10);
+  console.log(`Syncing posts from last ${hoursBack} hours...`);
+
+  const result = await syncRecentPostsToNotion(hoursBack);
+  console.log('Sync complete:', result);
+
+  process.exit(0);
 }
 
-main().catch(console.error);
+main().catch((err) => {
+  console.error('Sync failed:', err);
+  process.exit(1);
+});
