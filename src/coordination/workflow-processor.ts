@@ -278,7 +278,7 @@ async function triggerDavidResearch(workflow: OpportunityWorkflow): Promise<void
       thread_ts: workflow.thread_ts || '',
       notice_id: workflow.notice_id,
       agent: 'david',
-      action_type: 'research',
+      activity_type: 'research',
       summary: `Researched incumbent and red flags for ${workflow.title?.slice(0, 50)}`,
       key_facts: workflow.red_flags || [],
     });
@@ -425,7 +425,7 @@ End with: "Let me know if you want me to identify specific companies to consider
       thread_ts: workflow.thread_ts || '',
       notice_id: workflow.notice_id,
       agent: 'rosa',
-      action_type: 'partner_search',
+      activity_type: 'partner_search',
       summary: `Analyzed teaming options for ${workflow.title?.slice(0, 50)}`,
     });
 
@@ -598,7 +598,7 @@ Keep it under 250 words. Be decisive.`;
       thread_ts: workflow.thread_ts || '',
       notice_id: workflow.notice_id,
       agent: 'james',
-      action_type: 'strategy',
+      activity_type: 'strategy',
       summary: `Strategic assessment: ${recommendation} for ${workflow.title?.slice(0, 50)}`,
       key_facts: [`Recommendation: ${recommendation}`, `Override window: 2 hours`],
       recommendations: [recommendation],

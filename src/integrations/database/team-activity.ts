@@ -10,7 +10,7 @@ export interface TeamActivity {
   notice_id?: string; // SAM.gov notice ID
   channel_id?: string;
   agent: string;
-  action_type:
+  activity_type: // Note: DB column is activity_type, not action_type
     | 'research'
     | 'analysis'
     | 'recommendation'
@@ -25,6 +25,9 @@ export interface TeamActivity {
   created_at?: string;
 }
 
+// Legacy alias for backwards compatibility
+export type { TeamActivity as TeamActivityWithActionType };
+
 /**
  * Log an agent's contribution to a thread
  * This enables other agents to see what's already been covered
@@ -33,12 +36,23 @@ export async function logTeamActivity(
   activity: Omit<TeamActivity, 'id' | 'created_at'>
 ): Promise<TeamActivity | null> {
   try {
+    // Build insert data with all columns
+    const insertData: Record<string, unknown> = {
+      thread_ts: activity.thread_ts,
+      notice_id: activity.notice_id,
+      channel_id: activity.channel_id,
+      agent: activity.agent,
+      activity_type: activity.activity_type || 'question', // DB column is activity_type
+      summary: activity.summary,
+      key_facts: activity.key_facts,
+      recommendations: activity.recommendations,
+      sentiment: activity.sentiment,
+      created_at: new Date().toISOString(),
+    };
+
     const { data, error } = await getSupabase()
       .from('team_activity_log')
-      .insert({
-        ...activity,
-        created_at: new Date().toISOString(),
-      })
+      .insert(insertData)
       .select()
       .single();
 
@@ -46,7 +60,9 @@ export async function logTeamActivity(
       console.warn('Could not log team activity:', error.message);
       return null;
     }
-    return data;
+
+    console.log(`${activity.agent}: Logged team activity (${activity.activity_type || 'general'})`);
+    return data as TeamActivity;
   } catch (err) {
     console.warn('Could not log team activity:', err);
     return null;
@@ -73,7 +89,7 @@ export async function getThreadActivity(
       console.warn('Could not fetch thread activity:', error.message);
       return [];
     }
-    return data || [];
+    return (data || []) as TeamActivity[];
   } catch (err) {
     console.warn('Could not fetch thread activity:', err);
     return [];
@@ -205,7 +221,7 @@ export async function getActivitySummary(noticeId: string): Promise<{
     const activities = await getOpportunityActivity(noticeId, 50);
 
     const agents = [...new Set(activities.map((a) => a.agent))];
-    const actionsCovered = [...new Set(activities.map((a) => a.action_type))];
+    const actionsCovered = [...new Set(activities.map((a) => a.activity_type))];
 
     return {
       agents,

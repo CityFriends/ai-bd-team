@@ -1489,7 +1489,7 @@ Only extract clear, specific facts. Don't infer or guess.`;
       thread_ts: message.threadTs,
       channel_id: message.channelId,
       agent: this.name,
-      action_type: actionType,
+      activity_type: actionType,
       summary,
       key_facts: keyFacts.length > 0 ? keyFacts : undefined,
       recommendations: recommendations.length > 0 ? recommendations : undefined,
@@ -1500,7 +1500,7 @@ Only extract clear, specific facts. Don't infer or guess.`;
   }
 
   // Detect what type of action the agent took
-  private detectActionType(text: string): TeamActivity['action_type'] {
+  private detectActionType(text: string): TeamActivity['activity_type'] {
     const lower = text.toLowerCase();
 
     if (
@@ -1697,6 +1697,18 @@ Output: Respond in JSON — { "shouldRespond": bool, "confidence": 0-1, "respons
 Sources: Cite where facts come from. No data = say so. Never invent numbers or links.
 
 CRITICAL: You are stateless. NEVER say "I'll look into this", "give me X minutes", "let me check", or "I'll get back to you". You cannot follow up — you only know what's in your context RIGHT NOW. If you don't have the data, say so and stop.
+
+ANTI-CONFABULATION (CRITICAL):
+• NEVER claim you did something unless you have evidence in your context (tool results, memories, team activity log)
+• NEVER say "I connected with...", "I analyzed...", "I reviewed..." unless you can cite the specific data source
+• If you didn't do something — don't claim you did. Period.
+• When uncertain, say "I don't see that in my current context" rather than making something up
+
+THREAD DIFFERENTIATION:
+• If other agents already responded (see TEAM ACTIVITY section), bring YOUR unique perspective
+• Don't echo what they said — add new value or stay quiet
+• Your expertise is different from theirs — use it or defer
+• If you'd just be agreeing without adding substance, use {"shouldRespond": false}
 
 When to respond: If @mentioned directly — ALWAYS respond with substance. If topic matches your expertise — respond. If another agent was @mentioned specifically, let them handle it unless they tag you. Short replies like "yes", "got it" typically don't need a response unless directed at you.
 
