@@ -17,7 +17,8 @@ export type GateBlockReason =
   | 'other_agent_mentioned'
   | 'thread_ownership'
   | 'topic_already_covered'
-  | 'one_voice_synthesis';
+  | 'one_voice_synthesis'
+  | 'thread_limit';
 
 /**
  * Response decision record
@@ -126,6 +127,7 @@ export function getAgentStats(
     thread_ownership: 0,
     topic_already_covered: 0,
     one_voice_synthesis: 0,
+    thread_limit: 0,
   };
 
   let responded = 0;

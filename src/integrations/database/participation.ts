@@ -106,6 +106,32 @@ export async function hasParticipatedInThread(agent: string, threadTs: string): 
   }
 }
 
+/**
+ * Get the response count for an agent in a specific thread
+ * Used to enforce per-thread response limits
+ */
+export async function getAgentThreadResponseCount(
+  agent: string,
+  threadTs: string
+): Promise<number> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('agent_thread_participation')
+      .select('response_count')
+      .eq('agent', agent)
+      .eq('thread_ts', threadTs)
+      .single();
+
+    if (error || !data) {
+      return 0;
+    }
+
+    return data.response_count || 0;
+  } catch {
+    return 0;
+  }
+}
+
 // ============================================
 // AGENT HANDOFFS
 // ============================================

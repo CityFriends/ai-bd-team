@@ -9,6 +9,7 @@ import {
   getConversationalContext,
   recordThreadParticipation,
   getAgentThreads,
+  getAgentThreadResponseCount,
   saveExtractedFact,
   acknowledgeHandoff,
   getUserProfile,
@@ -107,6 +108,11 @@ const ALL_AGENT_NAMES: LiveAgentName[] = [
   'jodie',
   'marcus',
 ];
+
+// ============================================================
+// Thread Response Limits (prevent runaway loops)
+// ============================================================
+const MAX_RESPONSES_PER_THREAD = 10; // Hard cap on responses per agent per Slack thread
 
 /**
  * Identity enforcement: Check if a response contains another agent's identity claim
@@ -1049,6 +1055,24 @@ export abstract class LiveAgent {
       const otherAgentJustResponded = recentResponses.some((r) => r.agent !== this.name);
       if (otherAgentJustResponded) {
         console.log(`${this.displayName}: Another agent just responded in thread, skipping`);
+        return;
+      }
+    }
+
+    // Check thread response limit - prevent runaway loops
+    // Skip for direct mentions (user is explicitly asking this agent)
+    if (message.threadTs && !message.isDirectMention) {
+      const responseCount = await getAgentThreadResponseCount(this.name, message.threadTs);
+      if (responseCount >= MAX_RESPONSES_PER_THREAD) {
+        console.log(
+          `${this.displayName}: Thread response limit reached (${responseCount}/${MAX_RESPONSES_PER_THREAD}), skipping`
+        );
+        recordResponseDecision(this.name, message.channelId, message.messageTs, 'blocked', {
+          threadTs: message.threadTs,
+          blockReason: 'thread_limit',
+          details: `Response limit ${responseCount}/${MAX_RESPONSES_PER_THREAD}`,
+          messageText: message.text,
+        });
         return;
       }
     }

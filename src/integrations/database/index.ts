@@ -126,6 +126,7 @@ export {
   recordThreadParticipation,
   getAgentThreads,
   hasParticipatedInThread,
+  getAgentThreadResponseCount,
   createHandoff,
   getPendingHandoffs,
   acknowledgeHandoff,

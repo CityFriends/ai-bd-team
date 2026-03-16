@@ -22,11 +22,21 @@ import {
   hasAgentReacted,
   hasAgentReplied,
   getFeedPost,
+  getThreadChain,
   type FeedPostType,
+  type FeedPost,
 } from '../../integrations/database/feed.js';
 import { publishEvent } from '../eventBus.js';
 import type { LiveAgentName } from '../../live/types.js';
 import { syncReactionAsComment, syncReplyAsComment } from '../../live/feed-to-notion.js';
+
+// ============================================================
+// Thread Reply Limits (prevent runaway reply loops)
+// ============================================================
+
+const MAX_REPLIES_PER_THREAD = 15; // Hard cap on total replies in any thread
+const MAX_AGENT_REPLIES_PER_THREAD = 2; // Max times one agent can reply in a thread
+const MAX_REPLY_DEPTH = 2; // Don't reply to replies-of-replies (0 = original, 1 = reply, 2 = reply-to-reply)
 
 // ============================================================
 // Domain-based Relevance Mapping
@@ -121,6 +131,89 @@ function calculateRelevanceScore(agent: LiveAgentName, payload: FeedPostCreatedP
 }
 
 // ============================================================
+// Thread Limit Checks
+// ============================================================
+
+interface ThreadLimitCheck {
+  canReply: boolean;
+  reason?: string;
+}
+
+/**
+ * Check if replying to this post would exceed thread limits.
+ * Prevents runaway reply loops by limiting:
+ * - Total replies in a thread
+ * - Replies per agent per thread
+ * - Reply depth (no replies to replies-of-replies)
+ */
+async function checkThreadLimits(
+  postId: string,
+  agent: LiveAgentName,
+  payload: FeedPostCreatedPayload
+): Promise<ThreadLimitCheck> {
+  // If this is a reply to something, check the thread
+  const replyToPostId = payload.replyToPostId;
+
+  // Calculate reply depth - if the post we're considering is itself a reply, we're at depth 1+
+  let currentDepth = 0;
+  if (replyToPostId) {
+    // This post is a reply, so any reply to it is at least depth 2
+    currentDepth = 1;
+
+    // Check if the parent is also a reply (would make this depth 2+)
+    const parentPost = await getFeedPost(replyToPostId);
+    if (parentPost?.reply_to_post_id) {
+      currentDepth = 2;
+
+      // Check if grandparent is also a reply
+      const grandparentPost = await getFeedPost(parentPost.reply_to_post_id);
+      if (grandparentPost?.reply_to_post_id) {
+        currentDepth = 3;
+      }
+    }
+  }
+
+  // Don't reply to deeply nested posts
+  if (currentDepth >= MAX_REPLY_DEPTH) {
+    return {
+      canReply: false,
+      reason: `Thread too deep (depth ${currentDepth}, max ${MAX_REPLY_DEPTH})`,
+    };
+  }
+
+  // Get the full thread to check limits
+  const thread = await getThreadChain(postId);
+  if (thread.length === 0) {
+    return { canReply: true }; // Can't check, allow
+  }
+
+  // Find the root post (first in chain)
+  const rootPost = thread[0];
+
+  // Count total replies in thread (all posts except root)
+  const totalReplies = thread.length - 1;
+  if (totalReplies >= MAX_REPLIES_PER_THREAD) {
+    return {
+      canReply: false,
+      reason: `Thread at max replies (${totalReplies}/${MAX_REPLIES_PER_THREAD})`,
+    };
+  }
+
+  // Count this agent's replies in the thread
+  const agentReplies = thread.filter(
+    (p: FeedPost) => p.author === agent && p.id !== rootPost.id
+  ).length;
+  if (agentReplies >= MAX_AGENT_REPLIES_PER_THREAD) {
+    return {
+      canReply: false,
+      reason: `Agent already replied ${agentReplies} times in this thread (max ${MAX_AGENT_REPLIES_PER_THREAD})`,
+    };
+  }
+
+  return { canReply: true };
+}
+
+// ============================================================
 // Response Decision
 // ============================================================
 
@@ -155,6 +248,13 @@ async function decideResponse(
   ]);
 
   if (alreadyReacted || alreadyReplied) {
+    return { shouldRespond: false, responseType: 'none' };
+  }
+
+  // Check thread limits - prevent runaway reply loops
+  const threadCheck = await checkThreadLimits(payload.postId, agent, payload);
+  if (!threadCheck.canReply) {
+    console.log(`[FeedHandler:${agent}] Thread limit reached: ${threadCheck.reason}`);
     return { shouldRespond: false, responseType: 'none' };
   }
 
