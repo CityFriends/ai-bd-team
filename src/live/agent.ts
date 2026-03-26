@@ -2037,9 +2037,10 @@ REMINDER: You are ${this.displayName}. Respond as ${this.displayName} — NOT as
       { role: 'user', content: operationalContext },
     ];
 
-    // Tool use loop - Complex workflows (revisions, multi-source writing) need up to 10 iterations:
+    // Tool use loop - Complex workflows (revisions, multi-source writing) need up to 15 iterations:
     // Search opp, get details, search case studies, get 2-3 case study contents, get writing guide, write/rewrite
-    const maxToolIterations = 10;
+    // Jodie's full workflow: search opp + get details + search cases (1-2) + get 3-4 case studies + get writing guide + write = 10-14
+    const maxToolIterations = 15;
     let toolIteration = 0;
 
     // Retry logic for transient errors (429, 529)
@@ -2052,7 +2053,7 @@ REMINDER: You are ${this.displayName}. Respond as ${this.displayName} — NOT as
           // Build API call - add tools if agent has any
           const response = await client.messages.create({
             model: 'claude-sonnet-4-20250514',
-            max_tokens: 1200, // Increased for tool use responses
+            max_tokens: toolDefinitions.length > 0 ? 4096 : 1200, // Higher limit for tool use (Jodie's drafts need space)
             system: this.systemPrompt,
             messages,
             ...(toolDefinitions.length > 0 ? { tools: toolDefinitions } : {}),
