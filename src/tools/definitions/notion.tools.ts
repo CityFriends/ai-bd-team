@@ -455,10 +455,24 @@ export const getNotionCaseStudyContentTool: AgentTool = {
         properties: Record<string, unknown>;
       };
 
-      // Get page content (blocks)
-      const blocksResult = (await notionRequest(`/blocks/${pageId}/children?page_size=100`)) as {
-        results: Array<{ type: string; [key: string]: unknown }>;
-      };
+      // Get page content (blocks) - paginate to get ALL blocks
+      let allCaseBlocks: Array<{ type: string; [key: string]: unknown }> = [];
+      let caseHasMore = true;
+      let caseCursor: string | undefined;
+
+      while (caseHasMore) {
+        const url = caseCursor
+          ? `/blocks/${pageId}/children?page_size=100&start_cursor=${caseCursor}`
+          : `/blocks/${pageId}/children?page_size=100`;
+        const blocksPage = (await notionRequest(url)) as {
+          results: Array<{ type: string; [key: string]: unknown }>;
+          has_more: boolean;
+          next_cursor: string | null;
+        };
+        allCaseBlocks = allCaseBlocks.concat(blocksPage.results);
+        caseHasMore = blocksPage.has_more;
+        caseCursor = blocksPage.next_cursor || undefined;
+      }
 
       const props = page.properties as {
         'Project Name'?: { title: Array<{ plain_text: string }> };
@@ -470,7 +484,7 @@ export const getNotionCaseStudyContentTool: AgentTool = {
         'Contract End'?: { date?: { start: string } };
       };
 
-      const content = blocksToMarkdown(blocksResult.results);
+      const content = blocksToMarkdown(allCaseBlocks);
 
       return {
         success: true,
@@ -642,10 +656,24 @@ export const getNotionOpportunityDetailsTool: AgentTool = {
         properties: Record<string, unknown>;
       };
 
-      // Get page content (blocks)
-      const blocksResult = (await notionRequest(`/blocks/${pageId}/children?page_size=100`)) as {
-        results: Array<{ type: string; [key: string]: unknown }>;
-      };
+      // Get page content (blocks) - paginate to get ALL blocks
+      let allBlocks: Array<{ type: string; [key: string]: unknown }> = [];
+      let hasMore = true;
+      let startCursor: string | undefined;
+
+      while (hasMore) {
+        const url = startCursor
+          ? `/blocks/${pageId}/children?page_size=100&start_cursor=${startCursor}`
+          : `/blocks/${pageId}/children?page_size=100`;
+        const blocksPage = (await notionRequest(url)) as {
+          results: Array<{ type: string; [key: string]: unknown }>;
+          has_more: boolean;
+          next_cursor: string | null;
+        };
+        allBlocks = allBlocks.concat(blocksPage.results);
+        hasMore = blocksPage.has_more;
+        startCursor = blocksPage.next_cursor || undefined;
+      }
 
       const props = page.properties as {
         Name?: { title: Array<{ plain_text: string }> };
@@ -665,7 +693,7 @@ export const getNotionOpportunityDetailsTool: AgentTool = {
         'Period of Performance'?: { rich_text: Array<{ plain_text: string }> };
       };
 
-      const content = blocksToMarkdown(blocksResult.results);
+      const content = blocksToMarkdown(allBlocks);
 
       return {
         success: true,
