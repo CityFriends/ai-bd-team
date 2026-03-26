@@ -730,7 +730,7 @@ export const writeOpportunityContentTool: AgentTool = {
       required: ['opportunity_id', 'content'],
     },
   },
-  allowedAgents: ['jodie'],
+  allowedAgents: ['jodie', 'james'],
   sourceName: 'Notion Pipeline',
   execute: async (params) => {
     console.log('[NotionTools] write_opportunity_content called with:', JSON.stringify(params));
@@ -844,7 +844,7 @@ export const rewriteOpportunityContentTool: AgentTool = {
       required: ['opportunity_id', 'original_section', 'revised_content'],
     },
   },
-  allowedAgents: ['jodie'],
+  allowedAgents: ['jodie', 'james'],
   sourceName: 'Notion Pipeline',
   execute: async (params) => {
     console.log('[NotionTools] rewrite_opportunity_content called with:', JSON.stringify(params));

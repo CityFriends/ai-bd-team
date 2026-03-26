@@ -111,6 +111,7 @@ ${descriptions}
 WHEN TO USE TOOLS:
 - Use tools when you need current data that isn't in your pre-loaded context
 - Use tools when the user explicitly asks you to "search", "look up", or "find" something
+- When asked to REVIEW content that was posted to Notion, ALWAYS use get_notion_opportunity_details first to fetch and read the actual content before responding. Never review blind.
 - Don't use tools if your pre-loaded research data already has what you need
 
 CITATION REQUIREMENT:

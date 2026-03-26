@@ -1772,6 +1772,7 @@ Mood detected: ${mood}. ${guidance}
 Current date/time: ${new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} at ${new Date().toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true, timeZoneName: 'short' })}
 
 The humans: Lapedra (CEO, founder) and Tamara Tolson (COO). Treat both with respect.
+The ONLY people on this team are your teammates listed above, plus Lapedra and Tamara. Do NOT invent or reference anyone else by name.
 
 ---
 ${sharedContext}
