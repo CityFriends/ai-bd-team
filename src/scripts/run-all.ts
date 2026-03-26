@@ -204,6 +204,27 @@ async function runWeeklyRollup() {
   }
 }
 
+// Feed to Notion sync - sync agent feed posts to Notion database
+async function runFeedToNotionSync() {
+  const { acquireCronLock, releaseCronLock } = await import('../integrations/database/cron.js');
+  const lock = await acquireCronLock('feed-notion-sync', 5);
+  if (!lock.acquired) {
+    return; // Another instance is syncing
+  }
+  try {
+    const { syncRecentPostsToNotion } = await import('../live/feed-to-notion.js');
+    // Sync posts from last 4 hours (covers period between runs)
+    const result = await syncRecentPostsToNotion(4);
+    if (result.synced > 0) {
+      console.log(`[FeedSync] Synced ${result.synced} posts to Notion`);
+    }
+  } finally {
+    if (lock.lockId) {
+      await releaseCronLock(lock.lockId);
+    }
+  }
+}
+
 // Discussion processor - process opportunity discussions from Notion
 async function runDiscussionProcessor() {
   const { acquireCronLock, releaseCronLock } = await import('../integrations/database/cron.js');
@@ -465,6 +486,15 @@ async function main() {
       console.log(`[${new Date().toLocaleString()}] Feed: Feed synthesis complete`);
     } catch (err) {
       console.error(`[${new Date().toLocaleString()}] Feed: Feed synthesis failed:`, err);
+    }
+  });
+
+  // Feed to Notion sync: Every 2 hours during business hours (14-22 UTC = 9am-5pm CST)
+  cron.schedule('30 14,16,18,20,22 * * 1-5', async () => {
+    try {
+      await runFeedToNotionSync();
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Feed: Notion sync failed:`, err);
     }
   });
 
