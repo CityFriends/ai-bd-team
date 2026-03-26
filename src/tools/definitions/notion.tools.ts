@@ -721,10 +721,14 @@ export const writeOpportunityContentTool: AgentTool = {
           description:
             'Markdown-formatted content to write. Use ## for section headers, • or - for bullets, > for callouts. Example:\n\n## Relevant Past Performance\n\n### VA Debt Resolution Portal\n• Delivered trauma-informed UX research\n• Reduced call center volume by 40%\n\n## Draft Technical Approach\nOur approach leverages...',
         },
+        author: {
+          type: 'string',
+          description: 'Your name (e.g., "Jodie", "James"). Used for the byline on the content.',
+        },
         section_header: {
           type: 'string',
           description:
-            'Optional: A main section header to prepend (e.g., "Jodie\'s Draft Content"). If provided, will add a divider and header before your content.',
+            'Optional: A main section header to prepend (e.g., "Draft Content", "Strategic Notes"). If provided, will add a divider and header before your content.',
         },
       },
       required: ['opportunity_id', 'content'],
@@ -739,6 +743,7 @@ export const writeOpportunityContentTool: AgentTool = {
       const pageId = params.opportunity_id as string;
       const content = params.content as string;
       const sectionHeader = params.section_header as string | undefined;
+      const author = (params.author as string) || 'Team';
 
       // Build blocks to append
       const blocks: Array<Record<string, unknown>> = [];
@@ -764,7 +769,9 @@ export const writeOpportunityContentTool: AgentTool = {
             rich_text: [
               {
                 type: 'text',
-                text: { content: `Draft created by Jodie on ${new Date().toLocaleDateString()}` },
+                text: {
+                  content: `Content added by ${author} on ${new Date().toLocaleDateString()}`,
+                },
                 annotations: { italic: true, color: 'gray' },
               },
             ],
