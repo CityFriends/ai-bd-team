@@ -12,7 +12,7 @@ import {
 } from '../eventTypes.js';
 import { EventHandler, EventHandlerContext, EventHandlerResult } from '../eventProcessor.js';
 import { replyInThread } from '../../integrations/slack.js';
-import { storeMemory } from '../../memory/index.js';
+import { storeMemoryWithEmbedding } from '../../memory/index.js';
 
 // ============================================================
 // GO_NO_GO_DECISION Handler
@@ -242,7 +242,7 @@ async function storePursuitMemory(
     // Decision type
     tags.push(`decision-${decision.decision.toLowerCase().replace('_', '-')}`);
 
-    await storeMemory('patricia', 'observation', content, {
+    await storeMemoryWithEmbedding('patricia', 'observation', content, {
       relatedOpportunityId: decision.noticeId,
       relatedEventId: eventId,
       importance: 6,
