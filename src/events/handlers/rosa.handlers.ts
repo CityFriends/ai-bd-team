@@ -11,7 +11,7 @@ import {
 import { EventHandler, EventHandlerContext, EventHandlerResult } from '../eventProcessor.js';
 import { getAnthropic } from '../../integrations/claude.js';
 import { replyInThread } from '../../integrations/slack.js';
-import { storeMemory } from '../../memory/index.js';
+import { storeMemoryWithEmbedding } from '../../memory/index.js';
 
 // ============================================================
 // RESEARCH_COMPLETE Handler
@@ -274,7 +274,7 @@ async function storeRelationshipMemory(
     if (check.confidence === 'high') importance += 1;
     importance = Math.max(1, Math.min(10, importance));
 
-    await storeMemory('rosa', 'observation', content, {
+    await storeMemoryWithEmbedding('rosa', 'observation', content, {
       relatedOpportunityId: payload.noticeId,
       relatedEventId: eventId,
       importance,

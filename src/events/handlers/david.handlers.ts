@@ -11,7 +11,7 @@ import {
 import { EventHandler, EventHandlerContext, EventHandlerResult } from '../eventProcessor.js';
 import { getAnthropic } from '../../integrations/claude.js';
 import { replyInThread } from '../../integrations/slack.js';
-import { storeMemory } from '../../memory/index.js';
+import { storeMemoryWithEmbedding } from '../../memory/index.js';
 
 // ============================================================
 // NEW_OPPORTUNITY Handler
@@ -307,7 +307,7 @@ async function storeResearchMemory(
     if (research.greenFlags.length >= 3) importance += 1;
     importance = Math.max(1, Math.min(10, importance)); // Clamp to 1-10
 
-    await storeMemory('david', 'observation', content, {
+    await storeMemoryWithEmbedding('david', 'observation', content, {
       relatedOpportunityId: payload.noticeId,
       relatedEventId: eventId,
       importance,
