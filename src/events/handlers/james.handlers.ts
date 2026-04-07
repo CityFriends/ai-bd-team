@@ -23,7 +23,7 @@ import {
   type RuleCheckResult,
 } from '../../playbook/index.js';
 import {
-  storeMemory,
+  storeMemoryWithEmbedding,
   getImportantMemories,
   searchMemoriesByTags,
   type AgentMemory,
@@ -694,7 +694,7 @@ async function storeDecisionMemory(
     if (decision.confidence === 'high') importance += 1;
     importance = Math.max(1, Math.min(10, importance)); // Clamp to 1-10
 
-    await storeMemory('james', 'observation', content, {
+    await storeMemoryWithEmbedding('james', 'observation', content, {
       relatedOpportunityId: research.noticeId,
       relatedEventId: eventId,
       importance,
