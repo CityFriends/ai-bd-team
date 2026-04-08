@@ -17,7 +17,7 @@ import {
   logJobFailed,
   acquireCronLock,
 } from '../integrations/database/cron.js';
-import { getAnthropic, MODEL_SONNET } from '../integrations/claude.js';
+import { getAnthropic, MODEL_HAIKU } from '../integrations/claude.js';
 import { trackCost } from '../lib/cost-tracker.js';
 import { publishEvent, EventTypes } from '../events/index.js';
 import { getRecentMemories } from '../memory/index.js';
@@ -278,7 +278,7 @@ async function runThinkingSession(agent: LiveAgentName): Promise<ThinkingResult>
     const startTime = Date.now();
 
     const response = await client.messages.create({
-      model: MODEL_SONNET, // Thinking sessions need Sonnet-level reasoning
+      model: MODEL_HAIKU, // Use Haiku for thinking sessions (structured JSON output only)
       max_tokens: 500,
       messages: [{ role: 'user', content: prompt }],
     });
@@ -289,7 +289,7 @@ async function runThinkingSession(agent: LiveAgentName): Promise<ThinkingResult>
       trackCost({
         agent,
         purpose: 'thinking_session',
-        model: MODEL_SONNET,
+        model: MODEL_HAIKU,
         usage: response.usage,
         durationMs,
       }).catch(() => {});

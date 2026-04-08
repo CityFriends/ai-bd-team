@@ -32,10 +32,10 @@ export function scheduleScoutDailyScan(): void {
   console.log('Scheduled Scout daily scan for 6:00 AM');
 }
 
-// Schedule Strategist's morning standup at 8am
+// Schedule Strategist's morning standup at 8am Mon & Fri
 export function scheduleStrategistStandup(): void {
   const job = cron.schedule(
-    '0 8 * * 1-5',
+    '0 8 * * 1,5',
     async () => {
       console.log('Running scheduled Strategist standup...');
       try {
@@ -50,7 +50,7 @@ export function scheduleStrategistStandup(): void {
   );
 
   scheduledJobs.push(job);
-  console.log('Scheduled Strategist standup for 8:00 AM weekdays');
+  console.log('Scheduled Strategist standup for 8:00 AM Mon & Fri');
 }
 
 // Schedule Memory Reflection at 2am daily
@@ -74,10 +74,10 @@ export function scheduleMemoryReflection(): void {
   console.log('Scheduled memory reflection for 2:00 AM daily');
 }
 
-// Schedule Agent Thinking Time every 4 hours during business hours (9am, 1pm, 5pm ET)
+// Schedule Agent Thinking Time twice daily during business hours (10am, 3pm ET)
 export function scheduleAgentThinkingTime(): void {
   const job = cron.schedule(
-    '0 9,13,17 * * 1-5',
+    '0 10,15 * * 1-5',
     async () => {
       console.log('Running scheduled agent thinking time...');
       try {
@@ -92,13 +92,13 @@ export function scheduleAgentThinkingTime(): void {
   );
 
   scheduledJobs.push(job);
-  console.log('Scheduled agent thinking time for 9am, 1pm, 5pm ET weekdays');
+  console.log('Scheduled agent thinking time for 10am, 3pm ET weekdays');
 }
 
-// Schedule Feed Synthesis every 2 hours during business hours (10am, 12pm, 2pm, 4pm ET)
+// Schedule Feed Synthesis twice daily during business hours (11am, 4pm ET)
 export function scheduleFeedSynthesis(): void {
   const job = cron.schedule(
-    '0 10,12,14,16 * * 1-5',
+    '0 11,16 * * 1-5',
     async () => {
       console.log('Running scheduled feed synthesis...');
       try {
@@ -113,7 +113,7 @@ export function scheduleFeedSynthesis(): void {
   );
 
   scheduledJobs.push(job);
-  console.log('Scheduled feed synthesis for 10am, 12pm, 2pm, 4pm ET weekdays');
+  console.log('Scheduled feed synthesis for 11am, 4pm ET weekdays');
 }
 
 // Schedule Deadline Monitor at 9am daily
@@ -158,10 +158,10 @@ export function scheduleWeeklyRollup(): void {
   console.log('Scheduled weekly rollup for 8:00 AM Monday');
 }
 
-// Schedule Discussion Processor every 2 hours (11am, 1pm, 3pm, 5pm ET)
+// Schedule Discussion Processor 3x/week (Mon, Wed, Fri at 1pm ET)
 export function scheduleDiscussionProcessor(): void {
   const job = cron.schedule(
-    '0 11,13,15,17 * * 1-5',
+    '0 13 * * 1,3,5',
     async () => {
       console.log('Running scheduled discussion processor...');
       try {
@@ -176,7 +176,7 @@ export function scheduleDiscussionProcessor(): void {
   );
 
   scheduledJobs.push(job);
-  console.log('Scheduled discussion processor for 11am, 1pm, 3pm, 5pm ET weekdays');
+  console.log('Scheduled discussion processor for 1pm ET Mon/Wed/Fri');
 }
 
 // Start all scheduled jobs

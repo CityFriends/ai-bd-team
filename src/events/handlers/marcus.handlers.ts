@@ -12,7 +12,7 @@ import {
 } from '../eventTypes.js';
 import { EventHandler, EventHandlerContext, EventHandlerResult } from '../eventProcessor.js';
 import { getAnthropic } from '../../integrations/claude.js';
-import { storeMemoryWithEmbedding } from '../../memory/index.js';
+import { storeMemory } from '../../memory/index.js';
 
 // Use Marcus's own tokens for posting to Slack
 async function postAsMarcus(message: string, threadTs: string): Promise<void> {
@@ -375,7 +375,7 @@ async function storeTechAssessmentMemory(
     if (assessment.confidence === 'high') importance += 1;
     importance = Math.max(1, Math.min(10, importance));
 
-    await storeMemoryWithEmbedding('marcus', 'observation', content, {
+    await storeMemory('marcus', 'observation', content, {
       relatedOpportunityId: payload.noticeId,
       relatedEventId: eventId,
       importance,

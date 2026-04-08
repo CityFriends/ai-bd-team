@@ -248,17 +248,19 @@ export async function getMonthlyCostEstimate(): Promise<number> {
  */
 export function getRecommendedModel(purpose: CallPurpose): string {
   switch (purpose) {
-    // Simple decisions - use Haiku
+    // Simple/structured output - use Haiku (much cheaper)
     case 'engagement_decision':
+    case 'thinking_session':
+    case 'summarization':
       return 'claude-3-5-haiku-20241022';
 
     // Complex reasoning - use Sonnet
-    case 'thinking_session':
     case 'opportunity_analysis':
     case 'research':
     case 'outreach_draft':
     case 'conversation':
-    case 'summarization':
+    case 'discussion':
+    case 'synthesis':
       return 'claude-sonnet-4-20250514';
 
     default:

@@ -9,7 +9,7 @@ import {
   OutcomeRecordedPayload,
 } from '../eventTypes.js';
 import { EventHandler, EventHandlerContext, EventHandlerResult } from '../eventProcessor.js';
-import { storeMemoryWithEmbedding } from '../../memory/index.js';
+import { storeMemory } from '../../memory/index.js';
 
 // ============================================================
 // PURSUIT_DECISION_FEEDBACK Handler
@@ -135,7 +135,7 @@ async function storeOutcomeMemory(payload: OutcomeRecordedPayload, eventId: stri
     // Higher importance for outcomes - these are valuable learning signals
     const importance = payload.outcome === 'won' ? 9 : payload.outcome === 'lost' ? 8 : 6;
 
-    await storeMemoryWithEmbedding('maya', 'outcome', content, {
+    await storeMemory('maya', 'outcome', content, {
       relatedOpportunityId: payload.noticeId,
       relatedEventId: eventId,
       importance,

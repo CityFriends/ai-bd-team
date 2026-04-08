@@ -83,7 +83,7 @@ Respond in JSON format:
 
   try {
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-3-5-haiku-20241022', // Use Haiku for reflection (structured JSON output only)
       max_tokens: 1000,
       messages: [{ role: 'user', content: prompt }],
     });

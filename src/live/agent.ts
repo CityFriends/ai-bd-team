@@ -1,7 +1,7 @@
 // Live conversational agent base class
 
 import { App, LogLevel } from '@slack/bolt';
-import { getAnthropic } from '../integrations/claude.js';
+import { getAnthropic, MODEL_HAIKU } from '../integrations/claude.js';
 import {
   logAgentMemory,
   claimMessage,
@@ -28,13 +28,12 @@ import {
   type SlackFile,
 } from '../integrations/slack-files.js';
 import { createMemoryManager, type MemoryManager } from '../integrations/memory-manager.js';
-import { storeMemoryWithEmbedding, type AgentName, type MemoryType } from '../memory/index.js';
+import { storeMemory, type AgentName, type MemoryType } from '../memory/index.js';
 import { getDashboardData, formatDashboardForSlack } from '../dashboard/index.js';
 import {
   buildHierarchicalContext,
   formatHierarchicalContext,
 } from '../integrations/summarization.js';
-import { embed } from '../integrations/embeddings.js';
 import {
   trackAgentResponse,
   detectRephrasedQuestion,
@@ -1321,7 +1320,7 @@ Guidelines:
 
     try {
       const response = await client.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: MODEL_HAIKU, // Use Haiku for memory extraction (cheaper, structured output only)
         max_tokens: 400,
         messages: [{ role: 'user', content: prompt }],
       });
@@ -1335,14 +1334,14 @@ Guidelines:
       const parsed = JSON.parse(jsonMatch[0]);
       if (!parsed.shouldStore || !parsed.memories || parsed.memories.length === 0) return;
 
-      // Store each memory with embedding
+      // Store each memory without embedding (embeddings are expensive and can be backfilled)
       for (const memory of parsed.memories) {
         // Only store memories with importance >= 4
         if (memory.importance < 4) continue;
 
         const memoryType = this.mapToMemoryType(memory.type);
 
-        await storeMemoryWithEmbedding(this.name as AgentName, memoryType, memory.content, {
+        await storeMemory(this.name as AgentName, memoryType, memory.content, {
           importance: memory.importance,
           tags: memory.tags || [],
           relatedEventId: threadTs,
@@ -1405,7 +1404,7 @@ Only extract clear, specific facts. Don't infer or guess.`;
 
     try {
       const response = await client.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: MODEL_HAIKU, // Use Haiku for fact extraction (cheaper, structured output only)
         max_tokens: 300,
         messages: [{ role: 'user', content: prompt }],
       });
@@ -1419,22 +1418,18 @@ Only extract clear, specific facts. Don't infer or guess.`;
       const parsed = JSON.parse(jsonMatch[0]);
       if (!parsed.facts || parsed.facts.length === 0) return;
 
-      // Save each extracted fact with embedding
+      // Save each extracted fact (skip embeddings to reduce costs - can be backfilled)
       for (const fact of parsed.facts) {
         try {
-          const factEmbedding = await embed(fact.content);
-          await saveExtractedFact(
-            {
-              fact_type: fact.type || 'context',
-              subject: fact.subject || 'company',
-              content: fact.content,
-              source_thread_ts: threadTs,
-              extracted_by: this.name,
-              confidence: 0.8,
-              still_relevant: true,
-            },
-            factEmbedding
-          );
+          await saveExtractedFact({
+            fact_type: fact.type || 'context',
+            subject: fact.subject || 'company',
+            content: fact.content,
+            source_thread_ts: threadTs,
+            extracted_by: this.name,
+            confidence: 0.8,
+            still_relevant: true,
+          });
           console.log(`${this.displayName}: Extracted fact: "${fact.content.slice(0, 50)}..."`);
         } catch (err) {
           console.warn(`${this.displayName}: Could not save extracted fact:`, err);
@@ -2041,7 +2036,7 @@ REMINDER: You are ${this.displayName}. Respond as ${this.displayName} — NOT as
     // Tool use loop - Complex workflows (revisions, multi-source writing) need up to 15 iterations:
     // Search opp, get details, search case studies, get 2-3 case study contents, get writing guide, write/rewrite
     // Jodie's full workflow: search opp + get details + search cases (1-2) + get 3-4 case studies + get writing guide + write = 10-14
-    const maxToolIterations = 15;
+    const maxToolIterations = 10;
     let toolIteration = 0;
 
     // Retry logic for transient errors (429, 529)
@@ -2054,7 +2049,7 @@ REMINDER: You are ${this.displayName}. Respond as ${this.displayName} — NOT as
           // Build API call - add tools if agent has any
           const response = await client.messages.create({
             model: 'claude-sonnet-4-20250514',
-            max_tokens: toolDefinitions.length > 0 ? 4096 : 1200, // Higher limit for tool use (Jodie's drafts need space)
+            max_tokens: 1200,
             system: this.systemPrompt,
             messages,
             ...(toolDefinitions.length > 0 ? { tools: toolDefinitions } : {}),
