@@ -245,7 +245,7 @@ Respond in JSON format:
 
   try {
     const response = await client.messages.create({
-      model: MODEL,
+      model: MODEL_HAIKU, // Use Haiku for opportunity scoring (structured JSON output, 10x cheaper)
       max_tokens: 512,
       messages: [{ role: 'user', content: prompt }],
     });

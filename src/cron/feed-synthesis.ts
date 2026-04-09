@@ -365,6 +365,16 @@ export async function runFeedSynthesis(): Promise<{
   const candidates = await findSynthesisCandidates();
   console.log(`[FeedSynthesis] Found ${candidates.length} candidates`);
 
+  // Early exit if no candidates - saves Claude API calls
+  if (candidates.length === 0) {
+    console.log('[FeedSynthesis] No candidates found, skipping synthesis');
+    return {
+      candidatesFound: 0,
+      synthesized: 0,
+      deliverableIds: [],
+    };
+  }
+
   const deliverableIds: string[] = [];
   let synthesized = 0;
 

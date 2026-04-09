@@ -74,10 +74,10 @@ export function scheduleMemoryReflection(): void {
   console.log('Scheduled memory reflection for 2:00 AM daily');
 }
 
-// Schedule Agent Thinking Time twice daily during business hours (10am, 3pm ET)
+// Schedule Agent Thinking Time once daily during business hours (2pm ET)
 export function scheduleAgentThinkingTime(): void {
   const job = cron.schedule(
-    '0 10,15 * * 1-5',
+    '0 14 * * 1-5',
     async () => {
       console.log('Running scheduled agent thinking time...');
       try {
@@ -92,13 +92,13 @@ export function scheduleAgentThinkingTime(): void {
   );
 
   scheduledJobs.push(job);
-  console.log('Scheduled agent thinking time for 10am, 3pm ET weekdays');
+  console.log('Scheduled agent thinking time for 2pm ET weekdays');
 }
 
-// Schedule Feed Synthesis twice daily during business hours (11am, 4pm ET)
+// Schedule Feed Synthesis once daily during business hours (4pm ET)
 export function scheduleFeedSynthesis(): void {
   const job = cron.schedule(
-    '0 11,16 * * 1-5',
+    '0 16 * * 1-5',
     async () => {
       console.log('Running scheduled feed synthesis...');
       try {
@@ -113,7 +113,7 @@ export function scheduleFeedSynthesis(): void {
   );
 
   scheduledJobs.push(job);
-  console.log('Scheduled feed synthesis for 11am, 4pm ET weekdays');
+  console.log('Scheduled feed synthesis for 4pm ET weekdays');
 }
 
 // Schedule Deadline Monitor at 9am daily
@@ -158,10 +158,10 @@ export function scheduleWeeklyRollup(): void {
   console.log('Scheduled weekly rollup for 8:00 AM Monday');
 }
 
-// Schedule Discussion Processor 3x/week (Mon, Wed, Fri at 1pm ET)
+// Schedule Discussion Processor 2x/week (Mon, Thu at 1pm ET)
 export function scheduleDiscussionProcessor(): void {
   const job = cron.schedule(
-    '0 13 * * 1,3,5',
+    '0 13 * * 1,4',
     async () => {
       console.log('Running scheduled discussion processor...');
       try {
@@ -176,7 +176,7 @@ export function scheduleDiscussionProcessor(): void {
   );
 
   scheduledJobs.push(job);
-  console.log('Scheduled discussion processor for 1pm ET Mon/Wed/Fri');
+  console.log('Scheduled discussion processor for 1pm ET Mon/Thu');
 }
 
 // Start all scheduled jobs

@@ -1,20 +1,22 @@
 /**
  * Slack Slash Command Handlers
  *
- * Handles slash commands like /pipeline for quick access to team features.
+ * Handles slash commands like /pipeline and /cost for quick access to team features.
  */
 
 import type { App } from '@slack/bolt';
 import { getSupabase } from '../integrations/supabase.js';
 import { buildPipelineBlocks } from '../utils/slack-blocks.js';
+import { getCostSummary, type CostSummary, type CallPurpose } from '../lib/cost-tracker.js';
 
 /**
  * Register all slash command handlers with a Slack app
  */
 export function registerSlashCommands(app: App): void {
   app.command('/pipeline', handlePipelineCommand);
+  app.command('/cost', handleCostCommand);
 
-  console.log('[SlashCommands] Registered /pipeline command');
+  console.log('[SlashCommands] Registered /pipeline, /cost commands');
 }
 
 /**
@@ -195,4 +197,171 @@ function formatStage(stage: string): string {
   };
 
   return stageLabels[stage] || stage;
+}
+
+// ============================================================
+// /cost Command
+// ============================================================
+
+/**
+ * Handle /cost command - shows API cost breakdown
+ *
+ * Modes:
+ * - /cost         - Last 24 hours
+ * - /cost weekly  - Last 7 days
+ * - /cost monthly - Last 30 days with projection
+ */
+async function handleCostCommand({
+  ack,
+  respond,
+  command,
+}: {
+  ack: () => Promise<void>;
+  respond: (message: any) => Promise<void>;
+  command: { user_id: string; text: string };
+}): Promise<void> {
+  await ack();
+
+  console.log(`[Command] /cost invoked by ${command.user_id} with args: "${command.text}"`);
+
+  try {
+    const arg = command.text.trim().toLowerCase();
+    let hoursAgo: number;
+    let periodLabel: string;
+    let showProjection = false;
+
+    if (arg === 'weekly' || arg === 'week') {
+      hoursAgo = 24 * 7;
+      periodLabel = 'Last 7 Days';
+    } else if (arg === 'monthly' || arg === 'month') {
+      hoursAgo = 24 * 30;
+      periodLabel = 'Last 30 Days';
+      showProjection = true;
+    } else {
+      hoursAgo = 24;
+      periodLabel = 'Last 24 Hours';
+    }
+
+    const summary = await getCostSummary({ sinceHoursAgo: hoursAgo });
+    const message = formatCostSummary(summary, periodLabel, showProjection);
+
+    await respond({
+      response_type: 'ephemeral',
+      text: message,
+      blocks: [
+        {
+          type: 'section',
+          text: { type: 'mrkdwn', text: message },
+        },
+      ],
+    });
+  } catch (err) {
+    console.error('[Command] Error handling /cost:', err);
+    await respond({
+      response_type: 'ephemeral',
+      text: '❌ Error fetching cost data. Please try again.',
+    });
+  }
+}
+
+/**
+ * Format cost summary for Slack display
+ */
+function formatCostSummary(
+  summary: CostSummary,
+  periodLabel: string,
+  showProjection: boolean
+): string {
+  const lines: string[] = [];
+
+  // Header
+  lines.push(`💰 *API Cost Report: ${periodLabel}*`);
+  lines.push('');
+
+  // Total cost
+  lines.push(`*Total Cost:* $${summary.total_cost_usd.toFixed(4)}`);
+  lines.push(`*Total Calls:* ${summary.total_calls.toLocaleString()}`);
+  lines.push(
+    `*Tokens:* ${summary.total_input_tokens.toLocaleString()} in / ${summary.total_output_tokens.toLocaleString()} out`
+  );
+
+  // Monthly projection
+  if (showProjection) {
+    // Already showing 30 days, so cost is roughly the monthly cost
+    lines.push(`*Monthly Projection:* ~$${summary.total_cost_usd.toFixed(2)}/month`);
+  } else {
+    // Calculate daily average and project
+    const days = periodLabel.includes('7') ? 7 : 1;
+    const dailyAvg = summary.total_cost_usd / days;
+    const monthlyProjection = dailyAvg * 30;
+    lines.push(`*Monthly Projection:* ~$${monthlyProjection.toFixed(2)}/month`);
+  }
+
+  lines.push('');
+
+  // By Purpose breakdown
+  const purposes = Object.entries(summary.by_purpose)
+    .filter(([_, data]) => data.calls > 0)
+    .sort((a, b) => b[1].cost - a[1].cost);
+
+  if (purposes.length > 0) {
+    lines.push('*By Purpose:*');
+    for (const [purpose, data] of purposes.slice(0, 6)) {
+      const label = formatPurposeLabel(purpose as CallPurpose);
+      lines.push(`  • ${label}: $${data.cost.toFixed(4)} (${data.calls} calls)`);
+    }
+    lines.push('');
+  }
+
+  // By Agent breakdown
+  const agents = Object.entries(summary.by_agent)
+    .filter(([_, data]) => data.calls > 0)
+    .sort((a, b) => b[1].cost - a[1].cost);
+
+  if (agents.length > 0) {
+    lines.push('*By Agent:*');
+    for (const [agent, data] of agents.slice(0, 6)) {
+      const name = agent.charAt(0).toUpperCase() + agent.slice(1);
+      lines.push(`  • ${name}: $${data.cost.toFixed(4)} (${data.calls} calls)`);
+    }
+    lines.push('');
+  }
+
+  // By Model breakdown
+  const models = Object.entries(summary.by_model)
+    .filter(([_, data]) => data.calls > 0)
+    .sort((a, b) => b[1].cost - a[1].cost);
+
+  if (models.length > 0) {
+    lines.push('*By Model:*');
+    for (const [model, data] of models) {
+      const shortModel = model.includes('haiku')
+        ? 'Haiku'
+        : model.includes('sonnet')
+          ? 'Sonnet'
+          : model;
+      lines.push(`  • ${shortModel}: $${data.cost.toFixed(4)} (${data.calls} calls)`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Format purpose labels for display
+ */
+function formatPurposeLabel(purpose: CallPurpose): string {
+  const labels: Record<CallPurpose, string> = {
+    thinking_session: 'Thinking Time',
+    engagement_decision: 'Feed Engagement',
+    opportunity_analysis: 'Opportunity Scoring',
+    research: 'Research',
+    outreach_draft: 'Outreach Drafts',
+    conversation: 'Conversations',
+    summarization: 'Summarization',
+    discussion: 'Discussions',
+    synthesis: 'Synthesis',
+    other: 'Other',
+  };
+  return labels[purpose] || purpose;
 }
