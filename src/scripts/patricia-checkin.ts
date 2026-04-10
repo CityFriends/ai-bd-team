@@ -388,6 +388,37 @@ export async function runMorningCheckin() {
   console.log('\nDaily standup complete');
 }
 
+// Track when items were last nudged to prevent repeated nudges
+const NUDGE_COOLDOWN_HOURS = 48;
+
+async function getLastNudgeTime(itemTitle: string): Promise<Date | null> {
+  const supabase = getSupabase();
+  const { data } = await supabase
+    .from('agent_memory')
+    .select('created_at')
+    .eq('agent', 'patricia')
+    .eq('memory_type', 'observation')
+    .ilike('content', `%[nudge] ${itemTitle.slice(0, 50)}%`)
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (data && data.length > 0) {
+    return new Date(data[0].created_at);
+  }
+  return null;
+}
+
+async function recordNudge(itemTitle: string): Promise<void> {
+  const supabase = getSupabase();
+  await supabase.from('agent_memory').insert({
+    agent: 'patricia',
+    memory_type: 'observation',
+    content: `[nudge] ${itemTitle.slice(0, 100)} - nudged team`,
+    importance: 3,
+    tags: ['nudge-tracking'],
+  });
+}
+
 export async function runNudgeCheck() {
   console.log('\n' + '='.repeat(60));
   console.log(`  Patricia's Nudge Check - ${new Date().toLocaleString()}`);
@@ -403,10 +434,29 @@ export async function runNudgeCheck() {
     console.log('No items need nudging right now');
   } else {
     console.log(`${needsNudge.length} items need attention`);
-    for (const item of needsNudge.slice(0, 2)) {
+    let nudgesSent = 0;
+    for (const item of needsNudge) {
+      if (nudgesSent >= 1) break; // Max 1 nudge per run
+
+      // Check cooldown — don't re-nudge the same item within 48 hours
+      const lastNudge = await getLastNudgeTime(item.title);
+      if (lastNudge) {
+        const hoursSinceNudge = (Date.now() - lastNudge.getTime()) / (1000 * 60 * 60);
+        if (hoursSinceNudge < NUDGE_COOLDOWN_HOURS) {
+          console.log(
+            `Skipping "${item.title}" — nudged ${Math.round(hoursSinceNudge)}h ago (cooldown: ${NUDGE_COOLDOWN_HOURS}h)`
+          );
+          continue;
+        }
+      }
+
       const message = await generateNudge(item);
       await postToSlack(app, message);
-      await new Promise((r) => setTimeout(r, 2000));
+      await recordNudge(item.title);
+      nudgesSent++;
+    }
+    if (nudgesSent === 0) {
+      console.log('All items recently nudged, skipping');
     }
   }
 

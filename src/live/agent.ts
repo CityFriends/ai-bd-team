@@ -128,16 +128,27 @@ const STOP_PATTERNS = [
 ];
 
 /**
- * Check if a message is a stop/halt command directed at a specific agent
+ * Check if a message is a stop/halt command directed at a specific agent.
+ * Only matches when the stop word is the main intent, not incidental usage
+ * like "next stop" or "stop by the office".
  */
 function isStopCommand(text: string, agentName: LiveAgentName): boolean {
   const lowerText = text.toLowerCase();
-  // Check if the message contains a stop pattern AND mentions this agent by name
   const mentionsAgent = lowerText.includes(agentName);
-  // Also catch "stop her", "stop them", "stop all", generic stops in threads
-  const isGenericStop = STOP_PATTERNS.some((p) => p.test(text)) && !mentionsAgent;
-  const isDirectedStop = STOP_PATTERNS.some((p) => p.test(text)) && mentionsAgent;
-  return isDirectedStop || isGenericStop;
+
+  // Must be a short, command-like message (under 80 chars) to count as a stop command
+  // This prevents false positives on longer messages that happen to contain "stop"
+  if (text.length > 80 && !mentionsAgent) return false;
+
+  const hasStopPattern = STOP_PATTERNS.some((p) => p.test(text));
+  if (!hasStopPattern) return false;
+
+  // If agent is named, it's a directed stop — always honor it
+  if (mentionsAgent) return true;
+
+  // For generic stops (no agent named), only match if the message is clearly a command
+  // i.e., short and stop-focused, not a longer message that happens to contain "stop"
+  return text.length <= 40;
 }
 
 /**
