@@ -32,6 +32,7 @@ import {
   getPostsAgentWasCuriousAbout,
   getReactionsForPost,
   type FeedPostType,
+  type FeedPost,
 } from '../integrations/database/feed.js';
 import { storeMemory } from '../memory/index.js';
 import type { LiveAgentName } from '../live/types.js';
@@ -115,7 +116,42 @@ interface ThinkingContext {
   questionsYouWereCuriousAbout: string[];
   curiousQuestionsNeedingAnswers: string[];
   trendingTags: string[];
+  saturatedTopics: string[];
   teamDirectives: string;
+}
+
+// ============================================================
+// Topic Diversity
+// ============================================================
+
+const SATURATION_THRESHOLD = 3; // A tag appearing in 3+ posts in 48h is saturated
+
+/**
+ * Find tags that are over-represented in recent feed posts.
+ * These topics should be avoided to prevent echo-chamber loops.
+ */
+function findSaturatedTopics(posts: FeedPost[]): string[] {
+  const tagCounts = new Map<string, number>();
+  for (const post of posts) {
+    for (const tag of post.tags) {
+      tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
+    }
+  }
+  const saturated: string[] = [];
+  for (const [tag, count] of tagCounts) {
+    if (count >= SATURATION_THRESHOLD) {
+      saturated.push(tag);
+    }
+  }
+  return saturated;
+}
+
+/**
+ * Check if a post is dominated by saturated topics (all its tags are saturated).
+ */
+function isPostSaturated(post: FeedPost, saturatedTopics: string[]): boolean {
+  if (post.tags.length === 0) return false;
+  return post.tags.every((tag) => saturatedTopics.includes(tag));
 }
 
 async function buildThinkingContext(agent: LiveAgentName): Promise<ThinkingContext> {
@@ -139,16 +175,26 @@ async function buildThinkingContext(agent: LiveAgentName): Promise<ThinkingConte
     getActiveDirectives(),
   ]);
 
+  // Detect saturated topics to prevent echo-chamber loops
+  const saturatedTopics = findSaturatedTopics(feedPosts);
+  if (saturatedTopics.length > 0) {
+    console.log(
+      `[Thinking] Saturated topics (${SATURATION_THRESHOLD}+ posts): ${saturatedTopics.join(', ')}`
+    );
+  }
+
   return {
     recentMemories: memories.map((m) => `[${m.memory_type}] ${m.content}`),
     recentFeedPosts: feedPosts
       .filter((p) => p.author !== agent) // Exclude own posts
+      .filter((p) => !isPostSaturated(p, saturatedTopics)) // Exclude saturated-topic posts
       .map((p) => {
         const engagement = p.upvotes + p.builds + p.challenges;
         return `[${p.author}/${p.post_type}] ${p.content.slice(0, 200)}... (${engagement} engagement)`;
       }),
     highEngagementInsights: highEngagement
       .filter((p) => p.author !== agent)
+      .filter((p) => !isPostSaturated(p, saturatedTopics)) // Exclude saturated-topic posts
       .map((p) => {
         const engagement = p.upvotes + p.builds + p.challenges;
         return `[${p.author}] ${p.content} (${engagement} engagement, importance ${p.importance}/10)`;
@@ -161,6 +207,7 @@ async function buildThinkingContext(agent: LiveAgentName): Promise<ThinkingConte
       .filter((q) => q.author !== agent && q.reply_count === 0)
       .map((q) => `[${q.author}] ${q.content} (${q.curious_agents.length} curious)`),
     trendingTags: trending,
+    saturatedTopics,
     teamDirectives: formatDirectivesForContext(directives),
   };
 }
@@ -199,6 +246,7 @@ ${context.unansweredQuestions.length > 0 ? context.unansweredQuestions.join('\n'
 
 TRENDING TOPICS: ${context.trendingTags.join(', ') || '(None)'}
 
+${context.saturatedTopics.length > 0 ? `⚠️ OVER-DISCUSSED TOPICS (DO NOT post about these — the team has covered them enough):\n${context.saturatedTopics.join(', ')}\n` : ''}
 ${context.teamDirectives}
 
 ---
@@ -218,6 +266,7 @@ IMPORTANT RULES:
 3. Be specific - reference actual work/observations
 4. Don't repeat what others have already said
 5. If answering a question, add genuine value
+6. NEVER post about over-discussed topics listed above — bring something NEW to the table
 
 Respond in JSON format:
 {

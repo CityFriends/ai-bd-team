@@ -111,7 +111,34 @@ const ALL_AGENT_NAMES: LiveAgentName[] = [
 // ============================================================
 // Thread Response Limits (prevent runaway loops)
 // ============================================================
-const MAX_RESPONSES_PER_THREAD = 10; // Hard cap on responses per agent per Slack thread
+const MAX_RESPONSES_PER_THREAD = 3; // Hard cap on responses per agent per Slack thread
+
+// Stop/halt command patterns - if a message matches, the mentioned agent should NOT respond
+const STOP_PATTERNS = [
+  /\bstop\b/i,
+  /\bhalt\b/i,
+  /\bquiet\b/i,
+  /\bshut up\b/i,
+  /\benough\b/i,
+  /\bstand down\b/i,
+  /\bback off\b/i,
+  /\bstop responding\b/i,
+  /\bplease stop\b/i,
+  /\bknock it off\b/i,
+];
+
+/**
+ * Check if a message is a stop/halt command directed at a specific agent
+ */
+function isStopCommand(text: string, agentName: LiveAgentName): boolean {
+  const lowerText = text.toLowerCase();
+  // Check if the message contains a stop pattern AND mentions this agent by name
+  const mentionsAgent = lowerText.includes(agentName);
+  // Also catch "stop her", "stop them", "stop all", generic stops in threads
+  const isGenericStop = STOP_PATTERNS.some((p) => p.test(text)) && !mentionsAgent;
+  const isDirectedStop = STOP_PATTERNS.some((p) => p.test(text)) && mentionsAgent;
+  return isDirectedStop || isGenericStop;
+}
 
 /**
  * Identity enforcement: Check if a response contains another agent's identity claim
@@ -392,6 +419,11 @@ export abstract class LiveAgent {
       }
 
       if (isTeamTrigger) {
+        // If the team trigger contains a stop command, don't treat it as a trigger
+        if (isStopCommand(text, this.name as LiveAgentName)) {
+          console.log(`${this.displayName}: Team trigger contains stop command - ignoring`);
+          return;
+        }
         console.log(`${this.displayName}: Detected team trigger in message`);
       }
 
@@ -953,6 +985,18 @@ export abstract class LiveAgent {
       }
     } else if (message.isDirectMention) {
       console.log(`${this.displayName}: Direct mention - bypassing working hours check`);
+    }
+
+    // STOP COMMAND: If someone is telling this agent (or all agents) to stop, obey immediately
+    if (isStopCommand(message.text, this.name)) {
+      console.log(`${this.displayName}: Stop command detected - going silent`);
+      recordResponseDecision(this.name, message.channelId, message.messageTs, 'blocked', {
+        threadTs: message.threadTs,
+        blockReason: 'domain_mismatch', // closest existing reason
+        details: 'Stop command detected',
+        messageText: message.text,
+      });
+      return;
     }
 
     // RESPONSE GATING: Check if we should respond based on domain and mentions
