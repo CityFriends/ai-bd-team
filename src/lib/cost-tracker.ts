@@ -239,6 +239,35 @@ export async function getMonthlyCostEstimate(): Promise<number> {
 }
 
 // ============================================================
+// Daily Cost Budget
+// ============================================================
+
+const DAILY_BUDGET_USD = 2.0; // Hard cap — stop non-essential API calls after this
+let _cachedBudgetCheck: { overBudget: boolean; cost: number; checkedAt: number } | null = null;
+const BUDGET_CACHE_TTL_MS = 5 * 60 * 1000; // Cache for 5 minutes to avoid DB spam
+
+/**
+ * Check if daily budget has been exceeded.
+ * Results are cached for 5 minutes to avoid hammering the DB.
+ */
+export async function isDailyBudgetExceeded(): Promise<{ overBudget: boolean; cost: number }> {
+  const now = Date.now();
+  if (_cachedBudgetCheck && now - _cachedBudgetCheck.checkedAt < BUDGET_CACHE_TTL_MS) {
+    return { overBudget: _cachedBudgetCheck.overBudget, cost: _cachedBudgetCheck.cost };
+  }
+
+  const cost = await getDailyCost();
+  const overBudget = cost >= DAILY_BUDGET_USD;
+  _cachedBudgetCheck = { overBudget, cost, checkedAt: now };
+
+  if (overBudget) {
+    console.warn(`[CostTracker] Daily budget exceeded: $${cost.toFixed(2)} / $${DAILY_BUDGET_USD}`);
+  }
+
+  return { overBudget, cost };
+}
+
+// ============================================================
 // Model Selection Helpers
 // ============================================================
 

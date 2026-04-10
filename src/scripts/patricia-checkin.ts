@@ -15,6 +15,7 @@ import cron from 'node-cron';
 import { App } from '@slack/bolt';
 import { getSupabase, getExtractedFacts } from '../integrations/supabase.js';
 import { getAnthropic } from '../integrations/claude.js';
+import { isDailyBudgetExceeded } from '../lib/cost-tracker.js';
 import { loadCompanyContext, formatCompanyContextForPrompt } from '../context/company-context.js';
 
 // Notion API for pipeline visibility
@@ -363,6 +364,13 @@ export async function runMorningCheckin() {
   console.log(`  Patricia's Daily Standup - ${new Date().toLocaleString()}`);
   console.log('='.repeat(60) + '\n');
 
+  // Check daily budget before running
+  const { overBudget, cost } = await isDailyBudgetExceeded();
+  if (overBudget) {
+    console.log(`[Patricia] Daily budget exceeded ($${cost.toFixed(2)}), skipping standup`);
+    return;
+  }
+
   const app = await getPatriciaApp();
 
   // Gather data in parallel
@@ -423,6 +431,13 @@ export async function runNudgeCheck() {
   console.log('\n' + '='.repeat(60));
   console.log(`  Patricia's Nudge Check - ${new Date().toLocaleString()}`);
   console.log('='.repeat(60) + '\n');
+
+  // Check daily budget before running
+  const { overBudget, cost } = await isDailyBudgetExceeded();
+  if (overBudget) {
+    console.log(`[Patricia] Daily budget exceeded ($${cost.toFixed(2)}), skipping nudge`);
+    return;
+  }
 
   const app = await getPatriciaApp();
   const pending = await getPendingItems();

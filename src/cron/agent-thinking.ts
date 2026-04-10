@@ -35,6 +35,7 @@ import {
   type FeedPost,
 } from '../integrations/database/feed.js';
 import { storeMemory } from '../memory/index.js';
+import { isDailyBudgetExceeded } from '../lib/cost-tracker.js';
 import type { LiveAgentName } from '../live/types.js';
 import { feedHandlersByAgent } from '../events/handlers/feed.handlers.js';
 import type { ClaimedEvent } from '../events/eventTypes.js';
@@ -449,11 +450,20 @@ async function runFeedEngagement(): Promise<EngagementResult[]> {
 
   console.log(`[Engagement] Found ${recentPosts.length} recent posts to evaluate`);
 
-  // For each post, let other agents evaluate and potentially respond
-  for (const post of recentPosts) {
+  // Limit engagement to top 3 posts by importance to control API costs
+  const postsToEvaluate = recentPosts.sort((a, b) => b.importance - a.importance).slice(0, 3);
+
+  console.log(`[Engagement] Evaluating top ${postsToEvaluate.length} posts by importance`);
+
+  // For each post, let up to 2 other agents evaluate and potentially respond
+  for (const post of postsToEvaluate) {
+    let agentEvals = 0;
     for (const agent of THINKING_AGENTS) {
+      if (agentEvals >= 2) break; // Max 2 agents evaluate per post
       // Skip if this is the agent's own post
       if (agent === post.author) continue;
+
+      agentEvals++;
 
       // Build a mock event for the handler
       const event: ClaimedEvent = {
@@ -599,12 +609,26 @@ export async function runThinkingTime(): Promise<{
 }> {
   console.log('[Thinking] Starting thinking time for all agents...');
 
+  // Check daily budget before running
+  const { overBudget, cost } = await isDailyBudgetExceeded();
+  if (overBudget) {
+    console.log(`[Thinking] Daily budget exceeded ($${cost.toFixed(2)}), skipping thinking time`);
+    return { results: [], totalPosted: 0, engagements: 0 };
+  }
+
   const results: ThinkingResult[] = [];
   let totalPosted = 0;
 
   // Phase 1: Run thinking sessions sequentially to avoid overwhelming the API
   // and to let agents see each other's posts
   for (const agent of THINKING_AGENTS) {
+    // Re-check budget between agents
+    const budgetCheck = await isDailyBudgetExceeded();
+    if (budgetCheck.overBudget) {
+      console.log(`[Thinking] Budget exceeded mid-run ($${budgetCheck.cost.toFixed(2)}), stopping`);
+      break;
+    }
+
     try {
       const result = await runThinkingSession(agent);
       results.push(result);
@@ -625,16 +649,23 @@ export async function runThinkingTime(): Promise<{
   console.log(`[Thinking] Phase 1 complete. ${totalPosted} posts created.`);
 
   // Phase 2: Feed engagement - agents react/reply to each other's posts
-  const engagementResults = await runFeedEngagement();
+  // Only run if we have budget left
+  let engagementResults: EngagementResult[] = [];
+  const budgetAfterPhase1 = await isDailyBudgetExceeded();
+  if (!budgetAfterPhase1.overBudget) {
+    engagementResults = await runFeedEngagement();
+  } else {
+    console.log(`[Thinking] Budget exceeded, skipping engagement phase`);
+  }
 
   console.log(`[Thinking] Phase 2 complete. ${engagementResults.length} engagements.`);
 
-  // Phase 3: Memory prioritization - store high-engagement insights
+  // Phase 3: Memory prioritization - store high-engagement insights (no API calls, just DB)
   const memoriesCreated = await storeHighEngagementAsMemories();
 
   console.log(`[Thinking] Phase 3 complete. ${memoriesCreated} memories stored.`);
 
-  // Phase 4: Surface to Slack - post high-engagement content
+  // Phase 4: Surface to Slack - post high-engagement content (no API calls)
   const slackSurfaced = await surfaceToSlackIfNeeded();
 
   console.log(

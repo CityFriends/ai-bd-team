@@ -2,6 +2,7 @@
 
 import { App, LogLevel } from '@slack/bolt';
 import { getAnthropic, MODEL_HAIKU } from '../integrations/claude.js';
+import { isDailyBudgetExceeded } from '../lib/cost-tracker.js';
 import {
   logAgentMemory,
   claimMessage,
@@ -1008,6 +1009,16 @@ export abstract class LiveAgent {
         messageText: message.text,
       });
       return;
+    }
+
+    // DAILY BUDGET: Skip non-essential responses when budget is exceeded
+    // Direct @mentions always go through so users can still interact
+    if (!message.isDirectMention) {
+      const { overBudget } = await isDailyBudgetExceeded();
+      if (overBudget) {
+        console.log(`${this.displayName}: Daily budget exceeded - skipping non-essential response`);
+        return;
+      }
     }
 
     // RESPONSE GATING: Check if we should respond based on domain and mentions
