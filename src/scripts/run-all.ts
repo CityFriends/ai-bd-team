@@ -552,6 +552,29 @@ async function main() {
     }
   });
 
+  // LLM Gateway: Stale reservation reconciliation: Every 5 minutes [SAFE: DB cleanup only]
+  // reserved (pre-network) → released; in_progress (post-network) → ambiguous
+  // No LLM calls, no Slack posts, no external APIs. Idempotent. Safe under multiple replicas.
+  cron.schedule('*/5 * * * *', async () => {
+    try {
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabase = createClient(
+        process.env.SUPABASE_URL || '',
+        process.env.SUPABASE_SERVICE_KEY || ''
+      );
+      const { error, data } = await supabase.rpc('reconcile_stale_reservations', {
+        p_stale_minutes: 15,
+      });
+      if (!error && data && data > 0) {
+        console.log(
+          `[${new Date().toLocaleString()}] Gateway: Reconciled ${data} stale reservation(s)`
+        );
+      }
+    } catch {
+      // Silent — this is a best-effort cleanup
+    }
+  });
+
   console.log('  ✓ Scheduled jobs configured\n');
 
   console.log('='.repeat(60));

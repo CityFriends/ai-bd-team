@@ -22,9 +22,15 @@ const PROJECT_ROOT = path.resolve(import.meta.dirname, '..', '..', '..');
 const SRC_DIR = path.join(PROJECT_ROOT, 'src');
 
 // Approved modules that may construct provider clients directly
-const APPROVED_ANTHROPIC_MODULES = ['src/integrations/claude.ts'];
+const APPROVED_ANTHROPIC_MODULES = [
+  'src/integrations/claude.ts',
+  'src/services/llm-gateway/gateway.ts',
+];
 
-const APPROVED_OPENAI_MODULES = ['src/integrations/embeddings.ts'];
+const APPROVED_OPENAI_MODULES = [
+  'src/integrations/embeddings.ts',
+  'src/services/llm-gateway/gateway.ts',
+];
 
 // Directories/patterns excluded from scanning (tests, config, build artifacts)
 const EXCLUDED_PATTERNS = ['__tests__', '.test.ts', '.spec.ts', 'node_modules', 'dist'];
@@ -172,17 +178,33 @@ describe('Provider Boundary Enforcement', () => {
       expect(content).toContain('AIDisabledError');
       expect(content).toContain('getOpenAI');
     });
+
+    it('gateway.ts contains the kill-switch check and budget reservation', () => {
+      const gatewayPath = path.join(PROJECT_ROOT, 'src', 'services', 'llm-gateway', 'gateway.ts');
+      const content = fs.readFileSync(gatewayPath, 'utf-8');
+
+      expect(content).toContain('isAIEnabled');
+      expect(content).toContain('AIDisabledError');
+      expect(content).toContain('reserveBudget');
+      expect(content).toContain('settleBudget');
+      expect(content).toContain('releaseBudget');
+      expect(content).toContain('validateAttribution');
+    });
   });
 
   describe('Approved module count', () => {
-    it('exactly one Anthropic client construction point exists', () => {
+    it('Anthropic client construction exists only in approved modules', () => {
       const claudePath = path.join(PROJECT_ROOT, 'src', 'integrations', 'claude.ts');
-      const content = fs.readFileSync(claudePath, 'utf-8');
-      const matches = content.match(/new\s+Anthropic\s*\(/g);
-      expect(matches).toHaveLength(1);
+      const gatewayPath = path.join(PROJECT_ROOT, 'src', 'services', 'llm-gateway', 'gateway.ts');
+
+      const claudeContent = fs.readFileSync(claudePath, 'utf-8');
+      const gatewayContent = fs.readFileSync(gatewayPath, 'utf-8');
+
+      expect(claudeContent.match(/new\s+Anthropic\s*\(/g)).toHaveLength(1);
+      expect(gatewayContent.match(/new\s+Anthropic\s*\(/g)).toHaveLength(1);
     });
 
-    it('exactly one OpenAI client construction point exists', () => {
+    it('OpenAI client construction exists only in approved modules', () => {
       const embeddingsPath = path.join(PROJECT_ROOT, 'src', 'integrations', 'embeddings.ts');
       const content = fs.readFileSync(embeddingsPath, 'utf-8');
       const matches = content.match(/new\s+OpenAI\s*\(/g);
