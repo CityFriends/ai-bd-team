@@ -1,15 +1,46 @@
 /**
  * Run All BD Team Services
  *
- * Single entry point for production deployment.
+ * Single entry point for production deployment (Railway).
  * Runs: Live agents + scheduled cron jobs for Maya, David, and Patricia
  *
  * All agent scans use distributed locks (acquireCronLock) to prevent
  * duplicate runs across replicas.
+ *
+ * MILESTONE 1A: All AUTONOMOUS_EXTERNAL_ACTIVITY jobs are guarded by
+ * isAutonomousAIEnabled() && isAIEnabled(). When either is false,
+ * jobs log a skip and return without side effects.
  */
 import 'dotenv/config';
 import cron from 'node-cron';
 import { logJobStart, logJobComplete, logJobFailed } from '../integrations/supabase.js';
+import { isAutonomousAIEnabled, isAIEnabled } from '../config/ai-controls.js';
+
+/**
+ * Check whether autonomous external activity is permitted.
+ * Both autonomous AI AND global AI must be explicitly enabled.
+ * Checked at EXECUTION TIME (not registration time) so runtime
+ * control changes take effect without redeployment.
+ */
+async function isAutonomousActivityPermitted(jobName: string): Promise<boolean> {
+  const autonomousEnabled = isAutonomousAIEnabled();
+  if (!autonomousEnabled) {
+    console.log(
+      `[autonomous_job_skipped] job=${jobName} reason=ENABLE_AUTONOMOUS_AI=false ts=${new Date().toISOString()}`
+    );
+    return false;
+  }
+
+  const aiEnabled = await isAIEnabled();
+  if (!aiEnabled) {
+    console.log(
+      `[autonomous_job_skipped] job=${jobName} reason=AI_SYSTEM_ENABLED=false ts=${new Date().toISOString()}`
+    );
+    return false;
+  }
+
+  return true;
+}
 
 // Wrapper to run a job with logging
 async function runWithLogging(jobName: string, fn: () => Promise<void>): Promise<void> {
@@ -332,60 +363,54 @@ async function main() {
   }
 
   // ============================================================
-  // SCHEDULED JOBS - Agent Scans (with distributed locks)
+  // SCHEDULED JOBS - AUTONOMOUS_EXTERNAL_ACTIVITY
+  // These post to Slack, query external APIs, create events/workflows,
+  // or invoke LLMs. Guarded by isAutonomousActivityPermitted().
   // ============================================================
 
-  // Maya Daily Scan: 8:00 AM CST Mon-Fri (14:00 UTC)
+  // Maya Daily Scan: 8:00 AM CST Mon-Fri (14:00 UTC) [AUTONOMOUS: Slack post, SAM.gov, events, workflows]
   cron.schedule('0 14 * * 1-5', async () => {
-    console.log(`[${new Date().toLocaleString()}] Maya: Running daily scan...`);
+    if (!(await isAutonomousActivityPermitted('maya-daily-scan'))) return;
     try {
       await runWithLogging('maya-daily-scan', runMayaDailyScan);
-      console.log(`[${new Date().toLocaleString()}] Maya: Daily scan complete`);
     } catch (err) {
       console.error(`[${new Date().toLocaleString()}] Maya: Daily scan failed:`, err);
     }
   });
 
-  // Maya Weekly Summary: 8:30 AM CST Friday (14:30 UTC)
+  // Maya Weekly Summary: 8:30 AM CST Friday (14:30 UTC) [AUTONOMOUS: Slack post, SAM.gov]
   cron.schedule('30 14 * * 5', async () => {
-    console.log(`[${new Date().toLocaleString()}] Maya: Running weekly summary...`);
+    if (!(await isAutonomousActivityPermitted('maya-weekly-summary'))) return;
     try {
       await runWithLogging('maya-weekly-summary', runMayaWeeklySummary);
-      console.log(`[${new Date().toLocaleString()}] Maya: Weekly summary complete`);
     } catch (err) {
       console.error(`[${new Date().toLocaleString()}] Maya: Weekly summary failed:`, err);
     }
   });
 
-  // David News Digest: 10:00 AM CST Mon/Wed/Fri (16:00 UTC)
+  // David News Digest: 10:00 AM CST Mon/Wed/Fri (16:00 UTC) [AUTONOMOUS: Slack post, LLM, news APIs]
   cron.schedule('0 16 * * 1,3,5', async () => {
-    console.log(`[${new Date().toLocaleString()}] David: Running news digest...`);
+    if (!(await isAutonomousActivityPermitted('david-news-digest'))) return;
     try {
       await runWithLogging('david-news-digest', runDavidNewsDigest);
-      console.log(`[${new Date().toLocaleString()}] David: News digest complete`);
     } catch (err) {
       console.error(`[${new Date().toLocaleString()}] David: News digest failed:`, err);
     }
   });
 
-  // Patricia Morning Standup: 11:00 AM CST Mon-Fri (17:00 UTC)
+  // Patricia Morning Standup: 11:00 AM CST Mon-Fri (17:00 UTC) [AUTONOMOUS: Slack post, LLM]
   cron.schedule('0 17 * * 1-5', async () => {
-    console.log(`[${new Date().toLocaleString()}] Patricia: Running morning standup...`);
+    if (!(await isAutonomousActivityPermitted('patricia-standup'))) return;
     try {
       await runWithLogging('patricia-standup', runPatriciaStandup);
-      console.log(`[${new Date().toLocaleString()}] Patricia: Morning standup complete`);
     } catch (err) {
-      console.error(`[${new Date().toLocaleString()}] Patricia: Morning standup failed:`, err);
+      console.error(`[${new Date().toLocaleString()}] Patricia: Standup failed:`, err);
     }
   });
 
-  // ============================================================
-  // SCHEDULED JOBS - Other Internal Jobs
-  // ============================================================
-
-  // Action Scheduler: Every 15 minutes check for agent commitments
+  // Action Scheduler: Every 15 minutes [AUTONOMOUS: LLM, Slack posts via action executor]
   cron.schedule('*/15 * * * *', async () => {
-    console.log(`[${new Date().toLocaleString()}] Actions: Checking for due actions...`);
+    if (!(await isAutonomousActivityPermitted('action-scheduler'))) return;
     try {
       await runWithLogging('action-scheduler', runActionScheduler);
     } catch (err) {
@@ -393,22 +418,123 @@ async function main() {
     }
   });
 
-  // ============================================================
-  // Event System Triggers - Activate the emergent behavior layer
-  // ============================================================
-
-  // Pipeline health check: Every 2 hours during business hours (14-22 UTC = 9am-5pm CST)
+  // Pipeline health check: Every 2 hours 9am-5pm CST [AUTONOMOUS: creates agent events]
   cron.schedule('0 14,16,18,20,22 * * 1-5', async () => {
-    console.log(`[${new Date().toLocaleString()}] Events: Running pipeline health check...`);
+    if (!(await isAutonomousActivityPermitted('event-pipeline-health'))) return;
     try {
       await runWithLogging('event-pipeline-health', runPipelineHealthCheck);
-      console.log(`[${new Date().toLocaleString()}] Events: Pipeline health check complete`);
     } catch (err) {
-      console.error(`[${new Date().toLocaleString()}] Events: Pipeline health check failed:`, err);
+      console.error(`[${new Date().toLocaleString()}] Events: Pipeline health failed:`, err);
     }
   });
 
-  // Stale event cleanup: Every 5 minutes
+  // Patricia monthly retrospective: First Monday 9am CST [AUTONOMOUS: Slack post, playbook]
+  cron.schedule('0 15 1-7 * 1', async () => {
+    if (!(await isAutonomousActivityPermitted('patricia-retrospective'))) return;
+    try {
+      await runWithLogging('patricia-retrospective', runPatriciaRetrospective);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Patricia: Retrospective failed:`, err);
+    }
+  });
+
+  // Patricia daily health summary: 9:00 AM CST Mon-Fri [AUTONOMOUS: LLM, Slack post]
+  cron.schedule('0 15 * * 1-5', async () => {
+    if (!(await isAutonomousActivityPermitted('patricia-health-summary'))) return;
+    try {
+      await runWithLogging('patricia-health-summary', runPatriciaHealthSummary);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Patricia: Health summary failed:`, err);
+    }
+  });
+
+  // Memory reflection: Sundays 2am CST [AUTONOMOUS: LLM]
+  cron.schedule('0 8 * * 0', async () => {
+    if (!(await isAutonomousActivityPermitted('memory-reflection'))) return;
+    try {
+      await runWithLogging('memory-reflection', runMemoryReflection);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Memory: Reflection failed:`, err);
+    }
+  });
+
+  // Agent thinking time: 8am, 12pm, 4pm CST Mon-Fri [AUTONOMOUS: LLM, feed posts]
+  cron.schedule('0 14,18,22 * * 1-5', async () => {
+    if (!(await isAutonomousActivityPermitted('agent-thinking-time'))) return;
+    try {
+      await runWithLogging('agent-thinking-time', runAgentThinkingTime);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Thinking: Failed:`, err);
+    }
+  });
+
+  // Feed synthesis: 9am, 11am, 1pm, 3pm CST Mon-Fri [AUTONOMOUS: LLM, feed posts]
+  cron.schedule('0 15,17,19,21 * * 1-5', async () => {
+    if (!(await isAutonomousActivityPermitted('feed-synthesis'))) return;
+    try {
+      await runWithLogging('feed-synthesis', runFeedSynthesis);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Feed: Synthesis failed:`, err);
+    }
+  });
+
+  // Feed to Notion sync: Every 2 hours 9am-5pm CST [AUTONOMOUS: writes to Notion]
+  cron.schedule('30 14,16,18,20,22 * * 1-5', async () => {
+    if (!(await isAutonomousActivityPermitted('feed-notion-sync'))) return;
+    try {
+      await runFeedToNotionSync();
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Feed: Notion sync failed:`, err);
+    }
+  });
+
+  // Deadline monitor: 8:30am CST daily [AUTONOMOUS: Slack post, feed posts]
+  cron.schedule('30 14 * * *', async () => {
+    if (!(await isAutonomousActivityPermitted('deadline-monitor'))) return;
+    try {
+      await runWithLogging('deadline-monitor', runDeadlineMonitor);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Deadlines: Monitor failed:`, err);
+    }
+  });
+
+  // Weekly rollup: 7am CST Monday [AUTONOMOUS: Slack post, deliverables]
+  cron.schedule('0 13 * * 1', async () => {
+    if (!(await isAutonomousActivityPermitted('weekly-rollup'))) return;
+    try {
+      await runWithLogging('weekly-rollup', runWeeklyRollup);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Rollup: Failed:`, err);
+    }
+  });
+
+  // Discussion processor: 10am, 12pm, 2pm, 4pm CST Mon-Fri [AUTONOMOUS: LLM, Notion]
+  cron.schedule('0 16,18,20,22 * * 1-5', async () => {
+    if (!(await isAutonomousActivityPermitted('discussion-processor'))) return;
+    try {
+      await runWithLogging('discussion-processor', runDiscussionProcessor);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Discussions: Failed:`, err);
+    }
+  });
+
+  // System event processor: Every minute [AUTONOMOUS: creates workflows from events]
+  cron.schedule('* * * * *', async () => {
+    if (!(await isAutonomousActivityPermitted('system-event-processor'))) return;
+    try {
+      await runSystemEventProcessor();
+    } catch (err) {
+      // Silent fail - this runs frequently
+    }
+  });
+
+  // ============================================================
+  // SCHEDULED JOBS - SAFE_INTERNAL_MAINTENANCE
+  // No Slack posts, no LLM, no external APIs, no event/workflow creation.
+  // These run regardless of AI control state.
+  // ============================================================
+
+  // Stale event cleanup: Every 5 minutes [SAFE: DB cleanup only]
   cron.schedule('*/5 * * * *', async () => {
     try {
       await runStaleEventCleanup();
@@ -417,129 +543,12 @@ async function main() {
     }
   });
 
-  // Workflow timeout processor: Every 5 minutes
+  // Workflow timeout processor: Every 5 minutes [SAFE: DB state updates only]
   cron.schedule('*/5 * * * *', async () => {
     try {
       await runWithLogging('workflow-timeouts', runWorkflowTimeouts);
     } catch (err) {
       console.error(`[${new Date().toLocaleString()}] Workflows: Timeout check failed:`, err);
-    }
-  });
-
-  // Patricia's monthly retrospective: First Monday of each month at 9am CST (15:00 UTC)
-  // Note: '1-7' ensures it's in the first 7 days, combined with day-of-week 1 (Monday)
-  cron.schedule('0 15 1-7 * 1', async () => {
-    console.log(`[${new Date().toLocaleString()}] Patricia: Running monthly retrospective...`);
-    try {
-      await runWithLogging('patricia-retrospective', runPatriciaRetrospective);
-      console.log(`[${new Date().toLocaleString()}] Patricia: Monthly retrospective complete`);
-    } catch (err) {
-      console.error(
-        `[${new Date().toLocaleString()}] Patricia: Monthly retrospective failed:`,
-        err
-      );
-    }
-  });
-
-  // Patricia's daily health summary: 9:00 AM CST Mon-Fri (15:00 UTC)
-  cron.schedule('0 15 * * 1-5', async () => {
-    console.log(`[${new Date().toLocaleString()}] Patricia: Running health summary...`);
-    try {
-      await runWithLogging('patricia-health-summary', runPatriciaHealthSummary);
-      console.log(`[${new Date().toLocaleString()}] Patricia: Health summary complete`);
-    } catch (err) {
-      console.error(`[${new Date().toLocaleString()}] Patricia: Health summary failed:`, err);
-    }
-  });
-
-  // Memory reflection: Sundays at 2am CST (08:00 UTC) - off-hours processing
-  cron.schedule('0 8 * * 0', async () => {
-    console.log(`[${new Date().toLocaleString()}] Memory: Running weekly reflection...`);
-    try {
-      await runWithLogging('memory-reflection', runMemoryReflection);
-      console.log(`[${new Date().toLocaleString()}] Memory: Weekly reflection complete`);
-    } catch (err) {
-      console.error(`[${new Date().toLocaleString()}] Memory: Weekly reflection failed:`, err);
-    }
-  });
-
-  // ============================================================
-  // SCHEDULED JOBS - Agent Intelligence Layer
-  // ============================================================
-
-  // Agent thinking time: 8am, 12pm, 4pm CST Mon-Fri (14:00, 18:00, 22:00 UTC)
-  cron.schedule('0 14,18,22 * * 1-5', async () => {
-    console.log(`[${new Date().toLocaleString()}] Thinking: Running agent thinking time...`);
-    try {
-      await runWithLogging('agent-thinking-time', runAgentThinkingTime);
-      console.log(`[${new Date().toLocaleString()}] Thinking: Agent thinking time complete`);
-    } catch (err) {
-      console.error(`[${new Date().toLocaleString()}] Thinking: Agent thinking time failed:`, err);
-    }
-  });
-
-  // Feed synthesis: 9am, 11am, 1pm, 3pm CST Mon-Fri (15:00, 17:00, 19:00, 21:00 UTC)
-  cron.schedule('0 15,17,19,21 * * 1-5', async () => {
-    console.log(`[${new Date().toLocaleString()}] Feed: Running feed synthesis...`);
-    try {
-      await runWithLogging('feed-synthesis', runFeedSynthesis);
-      console.log(`[${new Date().toLocaleString()}] Feed: Feed synthesis complete`);
-    } catch (err) {
-      console.error(`[${new Date().toLocaleString()}] Feed: Feed synthesis failed:`, err);
-    }
-  });
-
-  // Feed to Notion sync: Every 2 hours during business hours (14-22 UTC = 9am-5pm CST)
-  cron.schedule('30 14,16,18,20,22 * * 1-5', async () => {
-    try {
-      await runFeedToNotionSync();
-    } catch (err) {
-      console.error(`[${new Date().toLocaleString()}] Feed: Notion sync failed:`, err);
-    }
-  });
-
-  // Deadline monitor: 8:30am CST daily (14:30 UTC) - offset from Maya scan
-  cron.schedule('30 14 * * *', async () => {
-    console.log(`[${new Date().toLocaleString()}] Deadlines: Running deadline monitor...`);
-    try {
-      await runWithLogging('deadline-monitor', runDeadlineMonitor);
-      console.log(`[${new Date().toLocaleString()}] Deadlines: Deadline monitor complete`);
-    } catch (err) {
-      console.error(`[${new Date().toLocaleString()}] Deadlines: Deadline monitor failed:`, err);
-    }
-  });
-
-  // Weekly rollup: 7am CST Monday (13:00 UTC)
-  cron.schedule('0 13 * * 1', async () => {
-    console.log(`[${new Date().toLocaleString()}] Rollup: Running weekly rollup...`);
-    try {
-      await runWithLogging('weekly-rollup', runWeeklyRollup);
-      console.log(`[${new Date().toLocaleString()}] Rollup: Weekly rollup complete`);
-    } catch (err) {
-      console.error(`[${new Date().toLocaleString()}] Rollup: Weekly rollup failed:`, err);
-    }
-  });
-
-  // Discussion processor: 10am, 12pm, 2pm, 4pm CST Mon-Fri (16:00, 18:00, 20:00, 22:00 UTC)
-  cron.schedule('0 16,18,20,22 * * 1-5', async () => {
-    console.log(`[${new Date().toLocaleString()}] Discussions: Running discussion processor...`);
-    try {
-      await runWithLogging('discussion-processor', runDiscussionProcessor);
-      console.log(`[${new Date().toLocaleString()}] Discussions: Discussion processor complete`);
-    } catch (err) {
-      console.error(
-        `[${new Date().toLocaleString()}] Discussions: Discussion processor failed:`,
-        err
-      );
-    }
-  });
-
-  // System event processor: Every minute (for fast workflow creation)
-  cron.schedule('* * * * *', async () => {
-    try {
-      await runSystemEventProcessor();
-    } catch (err) {
-      // Silent fail - this runs frequently
     }
   });
 
