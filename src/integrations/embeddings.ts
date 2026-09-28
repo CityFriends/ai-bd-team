@@ -2,6 +2,8 @@
 // Uses OpenAI text-embedding-3-small for vector generation
 
 import OpenAI from 'openai';
+import { isAIEnabled } from '../config/ai-controls.js';
+import { AIDisabledError } from './claude.js';
 
 let openaiClient: OpenAI | null = null;
 
@@ -11,9 +13,28 @@ function getOpenAI(): OpenAI {
     if (!apiKey) {
       throw new Error('Missing OPENAI_API_KEY environment variable');
     }
-    openaiClient = new OpenAI({ apiKey });
+    const realClient = new OpenAI({ apiKey });
+
+    // Wrap embeddings.create with circuit breaker
+    const originalCreate = realClient.embeddings.create.bind(realClient.embeddings);
+    realClient.embeddings.create = (async (...args: Parameters<typeof originalCreate>) => {
+      const enabled = await isAIEnabled();
+      if (!enabled) {
+        throw new AIDisabledError();
+      }
+      return originalCreate(...args);
+    }) as typeof originalCreate;
+
+    openaiClient = realClient;
   }
   return openaiClient;
+}
+
+/**
+ * Reset the cached client — for testing only.
+ */
+export function _resetOpenAIClient(): void {
+  openaiClient = null;
 }
 
 // Embedding model configuration

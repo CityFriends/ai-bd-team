@@ -55,9 +55,10 @@ async function testSlack(): Promise<boolean> {
 
 async function testClaude(): Promise<boolean> {
   console.log('\n🤖 Testing Claude API...');
+  console.log('   NOTE: AI must be enabled (AI_SYSTEM_ENABLED=true + DB ai_enabled=true)');
   try {
-    const Anthropic = (await import('@anthropic-ai/sdk')).default;
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const { getAnthropic } = await import('./integrations/claude.js');
+    const client = getAnthropic();
 
     const response = await client.messages.create({
       model: 'claude-sonnet-4-20250514',
@@ -72,7 +73,15 @@ async function testClaude(): Promise<boolean> {
     }
     return false;
   } catch (err) {
-    console.log('   ❌ Claude failed:', (err as Error).message);
+    const errorMsg = (err as Error).message;
+    if (errorMsg.includes('AI execution is currently disabled')) {
+      console.log('   ⚠️  Claude API key is configured but AI execution is disabled.');
+      console.log(
+        '      Enable AI_SYSTEM_ENABLED=true and DB ai_enabled=true to test connectivity.'
+      );
+      return false;
+    }
+    console.log('   ❌ Claude failed:', errorMsg);
     return false;
   }
 }

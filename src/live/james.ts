@@ -7,6 +7,7 @@ import {
   generateOneVoiceResponse,
   formatSynthesizedResponse,
 } from './one-voice.js';
+import { isOneVoiceEnabled } from '../config/ai-controls.js';
 
 export class JamesAgent extends LiveAgent {
   name: LiveAgentName = 'james';
@@ -80,12 +81,15 @@ Tagging teammates:
   // Override handleMessage to check for One Voice synthesis triggers
   async handleMessage(message: IncomingMessage): Promise<void> {
     // Check if this should trigger team synthesis
+    // MILESTONE 1A: One-voice is disabled by default (ENABLE_ONE_VOICE=false)
     const isFromHuman = !message.isFromBot;
-    const shouldSynthesize = shouldTriggerSynthesis(
-      message.text,
-      isFromHuman,
-      message.isTeamMention || message.isTeamTrigger
-    );
+    const shouldSynthesize =
+      isOneVoiceEnabled() &&
+      shouldTriggerSynthesis(
+        message.text,
+        isFromHuman,
+        message.isTeamMention || message.isTeamTrigger
+      );
 
     if (shouldSynthesize && message.isDirectMention) {
       console.log(`James: One Voice synthesis triggered`);

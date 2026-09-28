@@ -4,6 +4,12 @@ import { App, LogLevel } from '@slack/bolt';
 import { getAnthropic, MODEL_HAIKU } from '../integrations/claude.js';
 import { isDailyBudgetExceeded } from '../lib/cost-tracker.js';
 import {
+  isAIEnabled,
+  isTeamFanoutEnabled,
+  isMemoryExtractionEnabled,
+  isFactExtractionEnabled,
+} from '../config/ai-controls.js';
+import {
   logAgentMemory,
   claimMessage,
   getRecentThreadResponses,
@@ -407,11 +413,13 @@ export abstract class LiveAgent {
       if (isMentioned && !msg.bot_id) return;
 
       // Check for "hey team" triggers EARLY - before bot message filtering
+      // MILESTONE 1A: Fan-out is disabled by default (ENABLE_TEAM_FANOUT=false)
       const isTeamTrigger =
-        text.includes('hey team') ||
-        text.includes('okay team') ||
-        text.includes('ok team') ||
-        text.includes('alright team');
+        isTeamFanoutEnabled() &&
+        (text.includes('hey team') ||
+          text.includes('okay team') ||
+          text.includes('ok team') ||
+          text.includes('alright team'));
 
       // Debug: Log team trigger check for bot messages
       if (isFromBot) {
@@ -856,12 +864,14 @@ export abstract class LiveAgent {
     const isFromBot = !!(event.bot_id || event.subtype === 'bot_message');
 
     // Check for "hey team" style triggers where ALL agents should respond
+    // MILESTONE 1A: Fan-out is disabled by default (ENABLE_TEAM_FANOUT=false)
     const textLower = text.toLowerCase();
     const isTeamTrigger =
-      textLower.includes('hey team') ||
-      textLower.includes('okay team') ||
-      textLower.includes('ok team') ||
-      textLower.includes('alright team');
+      isTeamFanoutEnabled() &&
+      (textLower.includes('hey team') ||
+        textLower.includes('okay team') ||
+        textLower.includes('ok team') ||
+        textLower.includes('alright team'));
 
     return {
       text: this.cleanMessageText(text),
@@ -922,12 +932,17 @@ export abstract class LiveAgent {
 
     // Check for team triggers - mentions everyone
     // Using "hey team" or "okay team" since @team conflicts with Slack
+    // MILESTONE 1A: Fan-out is disabled by default (ENABLE_TEAM_FANOUT=false)
     if (
       lowerText.includes('hey team') ||
       lowerText.includes('okay team') ||
       lowerText.includes('ok team') ||
       lowerText.includes('alright team')
     ) {
+      if (!isTeamFanoutEnabled()) {
+        console.log(`[AI-CONTROL] Team fan-out is disabled. Ignoring "hey team" trigger.`);
+        return { agents: mentioned, isTeamMention: false };
+      }
       return { agents: allAgents, isTeamMention: true };
     }
 
@@ -959,6 +974,19 @@ export abstract class LiveAgent {
 
   // Main message handler
   async handleMessage(message: IncomingMessage): Promise<void> {
+    // MILESTONE 1A: Global AI kill switch — checked FIRST before any inference
+    const aiEnabled = await isAIEnabled();
+    if (!aiEnabled) {
+      // When AI is disabled, respond with a static message only for direct mentions
+      if (message.isDirectMention) {
+        await this.postMessage(
+          'AI execution is currently disabled.',
+          message.threadTs || message.messageTs
+        );
+      }
+      return;
+    }
+
     // WORKING HOURS GATE: Check if we should respond based on time
     // Skip check for team triggers and DIRECT MENTIONS - always respond when explicitly tagged
     if (!message.isTeamTrigger && !message.isDirectMention) {
@@ -1280,19 +1308,25 @@ export abstract class LiveAgent {
       });
 
       // Extract and store facts from the conversation (async, non-blocking)
-      this.extractAndStoreFacts(message.text, response.text, message.threadTs).catch((err) => {
-        console.warn(`${this.displayName}: Fact extraction failed:`, err);
-      });
+      // MILESTONE 1A: Disabled by default (ENABLE_FACT_EXTRACTION=false)
+      if (isFactExtractionEnabled()) {
+        this.extractAndStoreFacts(message.text, response.text, message.threadTs).catch((err) => {
+          console.warn(`${this.displayName}: Fact extraction failed:`, err);
+        });
+      }
 
       // Store interaction memories for future recall (async, non-blocking)
-      this.storeInteractionMemory(
-        message.text,
-        response.text,
-        response.sources,
-        message.threadTs
-      ).catch((err) => {
-        console.warn(`${this.displayName}: Memory storage failed:`, err);
-      });
+      // MILESTONE 1A: Disabled by default (ENABLE_MEMORY_EXTRACTION=false)
+      if (isMemoryExtractionEnabled()) {
+        this.storeInteractionMemory(
+          message.text,
+          response.text,
+          response.sources,
+          message.threadTs
+        ).catch((err) => {
+          console.warn(`${this.displayName}: Memory storage failed:`, err);
+        });
+      }
 
       // Check if we tagged another agent - create handoff
       const taggedAgent = detectAgentTag(response.text, AGENT_SLACK_IDS);

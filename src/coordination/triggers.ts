@@ -7,6 +7,7 @@ import {
 } from '../integrations/supabase.js';
 import { extractMentions } from '../agents/index.js';
 import type { AgentName } from '../types/index.js';
+import { isAIEnabled } from '../config/ai-controls.js';
 
 // Type for reaction_added event
 interface ReactionEvent {
@@ -35,6 +36,9 @@ export function setupTriggers(): void {
 
     // Type guard for message with text
     if (!('text' in message) || !message.text) return;
+
+    // MILESTONE 1A: Skip all inference-triggering processing when AI disabled
+    if (!(await isAIEnabled())) return;
 
     const text = message.text;
     const threadTs = 'thread_ts' in message ? message.thread_ts : message.ts;

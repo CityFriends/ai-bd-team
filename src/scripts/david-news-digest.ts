@@ -17,6 +17,7 @@ import { getNewRelevantNews, formatNewsDigest } from '../integrations/gov-news.j
 import { scanCMSForecast, scoreCMSOpportunity } from '../integrations/cms-forecast.js';
 import { getAnthropic } from '../integrations/claude.js';
 import { postTeamReactions, getDavidFollowUp } from '../integrations/team-reactions.js';
+import { isNewsReactionsEnabled } from '../config/ai-controls.js';
 
 const CHANNEL_ID = process.env.SLACK_CHANNEL_ID || '';
 
@@ -208,7 +209,8 @@ export async function runNewsDigest(): Promise<void> {
   const threadTs = await postToSlack(app, finalMessage);
 
   // Trigger team reactions (other agents respond naturally)
-  if (threadTs && app) {
+  // MILESTONE 1A: News reactions disabled by default (ENABLE_NEWS_REACTIONS=false)
+  if (threadTs && app && isNewsReactionsEnabled()) {
     console.log('[David] Checking for team reactions...');
     try {
       const teamApps = await getTeamApps();

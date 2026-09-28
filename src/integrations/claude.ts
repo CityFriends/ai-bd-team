@@ -8,18 +8,59 @@ import {
   getRecommendedModel,
   type ModelTier,
 } from '../lib/cost-tracker.js';
+import { isAIEnabled } from '../config/ai-controls.js';
+
+/**
+ * AIDisabledError — thrown when inference is attempted while AI is disabled.
+ * Callers should catch this and return a static message instead of retrying.
+ */
+export class AIDisabledError extends Error {
+  constructor() {
+    super('AI execution is currently disabled.');
+    this.name = 'AIDisabledError';
+  }
+}
 
 let anthropic: Anthropic | null = null;
 
+/**
+ * Get the Anthropic client with circuit breaker protection.
+ *
+ * The returned client's messages.create() method is wrapped:
+ * before every API call, it checks isAIEnabled(). If disabled,
+ * it throws AIDisabledError instead of making a network request.
+ *
+ * This is the ONLY Anthropic client construction point in the application.
+ * All 32+ files that use Anthropic go through this function.
+ */
 export function getAnthropic(): Anthropic {
   if (!anthropic) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       throw new Error('Missing ANTHROPIC_API_KEY');
     }
-    anthropic = new Anthropic({ apiKey });
+    const realClient = new Anthropic({ apiKey });
+
+    // Wrap messages.create with circuit breaker
+    const originalCreate = realClient.messages.create.bind(realClient.messages);
+    realClient.messages.create = (async (...args: Parameters<typeof originalCreate>) => {
+      const enabled = await isAIEnabled();
+      if (!enabled) {
+        throw new AIDisabledError();
+      }
+      return originalCreate(...args);
+    }) as typeof originalCreate;
+
+    anthropic = realClient;
   }
   return anthropic;
+}
+
+/**
+ * Reset the cached client — for testing only.
+ */
+export function _resetAnthropicClient(): void {
+  anthropic = null;
 }
 
 // Model constants

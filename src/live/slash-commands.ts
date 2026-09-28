@@ -8,6 +8,7 @@ import type { App } from '@slack/bolt';
 import { getSupabase } from '../integrations/supabase.js';
 import { buildPipelineBlocks } from '../utils/slack-blocks.js';
 import { getCostSummary, type CostSummary, type CallPurpose } from '../lib/cost-tracker.js';
+import { getAIControlStatus } from '../config/ai-controls.js';
 
 /**
  * Register all slash command handlers with a Slack app
@@ -15,8 +16,67 @@ import { getCostSummary, type CostSummary, type CallPurpose } from '../lib/cost-
 export function registerSlashCommands(app: App): void {
   app.command('/pipeline', handlePipelineCommand);
   app.command('/cost', handleCostCommand);
+  app.command('/ai-status', handleAIStatusCommand);
 
-  console.log('[SlashCommands] Registered /pipeline, /cost commands');
+  console.log('[SlashCommands] Registered /pipeline, /cost, /ai-status commands');
+}
+
+/**
+ * Handle /ai-status command - shows current AI system control states
+ *
+ * NOTE: This command requires Slack app configuration:
+ *   1. Go to api.slack.com/apps → Your App → Slash Commands
+ *   2. Create new command: /ai-status
+ *   3. Request URL: (your app uses socket mode, so this is handled automatically)
+ *   4. Description: "Show AI system control status"
+ *
+ * If Slack app configuration is not done, users can also check the console
+ * logs or the system_controls table directly.
+ */
+async function handleAIStatusCommand({
+  ack,
+  respond,
+  command,
+}: {
+  ack: () => Promise<void>;
+  respond: (message: any) => Promise<void>;
+  command: { user_id: string; text: string };
+}): Promise<void> {
+  await ack();
+
+  console.log(`[Command] /ai-status invoked by ${command.user_id}`);
+
+  try {
+    const status = await getAIControlStatus();
+
+    const lines: string[] = [];
+    lines.push('*AI System Control Status*');
+    lines.push('');
+    for (const [label, value] of Object.entries(status)) {
+      const icon = value === 'ENABLED' ? ':large_green_circle:' : ':red_circle:';
+      lines.push(`${icon} *${label}:* ${value}`);
+    }
+    lines.push('');
+    lines.push('_Controls are set via environment variables and database._');
+    lines.push('_See: src/config/ai-controls.ts for flag names._');
+
+    await respond({
+      response_type: 'ephemeral',
+      text: lines.join('\n'),
+      blocks: [
+        {
+          type: 'section',
+          text: { type: 'mrkdwn', text: lines.join('\n') },
+        },
+      ],
+    });
+  } catch (err) {
+    console.error('[Command] Error handling /ai-status:', err);
+    await respond({
+      response_type: 'ephemeral',
+      text: 'Error fetching AI status. Please try again.',
+    });
+  }
 }
 
 /**

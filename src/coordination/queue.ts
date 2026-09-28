@@ -1,12 +1,19 @@
 import { getPendingTasks, updateTaskStatus } from '../integrations/supabase.js';
 import { getAgent } from '../agents/index.js';
 import type { AgentQueueItem, AgentName } from '../types/index.js';
+import { isAIEnabled } from '../config/ai-controls.js';
 
 let queueProcessorInterval: ReturnType<typeof setInterval> | null = null;
 const QUEUE_POLL_INTERVAL = 30000; // Check every 30 seconds
 
 // Process pending tasks from the queue
 async function processQueue(): Promise<void> {
+  // MILESTONE 1A: Skip queue processing when AI is disabled
+  const aiEnabled = await isAIEnabled();
+  if (!aiEnabled) {
+    return;
+  }
+
   try {
     const pendingTasks = await getPendingTasks();
 

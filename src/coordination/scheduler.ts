@@ -7,15 +7,20 @@ import { cronFeedSynthesis } from '../cron/feed-synthesis.js';
 import { cronDeadlineMonitor } from '../cron/deadline-monitor.js';
 import { cronWeeklyRollup } from '../cron/weekly-rollup.js';
 import { cronDiscussionProcessor } from '../cron/discussion-processor.js';
+import { isAutonomousAIEnabled, isAIEnabled } from '../config/ai-controls.js';
 
 // Track scheduled jobs for cleanup
 const scheduledJobs: cron.ScheduledTask[] = [];
 
-// Schedule Scout's daily scan at 6am
+// Schedule Scout's daily scan at 6am [MAY_INVOKE_LLM]
 export function scheduleScoutDailyScan(): void {
   const job = cron.schedule(
     '0 6 * * *',
     async () => {
+      if (!isAutonomousAIEnabled() || !(await isAIEnabled())) {
+        console.log('[AI-CONTROL] Scout daily scan skipped — autonomous AI or global AI disabled');
+        return;
+      }
       console.log('Running scheduled Scout daily scan...');
       try {
         await scout.handleAction('daily_scan', {});
@@ -24,7 +29,7 @@ export function scheduleScoutDailyScan(): void {
       }
     },
     {
-      timezone: 'America/New_York', // Adjust to your timezone
+      timezone: 'America/New_York',
     }
   );
 
@@ -32,11 +37,17 @@ export function scheduleScoutDailyScan(): void {
   console.log('Scheduled Scout daily scan for 6:00 AM');
 }
 
-// Schedule Strategist's morning standup at 8am Mon & Fri
+// Schedule Strategist's morning standup at 8am Mon & Fri [MAY_INVOKE_LLM]
 export function scheduleStrategistStandup(): void {
   const job = cron.schedule(
     '0 8 * * 1,5',
     async () => {
+      if (!isAutonomousAIEnabled() || !(await isAIEnabled())) {
+        console.log(
+          '[AI-CONTROL] Strategist standup skipped — autonomous AI or global AI disabled'
+        );
+        return;
+      }
       console.log('Running scheduled Strategist standup...');
       try {
         await strategist.handleAction('morning_standup', {});
@@ -45,7 +56,7 @@ export function scheduleStrategistStandup(): void {
       }
     },
     {
-      timezone: 'America/New_York', // Adjust to your timezone
+      timezone: 'America/New_York',
     }
   );
 
@@ -53,11 +64,15 @@ export function scheduleStrategistStandup(): void {
   console.log('Scheduled Strategist standup for 8:00 AM Mon & Fri');
 }
 
-// Schedule Memory Reflection at 2am daily
+// Schedule Memory Reflection at 2am daily [MAY_INVOKE_LLM]
 export function scheduleMemoryReflection(): void {
   const job = cron.schedule(
     '0 2 * * *',
     async () => {
+      if (!isAutonomousAIEnabled() || !(await isAIEnabled())) {
+        console.log('[AI-CONTROL] Memory reflection skipped — autonomous AI or global AI disabled');
+        return;
+      }
       console.log('Running scheduled memory reflection...');
       try {
         await runMemoryReflection();
@@ -74,11 +89,17 @@ export function scheduleMemoryReflection(): void {
   console.log('Scheduled memory reflection for 2:00 AM daily');
 }
 
-// Schedule Agent Thinking Time once daily during business hours (2pm ET)
+// Schedule Agent Thinking Time once daily during business hours (2pm ET) [MAY_INVOKE_LLM]
 export function scheduleAgentThinkingTime(): void {
   const job = cron.schedule(
     '0 14 * * 1-5',
     async () => {
+      if (!isAutonomousAIEnabled() || !(await isAIEnabled())) {
+        console.log(
+          '[AI-CONTROL] Agent thinking time skipped — autonomous AI or global AI disabled'
+        );
+        return;
+      }
       console.log('Running scheduled agent thinking time...');
       try {
         await runThinkingTime();
@@ -95,11 +116,15 @@ export function scheduleAgentThinkingTime(): void {
   console.log('Scheduled agent thinking time for 2pm ET weekdays');
 }
 
-// Schedule Feed Synthesis once daily during business hours (4pm ET)
+// Schedule Feed Synthesis once daily during business hours (4pm ET) [MAY_INVOKE_LLM]
 export function scheduleFeedSynthesis(): void {
   const job = cron.schedule(
     '0 16 * * 1-5',
     async () => {
+      if (!isAutonomousAIEnabled() || !(await isAIEnabled())) {
+        console.log('[AI-CONTROL] Feed synthesis skipped — autonomous AI or global AI disabled');
+        return;
+      }
       console.log('Running scheduled feed synthesis...');
       try {
         await cronFeedSynthesis();
@@ -158,11 +183,17 @@ export function scheduleWeeklyRollup(): void {
   console.log('Scheduled weekly rollup for 8:00 AM Monday');
 }
 
-// Schedule Discussion Processor 2x/week (Mon, Thu at 1pm ET)
+// Schedule Discussion Processor 2x/week (Mon, Thu at 1pm ET) [MAY_INVOKE_LLM]
 export function scheduleDiscussionProcessor(): void {
   const job = cron.schedule(
     '0 13 * * 1,4',
     async () => {
+      if (!isAutonomousAIEnabled() || !(await isAIEnabled())) {
+        console.log(
+          '[AI-CONTROL] Discussion processor skipped — autonomous AI or global AI disabled'
+        );
+        return;
+      }
       console.log('Running scheduled discussion processor...');
       try {
         await cronDiscussionProcessor();
