@@ -33,16 +33,24 @@ export class SAMSource implements OpportunitySource {
     }
 
     const since = input.since || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const naics = input.naicsCodes || ALL_NAICS;
+    const naicsCodes = input.naicsCodes || ALL_NAICS;
 
+    // SAM API ncode accepts a single NAICS code, not comma-separated.
+    // Fetch with primary NAICS only at the API level; downstream pipeline
+    // filters (hard-filters, pre-screen, scoring) handle relevance.
+    // If no NAICS match at API level, omit the filter to get broad results.
     const params = new URLSearchParams({
       api_key: apiKey,
       postedFrom: formatDate(since),
       postedTo: formatDate(new Date()),
       limit: String(input.limit || 100),
-      ncode: naics.join(','),
       ptype: 'p,r,s,o,k', // presolicitation, RFI, sources sought, solicitation, combined
     });
+
+    // Use primary NAICS for API-level filtering if single code
+    if (naicsCodes.length === 1) {
+      params.set('ncode', naicsCodes[0]);
+    }
 
     try {
       const response = await fetch(`${SAM_API_URL}?${params}`);
