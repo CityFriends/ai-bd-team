@@ -72,7 +72,12 @@ function getAnthropicClient(): Anthropic {
   if (!anthropicClient) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) throw new Error('Missing ANTHROPIC_API_KEY');
-    anthropicClient = new Anthropic({ apiKey });
+    const defaultHeaders: Record<string, string> = {};
+    // Admin/org-level API keys require workspace ID header
+    if (process.env.ANTHROPIC_WORKSPACE_ID) {
+      defaultHeaders['anthropic-workspace-id'] = process.env.ANTHROPIC_WORKSPACE_ID;
+    }
+    anthropicClient = new Anthropic({ apiKey, defaultHeaders });
   }
   return anthropicClient;
 }
@@ -168,14 +173,21 @@ export async function complete(request: InferenceRequest): Promise<InferenceResp
   }
 
   // 5. CONSERVATIVE COST ESTIMATION
-  //    Use min(estimated, maxInput) for input, maxOutput for output, with safety margin
+  //    Reserve for worst-case: bounded input + max output at model prices.
+  //    Use max(estimated, chars/3) to account for tokenizer variance.
   const estInput = estimateInputTokens(request.messages, request.systemPrompt);
-  const boundedInput = Math.min(estInput, maxInputTokens);
+  // Also compute a more conservative estimate: chars/3 (tokens are ~3-4 chars average)
+  let totalChars = 0;
+  for (const m of request.messages) totalChars += m.content.length;
+  if (request.systemPrompt) totalChars += request.systemPrompt.length;
+  const conservativeInput = Math.ceil(totalChars / 3); // More conservative than /4
+  const rawInput = Math.max(estInput, conservativeInput);
 
-  // Reject if input exceeds route max
-  if (estInput > maxInputTokens) {
-    throw new BudgetExceededError('input_size', request.purpose, maxInputTokens, estInput);
+  // Reject if input exceeds route max BEFORE bounding
+  if (rawInput > maxInputTokens) {
+    throw new BudgetExceededError('input_size', request.purpose, maxInputTokens, rawInput);
   }
+  const boundedInput = rawInput;
 
   const reservationCost = estimateMaxCost(provider, model, boundedInput, maxOutputTokens);
   if (reservationCost === null) {

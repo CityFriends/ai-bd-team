@@ -259,9 +259,9 @@ describe('Production Entrypoint: run-all.ts imports AI controls', () => {
     const content = fs.readFileSync(runAllPath, 'utf-8');
 
     // List of all autonomous job names that must be guarded
+    // Legacy maya-daily-scan and maya-weekly-summary removed — disabled in Milestone 3A
     const autonomousJobs = [
-      'maya-daily-scan',
-      'maya-weekly-summary',
+      'maya-review-processor',
       'david-news-digest',
       'patricia-standup',
       'action-scheduler',

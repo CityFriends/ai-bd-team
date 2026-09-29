@@ -8,6 +8,7 @@ import { patricia } from './patricia.js';
 import { marcus } from './marcus.js';
 import { registerButtonHandlers } from './button-handlers.js';
 import { registerSlashCommands } from './slash-commands.js';
+import { registerMayaActions } from '../production/maya/slack-surface.js';
 import { jodie } from './jodie.js';
 
 const agents = [
@@ -70,8 +71,10 @@ async function main() {
           if (mayaApp) {
             registerButtonHandlers(mayaApp);
             registerSlashCommands(mayaApp);
+            registerMayaActions(mayaApp);
             console.log(`✓ Interactive button handlers registered with Maya`);
             console.log(`✓ Slash commands (/pipeline) registered with Maya`);
+            console.log(`✓ Maya production action handlers registered`);
           }
         }
       } catch (err) {

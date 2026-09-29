@@ -59,28 +59,11 @@ async function runWithLogging(jobName: string, fn: () => Promise<void>): Promise
   }
 }
 
-// Agent scan functions
-async function runMayaDailyScan() {
-  const { acquireCronLock } = await import('../integrations/supabase.js');
-  const { acquired } = await acquireCronLock('maya-daily-scan', 10);
-  if (!acquired) {
-    console.log('[CRON] Maya daily scan: Another instance already running, skipping');
-    return;
-  }
-  const { runDailyScan } = await import('./maya-scanner.js');
-  await runDailyScan();
-}
-
-async function runMayaWeeklySummary() {
-  const { acquireCronLock } = await import('../integrations/supabase.js');
-  const { acquired } = await acquireCronLock('maya-weekly-summary', 15);
-  if (!acquired) {
-    console.log('[CRON] Maya weekly summary: Another instance already running, skipping');
-    return;
-  }
-  const { runWeeklySummary } = await import('./maya-scanner.js');
-  await runWeeklySummary();
-}
+// LEGACY — Maya scanner functions disabled in Milestone 3A
+// Superseded by production/maya/collector.ts + task-processor.ts
+// Remove after production Maya is validated.
+// async function runMayaDailyScan() { ... }
+// async function runMayaWeeklySummary() { ... }
 
 async function runDavidNewsDigest() {
   const { acquireCronLock } = await import('../integrations/supabase.js');
@@ -368,25 +351,13 @@ async function main() {
   // or invoke LLMs. Guarded by isAutonomousActivityPermitted().
   // ============================================================
 
-  // Maya Daily Scan: 8:00 AM CST Mon-Fri (14:00 UTC) [AUTONOMOUS: Slack post, SAM.gov, events, workflows]
-  cron.schedule('0 14 * * 1-5', async () => {
-    if (!(await isAutonomousActivityPermitted('maya-daily-scan'))) return;
-    try {
-      await runWithLogging('maya-daily-scan', runMayaDailyScan);
-    } catch (err) {
-      console.error(`[${new Date().toLocaleString()}] Maya: Daily scan failed:`, err);
-    }
-  });
+  // LEGACY DISABLED — Maya Daily Scan superseded by production/maya/collector.ts + task-processor.ts
+  // Original schedule: '0 14 * * 1-5' (8 AM CST Mon-Fri)
+  // Disabled in Milestone 3A. Remove after production Maya is validated.
 
-  // Maya Weekly Summary: 8:30 AM CST Friday (14:30 UTC) [AUTONOMOUS: Slack post, SAM.gov]
-  cron.schedule('30 14 * * 5', async () => {
-    if (!(await isAutonomousActivityPermitted('maya-weekly-summary'))) return;
-    try {
-      await runWithLogging('maya-weekly-summary', runMayaWeeklySummary);
-    } catch (err) {
-      console.error(`[${new Date().toLocaleString()}] Maya: Weekly summary failed:`, err);
-    }
-  });
+  // LEGACY DISABLED — Maya Weekly Summary superseded by production/maya/collector.ts
+  // Original schedule: '30 14 * * 5' (8:30 AM CST Friday)
+  // Disabled in Milestone 3A. Remove after production Maya is validated.
 
   // David News Digest: 10:00 AM CST Mon/Wed/Fri (16:00 UTC) [AUTONOMOUS: Slack post, LLM, news APIs]
   cron.schedule('0 16 * * 1,3,5', async () => {
@@ -525,6 +496,58 @@ async function main() {
       await runSystemEventProcessor();
     } catch (err) {
       // Silent fail - this runs frequently
+    }
+  });
+
+  // ============================================================
+  // MAYA PRODUCTION — DETERMINISTIC SOURCE COLLECTION
+  // ZERO LLM calls. Runs independently of AI controls.
+  // Controlled by ENABLE_SOURCE_COLLECTION flag.
+  // ============================================================
+
+  // Maya Opportunity Collector: Every 2 hours [DETERMINISTIC: SAM fetch, score, create events. Zero LLM.]
+  cron.schedule('0 */2 * * *', async () => {
+    const { isSourceCollectionEnabled } = await import('../config/ai-controls.js');
+    if (!isSourceCollectionEnabled()) {
+      console.log(
+        `[autonomous_job_skipped] job=maya-collector reason=ENABLE_SOURCE_COLLECTION=false ts=${new Date().toISOString()}`
+      );
+      return;
+    }
+    try {
+      const { runCollectorCycle } = await import('../production/maya/collector.js');
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabase = createClient(
+        process.env.SUPABASE_URL || '',
+        process.env.SUPABASE_SERVICE_KEY || ''
+      );
+      const result = await runCollectorCycle(supabase);
+      console.log(
+        `[${new Date().toLocaleString()}] Maya Collector: fetched=${result.fetched} new=${result.deduplicated} reviews=${result.reviewEventsCreated} errors=${result.errors.length}`
+      );
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Maya Collector failed:`, err);
+    }
+  });
+
+  // Maya Review Task Processor: Every 5 minutes [AUTONOMOUS: LLM via Gateway]
+  cron.schedule('*/5 * * * *', async () => {
+    if (!(await isAutonomousActivityPermitted('maya-review-processor'))) return;
+    try {
+      const { processPendingReviews } = await import('../production/maya/task-processor.js');
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabase = createClient(
+        process.env.SUPABASE_URL || '',
+        process.env.SUPABASE_SERVICE_KEY || ''
+      );
+      const result = await processPendingReviews(supabase);
+      if (result.processed > 0) {
+        console.log(
+          `[${new Date().toLocaleString()}] Maya Reviews: processed=${result.processed} evaluate=${result.evaluate} watch=${result.watch} pass=${result.pass} failed=${result.failed}`
+        );
+      }
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Maya Review Processor failed:`, err);
     }
   });
 
