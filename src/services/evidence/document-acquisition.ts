@@ -119,7 +119,7 @@ export function prioritizeAttachments(
       };
     })
     .filter((a) => a.priorityScore > 0)
-    .sort((a, b) => b.priorityScore - a.priorityScore)
+    .sort((a, b) => b.priorityScore - a.priorityScore || a.name.localeCompare(b.name))
     .slice(0, config.maxDocumentsPerOpportunity);
 }
 
@@ -324,10 +324,19 @@ export async function extractText(
         return { text: '', charCount: 0, method: 'ocr_required', truncated: false };
       }
 
-      const truncated = text.length > maxChars;
+      // Canonicalize whitespace for deterministic hashing — collapse runs
+      // of spaces/tabs to single space, normalize line endings, trim lines
+      const canonicalText = text
+        .split('\n')
+        .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+        .join('\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+
+      const truncated = canonicalText.length > maxChars;
       return {
-        text: text.slice(0, maxChars),
-        charCount: Math.min(text.length, maxChars),
+        text: canonicalText.slice(0, maxChars),
+        charCount: Math.min(canonicalText.length, maxChars),
         method: 'pdf_text',
         truncated,
       };
