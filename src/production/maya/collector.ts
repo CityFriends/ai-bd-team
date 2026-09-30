@@ -337,6 +337,9 @@ export async function runCollectorCycle(
           result.reviewEventsCreated++;
           reviewsThisCycle++;
           reviewsToday++;
+
+          // Deterministic ops notification — ZERO LLM
+          await notifyPendingReviewTask(opp, score, override.triggered, idempKey).catch(() => {});
         }
       }
     }
@@ -439,4 +442,39 @@ export async function runCollectorCycle(
   }
 
   return result;
+}
+
+/**
+ * Send a deterministic ops notification when a new review task is created.
+ * ZERO LLM calls. Uses the ops/admin channel, NOT Maya's opportunity channel.
+ */
+async function notifyPendingReviewTask(
+  opp: NormalizedOpportunity,
+  fitScore: number,
+  strategicOverride: boolean,
+  taskIdempKey: string
+): Promise<void> {
+  const opsChannel = process.env.SLACK_OPS_CHANNEL_ID || process.env.SLACK_CHANNEL_ID;
+  const token = process.env.MAYA_BOT_TOKEN || process.env.SLACK_BOT_TOKEN;
+  if (!opsChannel || !token) return;
+
+  try {
+    const { WebClient } = await import('@slack/web-api');
+    const client = new WebClient(token);
+    await client.chat.postMessage({
+      channel: opsChannel,
+      text: [
+        `[Maya Ops] New pending review task created`,
+        `Title: ${opp.title}`,
+        `Agency: ${opp.agency || 'Unknown'}`,
+        `Solicitation: ${opp.solicitationNumber || 'N/A'}`,
+        `Score: ${fitScore}/100${strategicOverride ? ' (strategic override)' : ''}`,
+        `Task key: ${taskIdempKey}`,
+        `Status: PENDING — awaiting Maya review authorization`,
+      ].join('\n'),
+      unfurl_links: false,
+    });
+  } catch {
+    // Notification failure is non-critical
+  }
 }
