@@ -15,6 +15,7 @@ import { matchPastPerformance } from '../../pipeline/maya/company-profile.js';
 import { classifyAcquisitionNature } from '../../pipeline/maya/acquisition-classifier.js';
 import { checkStrategicOverrides } from '../../pipeline/maya/strategic.js';
 import { SupabaseCompanyProfileRepository } from '../../pipeline/maya/company-repository.js';
+import { normalizeSetAside, formatSetAsideForPrompt } from '../../pipeline/maya/set-aside.js';
 import { emitEvent, MAYA_EVENT_TYPES } from './events.js';
 import type { NormalizedOpportunity } from '../../pipeline/maya/types.js';
 
@@ -30,7 +31,13 @@ export const MayaDecisionSchema = z.object({
   researchRequests: z
     .array(
       z.object({
-        type: z.string().max(30),
+        type: z.enum([
+          'SAM_FOLLOWUP',
+          'SOLICITATION_DOCUMENT_REVIEW',
+          'SOURCE_REFRESH',
+          'ACQUISITION_CLARIFICATION',
+          'CUSTOMER_INFORMATION_GAP',
+        ]),
         reason: z.string().max(200),
       })
     )
@@ -131,7 +138,16 @@ export async function processReviewTask(
     await ensureWorkflowBudget(supabase, wfScopeId, maxWfCost);
     await ensureTaskBudget(supabase, taskScopeId, maxTaskCost);
 
-    // 6. Build prompt
+    // 6. Normalize set-aside
+    const setAsideInfo = normalizeSetAside(
+      opp.set_aside,
+      opp.set_aside_description,
+      profile.certifications,
+      profile.setAsides
+    );
+    const setAsidePrompt = formatSetAsideForPrompt(setAsideInfo);
+
+    // 7. Build prompt
     const prompt = `You are Maya, opportunity intelligence analyst for ${profile.companyName}.
 
 MISSION: Should this opportunity receive further BD evaluation?
@@ -140,7 +156,7 @@ COMPANY: NAICS ${profile.naicsCodes.join(',')} | Certs: ${profile.certifications
 
 OPPORTUNITY: ${opp.title}
 Agency: ${opp.agency || 'Unknown'} | NAICS: ${opp.naics || 'N/A'} | PSC: ${opp.psc || 'N/A'}
-Set-aside: ${opp.set_aside_description || opp.set_aside || 'None'} | Deadline: ${opp.response_deadline?.slice(0, 10) || 'N/A'}
+Set-aside: ${setAsidePrompt} | Deadline: ${opp.response_deadline?.slice(0, 10) || 'N/A'}
 Acquisition: ${acq.nature} (${acq.confidence}) — ${acq.signals.slice(0, 3).join('; ')}
 
 SCORE: ${fitScore.totalScore}/100 ${JSON.stringify(fitScore.breakdown)}
@@ -159,7 +175,8 @@ SCOPE: ${(opp.description || '').slice(0, 1800)}
 REASONING: 1. What is being bought? 2. What maps to FFTC services? 3. Services or COTS? 4. CAN vs SHOULD compete.
 For clear COTS/licensing → PASS. For ambiguous → WATCH.
 
-Return ONLY JSON (no markdown): {"recommendation":"EVALUATE"|"WATCH"|"PASS","confidence":0-100,"acquisitionNature":"max200","fitReasons":["max3"],"concerns":["max3"],"evidenceUsed":["max5"],"missingInformation":["max3"],"researchRequests":[{"type":"","reason":""}],"rationale":"max600chars"}
+Return ONLY JSON (no markdown): {"recommendation":"EVALUATE"|"WATCH"|"PASS","confidence":0-100,"acquisitionNature":"max200","fitReasons":["max3"],"concerns":["max3"],"evidenceUsed":["max5"],"missingInformation":["max3"],"researchRequests":[{"type":"SAM_FOLLOWUP|SOLICITATION_DOCUMENT_REVIEW|SOURCE_REFRESH|ACQUISITION_CLARIFICATION|CUSTOMER_INFORMATION_GAP","reason":""}],"rationale":"max600chars"}
+Research types: SAM_FOLLOWUP (check SAM updates), SOLICITATION_DOCUMENT_REVIEW (review attached docs), SOURCE_REFRESH (re-fetch evidence), ACQUISITION_CLARIFICATION (ambiguous procurement type), CUSTOMER_INFORMATION_GAP (info humans should eventually pursue).
 Be concise. Max 3 reasons, 3 concerns. Do not repeat source text.`;
 
     // 7. Gateway call
@@ -171,6 +188,7 @@ Be concise. Max 3 reasons, 3 concerns. Do not repeat source text.`;
       messages: [{ role: 'user', content: prompt }],
       maxOutputTokens: 2048,
       maxCostUsd: maxTaskCost,
+      workflowId: wfScopeId,
       taskId: taskScopeId,
       opportunityId: task.opportunity_id,
     });

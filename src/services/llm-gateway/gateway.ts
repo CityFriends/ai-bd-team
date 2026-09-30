@@ -49,7 +49,11 @@ import {
   isPricingAvailable,
   estimateInputTokens,
 } from './pricing.js';
-import { needsRefresh as routingNeedsRefresh, refreshRoutes } from './routing.js';
+import {
+  needsRefresh as routingNeedsRefresh,
+  refreshRoutes,
+  getAllEnabledRoutes,
+} from './routing.js';
 import {
   reserveBudget,
   settleBudget,
@@ -126,6 +130,23 @@ function validateAttribution(request: InferenceRequest | EmbeddingRequest): void
 // Cache refresh
 // ============================================================
 
+let routePricingValidated = false;
+
+function validateRoutePricingConsistency(): void {
+  if (routePricingValidated) return;
+  routePricingValidated = true;
+
+  const routes = getAllEnabledRoutes();
+  for (const route of routes) {
+    const pricing = getPricing(route.provider, route.model);
+    if (!pricing) {
+      console.error(
+        `[Gateway] MISCONFIGURATION: Route ${route.taskType} → ${route.provider}:${route.model} has no pricing row. Inference will fail closed at call time.`
+      );
+    }
+  }
+}
+
 async function ensurePricingAndRouting(): Promise<void> {
   const supabase = getSupabase();
   if (pricingNeedsRefresh()) {
@@ -139,6 +160,10 @@ async function ensurePricingAndRouting(): Promise<void> {
   if (routingNeedsRefresh()) {
     await refreshRoutes(supabase).catch(() => {});
   }
+
+  // Validate: every enabled route must have a corresponding pricing row.
+  // Log warnings for misconfigured routes (fail-closed happens at call time).
+  validateRoutePricingConsistency();
 }
 
 // ============================================================

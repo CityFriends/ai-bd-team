@@ -330,6 +330,73 @@ describe.skipIf(!HAS_DB)('PostgreSQL Budget Integration', () => {
   });
 
   // ============================================================
+  // Hierarchical settlement: all linked scopes reflect spend
+  // ============================================================
+  it('settlement updates ALL hierarchical scopes: global, workflow, task', async () => {
+    const globalBefore = await getScope(testScopeGlobal);
+    const wfBefore = await getScope(testScopeWorkflowA);
+    const taskBefore = await getScope(testScopeTask);
+
+    // Reserve across all 3 scopes
+    const { data: res } = await supabase.rpc('reserve_inference_hierarchical', {
+      p_idempotency_key: `test:${testRunId}:hier-settle`,
+      p_agent_id: 'maya',
+      p_purpose: 'classify',
+      p_task_type: 'test',
+      p_provider: 'anthropic',
+      p_model: 'test',
+      p_model_tier: 'haiku',
+      p_estimated_input_tokens: 500,
+      p_max_input_tokens: 1000,
+      p_max_output_tokens: 200,
+      p_reserved_cost_usd: 0.01,
+      p_scope_ids: [testScopeGlobal, testScopeWorkflowA, testScopeTask],
+    });
+    expect(res?.is_new).toBe(true);
+
+    // Verify all scopes have increased reserved
+    const globalReserved = await getScope(testScopeGlobal);
+    expect(Number(globalReserved.reserved_usd)).toBeGreaterThan(Number(globalBefore.reserved_usd));
+    const wfReserved = await getScope(testScopeWorkflowA);
+    expect(Number(wfReserved.reserved_usd)).toBeGreaterThan(Number(wfBefore.reserved_usd));
+    const taskReserved = await getScope(testScopeTask);
+    expect(Number(taskReserved.reserved_usd)).toBeGreaterThan(Number(taskBefore.reserved_usd));
+
+    // Mark in-progress then settle at lower actual cost
+    await supabase.rpc('mark_inference_in_progress', { p_ledger_id: res.ledger_id });
+    const { error: settleErr } = await supabase.rpc('settle_inference', {
+      p_ledger_id: res.ledger_id,
+      p_actual_input_tokens: 400,
+      p_actual_output_tokens: 100,
+      p_actual_cost_usd: 0.004,
+    });
+    expect(settleErr).toBeNull();
+
+    // After settlement: all scopes should have reserved=0 increase, spent += $0.004
+    const globalAfter = await getScope(testScopeGlobal);
+    const wfAfter = await getScope(testScopeWorkflowA);
+    const taskAfter = await getScope(testScopeTask);
+
+    // Spent increased by exactly $0.004 on each scope
+    const globalSpentDelta = Number(globalAfter.spent_usd) - Number(globalBefore.spent_usd);
+    const wfSpentDelta = Number(wfAfter.spent_usd) - Number(wfBefore.spent_usd);
+    const taskSpentDelta = Number(taskAfter.spent_usd) - Number(taskBefore.spent_usd);
+
+    expect(globalSpentDelta).toBeCloseTo(0.004, 4);
+    expect(wfSpentDelta).toBeCloseTo(0.004, 4);
+    expect(taskSpentDelta).toBeCloseTo(0.004, 4);
+
+    // Reserved returned to before (reservation released)
+    expect(Number(globalAfter.reserved_usd)).toBeLessThanOrEqual(
+      Number(globalBefore.reserved_usd) + 0.001
+    );
+    expect(Number(wfAfter.reserved_usd)).toBeLessThanOrEqual(Number(wfBefore.reserved_usd) + 0.001);
+    expect(Number(taskAfter.reserved_usd)).toBeLessThanOrEqual(
+      Number(taskBefore.reserved_usd) + 0.001
+    );
+  });
+
+  // ============================================================
   // Reconciliation concurrency
   // ============================================================
   it('reconciliation: no double release, no negative balances', async () => {

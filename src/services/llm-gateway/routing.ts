@@ -136,6 +136,10 @@ export function getRoute(taskType: TaskType): ModelRoute {
   return route;
 }
 
+export function getAllEnabledRoutes(): ModelRoute[] {
+  return Array.from(routeCache.values()).filter((r) => r.enabled);
+}
+
 export function needsRefresh(): boolean {
   return Date.now() - lastRefresh > REFRESH_INTERVAL_MS;
 }

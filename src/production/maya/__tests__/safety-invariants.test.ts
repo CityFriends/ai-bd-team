@@ -81,7 +81,7 @@ describe('Safety Invariants', () => {
       concerns: ['Tight deadline'],
       evidenceUsed: ['PWS section 5.1'],
       missingInformation: ['Contract value'],
-      researchRequests: [{ type: 'INCUMBENT', reason: 'Identify current provider' }],
+      researchRequests: [{ type: 'CUSTOMER_INFORMATION_GAP', reason: 'Identify current provider' }],
       rationale: 'Strong FFTC fit for VA digital modernization.',
     };
     expect(() => MayaDecisionSchema.parse(valid)).not.toThrow();
