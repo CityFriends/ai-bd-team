@@ -552,6 +552,59 @@ async function main() {
   });
 
   // ============================================================
+  // JAMES CAPTURE ORCHESTRATION
+  // Processes pending captures through assessment → research → recommendation.
+  // Guarded by JAMES_CAPTURE_ENABLED + autonomous AI controls.
+  // ============================================================
+
+  // James Capture Orchestrator: Every 5 minutes [AUTONOMOUS: LLM via Gateway]
+  cron.schedule('*/5 * * * *', async () => {
+    if (!(await isAutonomousActivityPermitted('james-capture-orchestrator'))) return;
+    const { getFeatureFlag, FEATURE_FLAGS } = await import('../config/ai-controls.js');
+    if (!getFeatureFlag(FEATURE_FLAGS.JAMES_CAPTURE_ENABLED)) return;
+    try {
+      const { processPendingCaptures } = await import('../production/james/orchestrator.js');
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabase = createClient(
+        process.env.SUPABASE_URL || '',
+        process.env.SUPABASE_SERVICE_KEY || ''
+      );
+      const result = await processPendingCaptures(supabase);
+      if (result.processed > 0) {
+        console.log(
+          `[${new Date().toLocaleString()}] James Orchestrator: processed=${result.processed} assessments=${result.initialAssessments} resynth=${result.resyntheses} ready=${result.recommendationsReady}`
+        );
+      }
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] James Orchestrator failed:`, err);
+    }
+  });
+
+  // James Specialist Executor: Every 5 minutes [AUTONOMOUS: test fixtures in 3B]
+  cron.schedule('*/5 * * * *', async () => {
+    if (!(await isAutonomousActivityPermitted('james-capture-orchestrator'))) return;
+    const { getFeatureFlag, FEATURE_FLAGS } = await import('../config/ai-controls.js');
+    if (!getFeatureFlag(FEATURE_FLAGS.JAMES_CAPTURE_ENABLED)) return;
+    try {
+      const { processPendingSpecialistTasks } =
+        await import('../production/james/specialist-executor.js');
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabase = createClient(
+        process.env.SUPABASE_URL || '',
+        process.env.SUPABASE_SERVICE_KEY || ''
+      );
+      const result = await processPendingSpecialistTasks(supabase);
+      if (result.processed > 0) {
+        console.log(
+          `[${new Date().toLocaleString()}] Specialist Executor: processed=${result.processed} completed=${result.completed} failed=${result.failed}`
+        );
+      }
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Specialist Executor failed:`, err);
+    }
+  });
+
+  // ============================================================
   // SCHEDULED JOBS - SAFE_INTERNAL_MAINTENANCE
   // No Slack posts, no LLM, no external APIs, no event/workflow creation.
   // These run regardless of AI control state.

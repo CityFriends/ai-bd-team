@@ -9,6 +9,7 @@ import { marcus } from './marcus.js';
 import { registerButtonHandlers } from './button-handlers.js';
 import { registerSlashCommands } from './slash-commands.js';
 import { registerMayaActions } from '../production/maya/slack-surface.js';
+import { registerJamesActions } from '../production/james/slack-surface.js';
 import { jodie } from './jodie.js';
 
 const agents = [
@@ -72,9 +73,11 @@ async function main() {
             registerButtonHandlers(mayaApp);
             registerSlashCommands(mayaApp);
             registerMayaActions(mayaApp);
+            registerJamesActions(mayaApp);
             console.log(`✓ Interactive button handlers registered with Maya`);
             console.log(`✓ Slash commands (/pipeline) registered with Maya`);
             console.log(`✓ Maya production action handlers registered`);
+            console.log(`✓ James capture action handlers registered`);
           }
         }
       } catch (err) {

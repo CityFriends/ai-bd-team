@@ -22,10 +22,13 @@
 import 'dotenv/config';
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { createClient } from '@supabase/supabase-js';
+import { getEnvironmentRole } from '../../../config/environment.js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const HAS_DB = Boolean(SUPABASE_URL && SUPABASE_KEY);
+const IS_PRODUCTION = getEnvironmentRole() === 'production';
+const CAN_RUN_DB_TESTS = HAS_DB && !IS_PRODUCTION;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let supabase: any;
@@ -80,7 +83,7 @@ async function cleanupTest() {
   await supabase.from('ai_budget_scopes').delete().eq('scope_id', `test-task-${testRunId}`);
 }
 
-describe.skipIf(!HAS_DB)('PostgreSQL Budget Integration', () => {
+describe.skipIf(!CAN_RUN_DB_TESTS)('PostgreSQL Budget Integration', () => {
   beforeAll(async () => {
     supabase = createClient(SUPABASE_URL!, SUPABASE_KEY!);
     testRunId = Math.random().toString(36).slice(2, 10);

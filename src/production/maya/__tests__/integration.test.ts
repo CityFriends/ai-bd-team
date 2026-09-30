@@ -14,12 +14,16 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createClient } from '@supabase/supabase-js';
 import { emitEvent, MAYA_EVENT_TYPES } from '../events.js';
 
+import { getEnvironmentRole } from '../../../config/environment.js';
+
 const HAS_DB = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY);
+const IS_PRODUCTION = getEnvironmentRole() === 'production';
+const CAN_RUN_DB_TESTS = HAS_DB && !IS_PRODUCTION;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let supabase: any;
 let testRunId: string;
 
-describe.skipIf(!HAS_DB)('Maya Production Integration', () => {
+describe.skipIf(!CAN_RUN_DB_TESTS)('Maya Production Integration', () => {
   beforeAll(() => {
     supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!);
     testRunId = Math.random().toString(36).slice(2, 8);
@@ -47,6 +51,13 @@ describe.skipIf(!HAS_DB)('Maya Production Integration', () => {
       .from('slack_opportunity_briefs')
       .delete()
       .like('opportunity_id', `test-opp-${testRunId}%`);
+    // Clean captures created by handleSendToCapture
+    await supabase.from('captures').delete().like('opportunity_id', `test-opp-${testRunId}%`);
+    await supabase
+      .from('opportunity_events')
+      .delete()
+      .like('idempotency_key', `evt:capture-started:%`);
+    await supabase.from('ai_budget_scopes').delete().like('scope_id', `capture-%`);
     await supabase
       .from('pipeline_opportunities')
       .delete()

@@ -262,6 +262,7 @@ describe('Production Entrypoint: run-all.ts imports AI controls', () => {
     // Legacy maya-daily-scan and maya-weekly-summary removed — disabled in Milestone 3A
     const autonomousJobs = [
       'maya-review-processor',
+      'james-capture-orchestrator',
       'david-news-digest',
       'patricia-standup',
       'action-scheduler',

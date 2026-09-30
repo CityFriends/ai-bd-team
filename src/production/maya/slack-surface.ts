@@ -531,9 +531,44 @@ export async function handleSendToCapture(
       .eq('source_id', opportunityId);
   }
 
+  // Create capture aggregate (fast, bounded — no James inference here)
+  try {
+    const { createCapture } = await import('../james/capture-manager.js');
+
+    // Get material hash and thread info from the opportunity brief
+    const { data: oppData } = await supabase
+      .from('pipeline_opportunities')
+      .select('material_hash')
+      .eq('source_id', opportunityId)
+      .single();
+
+    const { data: briefData } = await supabase
+      .from('slack_opportunity_briefs')
+      .select('channel_id, thread_ts, message_ts')
+      .eq('opportunity_id', opportunityId)
+      .single();
+
+    if (oppData?.material_hash && briefData) {
+      await createCapture(
+        supabase,
+        opportunityId,
+        oppData.material_hash,
+        userId,
+        eventId || 'unknown',
+        briefData.channel_id || '',
+        briefData.thread_ts || briefData.message_ts || ''
+      );
+    }
+  } catch (captureErr) {
+    console.error(
+      '[SlackSurface] Capture creation failed (non-blocking):',
+      captureErr instanceof Error ? captureErr.message : captureErr
+    );
+  }
+
   return {
     success: true,
-    message: 'Capture handoff recorded. James workflow will be enabled in the next milestone.',
+    message: 'Capture initiated. James is evaluating this opportunity.',
   };
 }
 
@@ -818,16 +853,7 @@ export async function handleDismiss(
 export function registerMayaActions(app: any): void {
   app.action(
     'maya_send_to_capture',
-    async ({
-      ack,
-      body,
-      client,
-    }:  
-    {
-      ack: () => Promise<void>;
-      body: any;
-      client: any;
-    }) => {
+    async ({ ack, body, client }: { ack: () => Promise<void>; body: any; client: any }) => {
       await ack();
 
       const userId = body.user.id;
@@ -875,16 +901,7 @@ export function registerMayaActions(app: any): void {
 
   app.action(
     'maya_more_research',
-    async ({
-      ack,
-      body,
-      client,
-    }:  
-    {
-      ack: () => Promise<void>;
-      body: any;
-      client: any;
-    }) => {
+    async ({ ack, body, client }: { ack: () => Promise<void>; body: any; client: any }) => {
       await ack();
 
       const userId = body.user.id;
@@ -931,16 +948,7 @@ export function registerMayaActions(app: any): void {
 
   app.action(
     'maya_dismiss',
-    async ({
-      ack,
-      body,
-      client,
-    }:  
-    {
-      ack: () => Promise<void>;
-      body: any;
-      client: any;
-    }) => {
+    async ({ ack, body, client }: { ack: () => Promise<void>; body: any; client: any }) => {
       await ack();
 
       const userId = body.user.id;

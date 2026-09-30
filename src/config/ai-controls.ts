@@ -34,6 +34,8 @@ export const FEATURE_FLAGS = {
   ENABLE_SOURCE_COLLECTION: 'ENABLE_SOURCE_COLLECTION',
   /** Maya Slack projection (Stage C). Fail closed if missing. */
   MAYA_SLACK_PROJECTION_ENABLED: 'MAYA_SLACK_PROJECTION_ENABLED',
+  /** James Capture Orchestration (3B). Fail closed if missing. */
+  JAMES_CAPTURE_ENABLED: 'JAMES_CAPTURE_ENABLED',
 } as const;
 
 /** Default values for all feature flags — ALL OFF for safety */
@@ -47,6 +49,7 @@ const FLAG_DEFAULTS: Record<string, boolean> = {
   [FEATURE_FLAGS.ENABLE_NEWS_REACTIONS]: false,
   [FEATURE_FLAGS.ENABLE_SOURCE_COLLECTION]: false,
   [FEATURE_FLAGS.MAYA_SLACK_PROJECTION_ENABLED]: false,
+  [FEATURE_FLAGS.JAMES_CAPTURE_ENABLED]: false,
 };
 
 // Short negative cache to avoid hammering DB on repeated disabled checks
