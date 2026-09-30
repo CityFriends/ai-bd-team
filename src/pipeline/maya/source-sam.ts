@@ -35,42 +35,48 @@ export class SAMSource implements OpportunitySource {
     const since = input.since || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const naicsCodes = input.naicsCodes || ALL_NAICS;
 
-    // SAM API ncode accepts a single NAICS code, not comma-separated.
-    // Fetch with primary NAICS only at the API level; downstream pipeline
-    // filters (hard-filters, pre-screen, scoring) handle relevance.
-    // If no NAICS match at API level, omit the filter to get broad results.
-    const params = new URLSearchParams({
-      api_key: apiKey,
-      postedFrom: formatDate(since),
-      postedTo: formatDate(new Date()),
-      limit: String(input.limit || 100),
-      ptype: 'p,r,s,o,k', // presolicitation, RFI, sources sought, solicitation, combined
-    });
+    // SAM API ncode accepts a single NAICS code only.
+    // Fetch per-NAICS to ensure coverage of all relevant codes,
+    // then deduplicate by noticeId.
+    const perCodeLimit = Math.max(50, Math.floor((input.limit || 100) / naicsCodes.length));
+    const seen = new Set<string>();
+    const allResults: RawOpportunity[] = [];
 
-    // Use primary NAICS for API-level filtering if single code
-    if (naicsCodes.length === 1) {
-      params.set('ncode', naicsCodes[0]);
-    }
+    for (const ncode of naicsCodes) {
+      const params = new URLSearchParams({
+        api_key: apiKey,
+        postedFrom: formatDate(since),
+        postedTo: formatDate(new Date()),
+        limit: String(perCodeLimit),
+        ncode,
+        ptype: 'p,r,s,o,k',
+      });
 
-    try {
-      const response = await fetch(`${SAM_API_URL}?${params}`);
-      if (!response.ok) {
-        console.error(`[SAMSource] API error: ${response.status}`);
-        return [];
+      try {
+        const response = await fetch(`${SAM_API_URL}?${params}`);
+        if (!response.ok) {
+          console.error(`[SAMSource] API error for NAICS ${ncode}: ${response.status}`);
+          continue;
+        }
+
+        const data = (await response.json()) as { opportunitiesData?: unknown[] };
+        for (const raw of data.opportunitiesData || []) {
+          const id = ((raw as Record<string, unknown>).noticeId as string) || '';
+          if (id && !seen.has(id)) {
+            seen.add(id);
+            allResults.push({
+              sourceId: id,
+              sourceName: 'sam_gov',
+              rawPayload: raw as Record<string, unknown>,
+            });
+          }
+        }
+      } catch (err) {
+        console.error(`[SAMSource] Fetch error for NAICS ${ncode}:`, err);
       }
-
-      const data = (await response.json()) as { opportunitiesData?: unknown[] };
-      const opportunities = data.opportunitiesData || [];
-
-      return opportunities.map((raw: unknown) => ({
-        sourceId: ((raw as Record<string, unknown>).noticeId as string) || '',
-        sourceName: 'sam_gov',
-        rawPayload: raw as Record<string, unknown>,
-      }));
-    } catch (err) {
-      console.error('[SAMSource] Fetch error:', err);
-      return [];
     }
+
+    return allResults;
   }
 
   normalize(raw: RawOpportunity): NormalizedOpportunity {
