@@ -387,17 +387,21 @@ export async function runCollectorCycle(
     }
 
     // 7. Update sync state — only advance cursor if source was completely consumed
-    const sourceComplete = !source.fetchStats.some((s) => s.truncated);
+    const sourceComplete = !source.fetchStats.some((s) => s.truncated || s.failed);
+    const incompleteQueries = source.fetchStats
+      .filter((s) => s.truncated || s.failed)
+      .map(
+        (s) =>
+          `${s.lane}/${s.query}${s.failed ? ' (FAILED: ' + s.failureReason + ')' : ' (truncated)'}`
+      )
+      .join(', ');
     const newCursor = sourceComplete
       ? new Date().toISOString()
-      : syncState?.last_sync_cursor || new Date().toISOString(); // Preserve prior cursor if incomplete
+      : syncState?.last_sync_cursor || new Date().toISOString();
 
     if (!sourceComplete) {
       console.warn(
-        `[Collector] Source retrieval incomplete — cursor NOT advanced. Truncated queries: ${source.fetchStats
-          .filter((s) => s.truncated)
-          .map((s) => `${s.lane}/${s.query}`)
-          .join(', ')}`
+        `[Collector] Source retrieval incomplete — cursor NOT advanced. ${incompleteQueries}`
       );
     }
 
