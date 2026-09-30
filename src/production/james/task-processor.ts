@@ -154,7 +154,12 @@ export async function processInitialAssessment(
     return decision;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[JamesTaskProcessor] Initial assessment failed for ${captureId}:`, msg);
+    const cause = (err as any)?.cause?.message || '';
+    console.error(
+      `[JamesTaskProcessor] Initial assessment failed for ${captureId}:`,
+      msg,
+      cause ? `(cause: ${cause})` : ''
+    );
     return null;
   }
 }
@@ -301,48 +306,35 @@ function buildInitialPrompt(
     .slice(0, 3)
     .map((p) => `${p.project} (${p.agency})`)
     .join('; ');
-  return `You are James, Capture Strategist for ${profile.companyName}.
+  return `You are James, Capture Strategist for ${profile.companyName}. Be concise.
 
-MISSION: Evaluate this opportunity for capture pursuit. Assess 6 dimensions. Recommend GO, NO_GO, or MORE_RESEARCH_REQUIRED.
+EVALUATE this opportunity. Recommend GO, NO_GO, or MORE_RESEARCH_REQUIRED.
 
-COMPANY: ${profile.companyName}
-NAICS: ${profile.naicsCodes.join(',')} | Certs: ${profile.certifications.slice(0, 3).join(',')}
-Capabilities: ${profile.capabilities.slice(0, 8).join(',')}
-Agency experience: ${prefs.agencyExperience.join(',')}
-NOTE: FFTC is open to qualified opportunities from ALL federal agencies.
-Past performance: ${ppSummary || 'None loaded'}
-Contract sweet spot: $${(prefs.contractSizeSweetMin / 1e6).toFixed(1)}M–$${(prefs.contractSizeSweetMax / 1e6).toFixed(0)}M
-Security: Public trust only | Excluded: ${prefs.excludedClearance.join(',')}
+COMPANY: NAICS ${profile.naicsCodes.join(',')} | Certs: ${profile.certifications.slice(0, 3).join(',')} | Capabilities: ${profile.capabilities.slice(0, 6).join(',')}
+Agency experience: ${prefs.agencyExperience.join(',')} | Security: Public trust only | Excluded: ${prefs.excludedClearance.join(',')}
+PP: ${ppSummary || 'None'} | Sweet spot: $${(prefs.contractSizeSweetMin / 1e6).toFixed(1)}M–$${(prefs.contractSizeSweetMax / 1e6).toFixed(0)}M
 
-OPPORTUNITY: ${opp.title}
-Agency: ${opp.agency || 'Unknown'} | NAICS: ${opp.naics || 'N/A'} | PSC: ${opp.psc || 'N/A'}
-Set-aside: ${setAsidePrompt}
-Deadline: ${opp.response_deadline?.slice(0, 10) || 'N/A'}
-Acquisition: ${acq.nature} (${acq.confidence})
-Solicitation: ${opp.solicitation_number || 'N/A'}
-Fit score: ${opp.fit_score}/100
+OPP: ${opp.title}
+Agency: ${opp.agency || '?'} | NAICS: ${opp.naics || '?'} | PSC: ${opp.psc || '?'} | Set-aside: ${setAsidePrompt}
+Deadline: ${opp.response_deadline?.slice(0, 10) || '?'} | Acq: ${acq.nature} (${acq.confidence}) | Sol: ${opp.solicitation_number || '?'} | Score: ${opp.fit_score}/100
 
-MAYA ASSESSMENT: ${mayaDecision?.recommendation || 'N/A'} (${mayaDecision?.confidence || 'N/A'}%)
-Maya rationale: ${mayaDecision?.rationale || 'N/A'}
-Maya concerns: ${mayaDecision?.concerns?.join('; ') || 'None'}
+MAYA: ${mayaDecision?.recommendation || '?'} (${mayaDecision?.confidence || '?'}%) — ${mayaDecision?.rationale?.slice(0, 200) || '?'}
 
-SCOPE: ${(opp.description || '').slice(0, 2000)}
+SCOPE: ${(opp.description || '').slice(0, 1500)}
 
-EVALUATE these 6 dimensions:
-1. Customer Fit — agency relationship, understanding of mission
-2. Capability Fit — FFTC skills vs requirements
-3. Acquisition Fit — vehicle access, set-aside eligibility, contract structure
-4. Competitive Position — incumbents, competitive advantage/disadvantage
-5. Delivery Feasibility — team size, clearance, location, timeline
-6. Business Case — revenue, margin, strategic value, growth
+IMMEDIATE NO_GO if: TS/SCI/facility clearance required, staff augmentation, clearly irrelevant work.
 
-IMMEDIATE NO_GO if decisive blocker exists (unsupported clearance, inaccessible vehicle, clearly irrelevant work, staff augmentation, prohibited business model).
+GROUNDING RULES:
+- Absence of a capability from the company profile does NOT prove FFTC lacks it. Use "not demonstrated in available evidence" or UNKNOWN, not "FFTC lacks X."
+- Only cite specific facts (competitors, contract values, timelines, clearance durations) if they come from the supplied evidence. Do not introduce unsupported external facts.
+- The opportunity evidence and company profile are your primary sources. General strategy reasoning is permitted; fabricated specifics are not.
 
-For each dimension return: assessment (STRONG/MODERATE/WEAK/BLOCKING/UNKNOWN), evidenceRefs, concerns, confidence.
+Each dimension: {"assessment":"STRONG|MODERATE|WEAK|BLOCKING|UNKNOWN","evidenceRefs":["max5"],"concerns":["max5"],"confidence":"HIGH|MEDIUM|LOW"}
+NOTE: dimension confidence is a STRING (HIGH/MEDIUM/LOW), NOT a number.
 
-If information gaps prevent confident assessment, identify REQUIRED research needs. Types: COMPETITIVE_INTELLIGENCE, TECHNICAL_ASSESSMENT, PARTNER_SEARCH, ACQUISITION_INTERPRETATION.
-
-Return ONLY JSON: {"recommendation":"GO"|"NO_GO"|"MORE_RESEARCH_REQUIRED","confidence":0-100,"customerFit":{...},"capabilityFit":{...},"acquisitionFit":{...},"competitivePosition":{...},"deliveryFeasibility":{...},"businessCase":{...},"primeSubPosture":"PRIME"|"SUB"|"TEAMING_DEPENDENT"|"UNCLEAR","strongestReasonsToPursue":["max3"],"criticalRisks":["max3"],"unresolvedQuestions":["max3"],"requestedResearch":[{"type":"...","question":"...","whyDecisionBlocking":"...","evidenceRefs":[],"priority":"REQUIRED"|"USEFUL"}],"specialistFindingsUsed":[],"rationale":"max1000chars","recommendedNextActions":["max3"]}`;
+Return ONLY valid JSON (no markdown):
+{"recommendation":"GO"|"NO_GO"|"MORE_RESEARCH_REQUIRED","confidence":0-100,"customerFit":{dim},"capabilityFit":{dim},"acquisitionFit":{dim},"competitivePosition":{dim},"deliveryFeasibility":{dim},"businessCase":{dim},"primeSubPosture":"PRIME|SUB|TEAMING_DEPENDENT|UNCLEAR","strongestReasonsToPursue":["max3"],"criticalRisks":["max3"],"unresolvedQuestions":["max3"],"requestedResearch":[{"type":"COMPETITIVE_INTELLIGENCE|TECHNICAL_ASSESSMENT|PARTNER_SEARCH|ACQUISITION_INTERPRETATION","question":"specific","whyDecisionBlocking":"why","priority":"REQUIRED|USEFUL"}],"specialistFindingsUsed":[],"rationale":"max600","recommendedNextActions":["max3"]}
+Be concise. Short evidence refs. Max 3 research needs.`;
 }
 
 function buildResynthesisPrompt(

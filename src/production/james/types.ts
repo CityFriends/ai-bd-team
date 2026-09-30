@@ -14,7 +14,7 @@ import { z } from 'zod';
 export const CaptureDimensionSchema = z.object({
   assessment: z.enum(['STRONG', 'MODERATE', 'WEAK', 'BLOCKING', 'UNKNOWN']),
   evidenceRefs: z.array(z.string().max(200)).max(5),
-  concerns: z.array(z.string().max(200)).max(3),
+  concerns: z.array(z.string().max(200)).max(5),
   confidence: z.enum(['HIGH', 'MEDIUM', 'LOW']),
 });
 
@@ -33,7 +33,7 @@ export const ResearchNeedSchema = z.object({
   ]),
   question: z.string().max(300),
   whyDecisionBlocking: z.string().max(300),
-  evidenceRefs: z.array(z.string().max(200)).max(3),
+  evidenceRefs: z.array(z.string().max(200)).max(3).default([]),
   priority: z.enum(['REQUIRED', 'USEFUL']),
 });
 
@@ -64,7 +64,7 @@ export const JamesCaptureDecisionSchema = z.object({
 
   specialistFindingsUsed: z.array(z.string().max(200)).max(5),
 
-  rationale: z.string().max(1000),
+  rationale: z.string().max(1500),
 
   recommendedNextActions: z.array(z.string().max(200)).max(3),
 });
