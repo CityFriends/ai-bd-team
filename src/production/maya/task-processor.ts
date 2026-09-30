@@ -17,6 +17,7 @@ import { checkStrategicOverrides } from '../../pipeline/maya/strategic.js';
 import { SupabaseCompanyProfileRepository } from '../../pipeline/maya/company-repository.js';
 import { normalizeSetAside, formatSetAsideForPrompt } from '../../pipeline/maya/set-aside.js';
 import { emitEvent, MAYA_EVENT_TYPES } from './events.js';
+import { postOpportunityBrief } from './slack-surface.js';
 import type { NormalizedOpportunity } from '../../pipeline/maya/types.js';
 
 // Compact Zod schema — bounded arrays and string lengths
@@ -246,6 +247,41 @@ Be concise. Max 3 reasons, 3 concerns. Do not repeat source text.`;
       schemaVersion: 1,
       payload: { recommendation: decision.recommendation, confidence: decision.confidence, taskId },
     });
+
+    // 12. Post to Slack if EVALUATE and projection enabled
+    if (decision.recommendation === 'EVALUATE') {
+      try {
+        const channelId = process.env.SLACK_CHANNEL_ID;
+        const slackToken = process.env.MAYA_BOT_TOKEN || process.env.SLACK_BOT_TOKEN;
+        if (channelId && slackToken) {
+          const { WebClient } = await import('@slack/web-api');
+          const slackClient = new WebClient(slackToken);
+          await postOpportunityBrief(
+            supabase,
+            slackClient,
+            channelId,
+            task.opportunity_id,
+            taskId,
+            {
+              title: opp.title,
+              agency: opp.agency,
+              setAside: setAsidePrompt,
+              naics: opp.naics,
+              responseDeadline: opp.response_deadline,
+              sourceUrl: opp.source_url,
+            },
+            decision,
+            opp.material_hash
+          );
+        }
+      } catch (slackErr) {
+        console.error(
+          `[MayaTaskProcessor] Slack projection failed:`,
+          slackErr instanceof Error ? slackErr.message : slackErr
+        );
+        // Slack failure does not fail the review — DB state is authoritative
+      }
+    }
 
     return decision;
   } catch (err) {
