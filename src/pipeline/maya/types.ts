@@ -190,7 +190,7 @@ export interface CompanyProfileSummary {
   setAsides: string[];
   vehicles: string[];
   coreCapabilities: string[];
-  strategicAgencies: string[];
+  agencyExperience: string[];
   securityClearance: string;
   primeSubStrategy: string;
   contractSizeRange: { min: number; max: number };

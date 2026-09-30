@@ -161,16 +161,16 @@ function scoreAgencyFit(
   if (!agencyText) return { score: 0.2, reasons: ['Agency unknown'] };
   const canonical = normalizeAgency(agencyText);
 
-  // Check strategic agencies — exact canonical match
-  if (ctx.preferences.strategicAgencies.some((a) => agenciesMatch(agencyText, a))) {
-    return { score: 1.0, reasons: [`Strategic agency: ${canonical}`] };
-  }
-  // Check experienced agencies — exact canonical match
-  if (ctx.profile.agencyExperience.some((a) => agenciesMatch(agencyText, a))) {
-    return { score: 0.7, reasons: [`Experienced agency: ${canonical}`] };
+  // Check agency experience — exact canonical match (prior work relationship)
+  const allExperienceAgencies = [
+    ...ctx.preferences.agencyExperience,
+    ...ctx.profile.agencyExperience,
+  ];
+  if (allExperienceAgencies.some((a) => agenciesMatch(agencyText, a))) {
+    return { score: 0.7, reasons: [`Agency experience: ${canonical}`] };
   }
   // Check department-level adjacency (weaker signal)
-  if (ctx.preferences.strategicAgencies.some((a) => agenciesRelated(agencyText, a))) {
+  if (allExperienceAgencies.some((a) => agenciesRelated(agencyText, a))) {
     return { score: 0.5, reasons: [`Related department: ${canonical}`] };
   }
   return { score: 0.25, reasons: [`New agency: ${canonical}`] };

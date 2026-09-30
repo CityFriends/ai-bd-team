@@ -168,7 +168,7 @@ export interface PreScreenResult {
  */
 export function metadataPreScreen(
   opp: NormalizedOpportunity,
-  strategicAgencies: string[],
+  agencyExperience: string[],
   companyNaics: string[],
   _companyCerts?: string[],
   pastPerformance?: PastPerformanceRecord[]
@@ -208,10 +208,10 @@ export function metadataPreScreen(
 
   // Secondary signals
   const agencyText = opp.agency || '';
-  const isStrategicAgency = strategicAgencies.some(
+  const hasAgencyExperience = agencyExperience.some(
     (a) => agenciesMatch(agencyText, a) || agencyText.toUpperCase().includes(a.toUpperCase())
   );
-  if (isStrategicAgency) reasons.push('Strategic agency');
+  if (hasAgencyExperience) reasons.push('Agency experience');
 
   const setAside = (opp.setAside || opp.setAsideDescription || '').toLowerCase();
   const hasCertAdvantage = ['8(a)', 'sdvosb', 'wosb', 'service-disabled', 'women-owned'].some((c) =>
@@ -240,7 +240,7 @@ export function metadataPreScreen(
   if (hasPPAgency) reasons.push('Past performance at this agency');
 
   const hasSecondarySignal =
-    isStrategicAgency || hasCertAdvantage || titleMatches.length > 0 || hasPPAgency;
+    hasAgencyExperience || hasCertAdvantage || titleMatches.length > 0 || hasPPAgency;
 
   // Policy B decision
   if (hasAttachments && hasBaseQualifier && hasSecondarySignal) {

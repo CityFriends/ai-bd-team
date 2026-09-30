@@ -99,9 +99,9 @@ describe('Organizational Profile', () => {
     expect(TEST_PAST_PERFORMANCE.some((pp) => pp.agency === 'VA')).toBe(true);
   });
 
-  it('strategic agencies in preferences', () => {
-    expect(DEFAULT_PURSUIT_PREFERENCES.strategicAgencies).toContain('VA');
-    expect(DEFAULT_PURSUIT_PREFERENCES.strategicAgencies).toContain('CMS');
+  it('agency experience in preferences', () => {
+    expect(DEFAULT_PURSUIT_PREFERENCES.agencyExperience).toContain('VA');
+    expect(DEFAULT_PURSUIT_PREFERENCES.agencyExperience).toContain('CMS');
   });
 
   it('pursuit preferences have security constraints', () => {

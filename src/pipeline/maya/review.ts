@@ -37,7 +37,7 @@ COMPANY PROFILE:
 - NAICS: ${profile.primaryNaics.join(', ')}
 - Certifications: ${profile.certifications.join(', ')}
 - Core capabilities: ${profile.coreCapabilities.join(', ')}
-- Strategic agencies: ${profile.strategicAgencies.join(', ')}
+- Strategic agencies: ${profile.agencyExperience.join(', ')}
 - Security: ${profile.securityClearance}
 - Contract size: $${(profile.contractSizeRange.min / 1e6).toFixed(1)}M–$${(profile.contractSizeRange.max / 1e6).toFixed(0)}M
 - Prime/sub strategy: ${profile.primeSubStrategy}
@@ -119,7 +119,7 @@ COMPANY PROFILE:
 - NAICS: ${profile.primaryNaics.join(', ')}
 - Certifications: ${profile.certifications.join(', ')}
 - Core capabilities: ${profile.coreCapabilities.join(', ')}
-- Strategic agencies: ${profile.strategicAgencies.join(', ')}
+- Strategic agencies: ${profile.agencyExperience.join(', ')}
 - Security: ${profile.securityClearance}
 - Prime/sub strategy: ${profile.primeSubStrategy}
 

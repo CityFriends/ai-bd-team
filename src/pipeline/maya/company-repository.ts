@@ -67,7 +67,8 @@ export interface PursuitPreferences {
   primeSubStrategy: string;
   supportedClearance: string[];
   excludedClearance: string[];
-  strategicAgencies: string[];
+  /** Agencies where FFTC has organizational experience/context. NOT an override trigger. */
+  agencyExperience: string[];
   excludedWorkTypes: string[];
   lowFitWorkTypes: string[];
 }
@@ -185,7 +186,7 @@ export const DEFAULT_PURSUIT_PREFERENCES: PursuitPreferences = {
   primeSubStrategy: 'Priority: prime. Also: meaningful sub roles. Penalize: commodity staffing.',
   supportedClearance: ['public trust'],
   excludedClearance: ['facility clearance', 'Secret', 'Top Secret', 'TS/SCI'],
-  strategicAgencies: ['VA', 'CMS', 'IRS', 'Department of State'],
+  agencyExperience: ['VA', 'CMS', 'IRS', 'Department of State', 'FEMA', 'DHS', 'Smithsonian'],
   excludedWorkTypes: ['classified work', 'staff augmentation'],
   lowFitWorkTypes: ['data engineering', 'analytics-heavy work', 'BI/data lake/ETL-heavy work'],
 };

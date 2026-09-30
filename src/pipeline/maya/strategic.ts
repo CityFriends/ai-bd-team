@@ -1,14 +1,20 @@
 /**
  * Strategic Override Rules
  *
- * Forces Maya review even if base score is below normal threshold.
- * Uses organizational data from repository, not static imports.
+ * Legitimate exceptional cases that force Maya review even if base score
+ * is below normal threshold. Agency familiarity alone does NOT trigger override.
+ *
+ * Invariant: AGENCY SIGNAL + REAL CAPABILITY/ACQUISITION RELEVANCE = possible escalation.
+ * Agency alone: NO. Certification alone: NO. Keyword alone: NO.
  */
 
 import type { NormalizedOpportunity, FitScoreResult, StrategicOverride } from './types.js';
-import type { PursuitPreferences } from './company-repository.js';
 import { classifyNonCompetitive, type NonCompetitiveResult } from './non-competitive.js';
 import type { CompanyProfileData } from './company-repository.js';
+import type { PursuitPreferences } from './company-repository.js';
+
+/** Minimum capability fit (out of 25) required for contextual escalation */
+const MIN_CAPABILITY_FIT = 15;
 
 export function checkStrategicOverrides(
   opp: NormalizedOpportunity,
@@ -17,18 +23,14 @@ export function checkStrategicOverrides(
   profile: CompanyProfileData
 ): StrategicOverride {
   const rules: string[] = [];
-  const text = `${opp.title} ${opp.description || ''}`.toLowerCase();
 
-  // Strategic agency + strong capability fit
-  const agencyText = (opp.agency || '').toLowerCase();
-  const isStrategicAgency = preferences.strategicAgencies.some((a) =>
-    agencyText.includes(a.toLowerCase())
-  );
-  if (isStrategicAgency && fitScore.breakdown.capabilityFit >= 15) {
-    rules.push(`Strategic agency (${opp.agency}) with strong capability fit`);
-  }
+  // ============================================================
+  // Legitimate directed/non-competitive overrides
+  // These do NOT require agency experience or capability fit
+  // because the opportunity is specifically targeted.
+  // ============================================================
 
-  // 8(a) sole-source possibility
+  // 8(a) sole-source / directed to FFTC
   const nonComp = classifyNonCompetitive(opp, profile);
   if (nonComp.classification === 'EIGHT_A_SOLE_SOURCE') {
     rules.push('Potential 8(a) sole-source — FFTC holds 8(a) certification');
@@ -37,34 +39,27 @@ export function checkStrategicOverrides(
     rules.push('Non-competitive notice directed to FFTC');
   }
 
-  // SDVOSB/WOSB advantage at strategic agency
-  const setAside = (opp.setAside || opp.setAsideDescription || '').toLowerCase();
-  if (isStrategicAgency) {
-    const hasCertAdvantage =
-      setAside.includes('sdvosb') ||
-      setAside.includes('wosb') ||
-      setAside.includes('service-disabled') ||
-      setAside.includes('women-owned');
-    if (hasCertAdvantage) {
-      rules.push(`Certification advantage (${setAside.slice(0, 30)}) at strategic agency`);
+  // ============================================================
+  // Capability-gated contextual escalation
+  // All of these require genuine capability relevance (capabilityFit >= 15/25).
+  // Agency experience, certification, recompete, modernization signals
+  // may STRENGTHEN a relevant opportunity but cannot manufacture relevance.
+  // ============================================================
+
+  if (fitScore.breakdown.capabilityFit >= MIN_CAPABILITY_FIT) {
+    // Strong prime-building opportunity
+    if (fitScore.breakdown.primeSuitability >= 4) {
+      rules.push('Strong prime-building opportunity with capability fit');
     }
-  }
 
-  // Prime-building opportunity
-  if (fitScore.breakdown.primeSuitability >= 4 && fitScore.breakdown.capabilityFit >= 15) {
-    rules.push('Strong prime-building opportunity');
-  }
-
-  // Recompete at strategic agency
-  const recompeteSignals = ['recompete', 'follow-on', 'successor', 'incumbent'];
-  if (recompeteSignals.some((s) => text.includes(s)) && isStrategicAgency) {
-    rules.push('Strategic agency recompete');
-  }
-
-  // Digital modernization at strategic agency
-  const modernizationSignals = ['modernization', 'digital transformation', 'digital services'];
-  if (modernizationSignals.some((s) => text.includes(s)) && isStrategicAgency) {
-    rules.push('Digital modernization at strategic agency');
+    // Agency experience + capability fit
+    const agencyText = (opp.agency || '').toLowerCase();
+    const hasAgencyExperience = preferences.agencyExperience.some((a) =>
+      agencyText.includes(a.toLowerCase())
+    );
+    if (hasAgencyExperience) {
+      rules.push(`Agency experience (${opp.agency}) with capability fit`);
+    }
   }
 
   return { triggered: rules.length > 0, rules };

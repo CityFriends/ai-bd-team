@@ -296,11 +296,11 @@ export function agenciesRelated(a: string, b: string): boolean {
 }
 
 // ============================================================
-// Strategic Agencies (reference — production reads from DB)
+// Agency Experience (reference — production reads from DB)
+// FFTC is open to ALL federal agencies. These are experience signals, not discovery filters.
 // ============================================================
 
-export const STRATEGIC_AGENCIES = ['VA', 'CMS', 'IRS', 'Department of State'] as const;
-export const EXPERIENCED_AGENCIES = [
+export const AGENCY_EXPERIENCE = [
   'VA',
   'CMS',
   'HHS',

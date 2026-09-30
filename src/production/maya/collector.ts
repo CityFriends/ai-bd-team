@@ -184,7 +184,7 @@ export async function runCollectorCycle(
     for (const opp of active) {
       const screen = metadataPreScreen(
         opp,
-        prefs.strategicAgencies,
+        prefs.agencyExperience,
         profile.naicsCodes,
         undefined,
         pp
@@ -386,15 +386,31 @@ export async function runCollectorCycle(
       }
     }
 
-    // 7. Update sync state
+    // 7. Update sync state — only advance cursor if source was completely consumed
+    const sourceComplete = !source.fetchStats.some((s) => s.truncated);
+    const newCursor = sourceComplete
+      ? new Date().toISOString()
+      : syncState?.last_sync_cursor || new Date().toISOString(); // Preserve prior cursor if incomplete
+
+    if (!sourceComplete) {
+      console.warn(
+        `[Collector] Source retrieval incomplete — cursor NOT advanced. Truncated queries: ${source.fetchStats
+          .filter((s) => s.truncated)
+          .map((s) => `${s.lane}/${s.query}`)
+          .join(', ')}`
+      );
+    }
+
     await supabase
       .from('source_sync_state')
       .update({
-        last_successful_sync: new Date().toISOString(),
-        last_sync_cursor: new Date().toISOString(),
+        last_successful_sync: sourceComplete
+          ? new Date().toISOString()
+          : syncState?.last_successful_sync,
+        last_sync_cursor: newCursor,
         last_attempted_sync: new Date().toISOString(),
-        last_error: null,
-        consecutive_failures: 0,
+        last_error: sourceComplete ? null : 'Source retrieval incomplete — cursor preserved',
+        consecutive_failures: sourceComplete ? 0 : syncState?.consecutive_failures || 0,
         records_fetched: result.fetched,
         records_new: result.deduplicated,
         material_changes: result.materialChanges,

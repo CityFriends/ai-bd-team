@@ -153,7 +153,8 @@ export async function processReviewTask(
 
 MISSION: Should this opportunity receive further BD evaluation?
 
-COMPANY: NAICS ${profile.naicsCodes.join(',')} | Certs: ${profile.certifications.slice(0, 3).join(',')} | Capabilities: ${profile.capabilities.slice(0, 8).join(',')} | Strategic: ${prefs.strategicAgencies.join(',')} | Security: Public trust only
+COMPANY: NAICS ${profile.naicsCodes.join(',')} | Certs: ${profile.certifications.slice(0, 3).join(',')} | Capabilities: ${profile.capabilities.slice(0, 8).join(',')} | Agency experience: ${prefs.agencyExperience.join(',')} | Security: Public trust only
+NOTE: FFTC is open to qualified opportunities from ALL federal agencies. Agency experience is a positive signal, not a requirement.
 
 OPPORTUNITY: ${opp.title}
 Agency: ${opp.agency || 'Unknown'} | NAICS: ${opp.naics || 'N/A'} | PSC: ${opp.psc || 'N/A'}
