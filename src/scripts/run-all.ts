@@ -593,9 +593,11 @@ async function main() {
     }
   });
 
-  // James Specialist Executor: Every 5 minutes [CAPABILITY-SCOPED: no real specialist inference in 3B]
+  // James Specialist Executor: Requires SPECIALIST_EXECUTION_ENABLED (default false).
+  // Uncommissioned specialists remain PENDING — no fixture execution in production.
   cron.schedule('*/5 * * * *', async () => {
     const { getFeatureFlag, FEATURE_FLAGS, isAIEnabled } = await import('../config/ai-controls.js');
+    if (!getFeatureFlag(FEATURE_FLAGS.SPECIALIST_EXECUTION_ENABLED)) return;
     if (!getFeatureFlag(FEATURE_FLAGS.JAMES_CAPTURE_ENABLED)) return;
     if (!(await isAIEnabled())) return;
     try {

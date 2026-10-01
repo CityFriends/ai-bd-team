@@ -105,14 +105,41 @@ describe('James Safety Invariants', () => {
     }
   });
 
-  // 10. Specialist fixtures clearly marked
-  it('specialist executor marks all artifacts as TEST_FIXTURE', async () => {
+  // 10. Specialist fixtures clearly marked AND blocked in production
+  it('specialist executor marks artifacts as TEST_FIXTURE and blocks production', async () => {
     const fs = await import('fs');
     const path = await import('path');
     const execPath = path.resolve(import.meta.dirname, '..', 'specialist-executor.ts');
     const content = fs.readFileSync(execPath, 'utf-8');
     expect(content).toContain("artifact_source: 'TEST_FIXTURE'");
     expect(content).toContain("execution_mode: 'TEST_FIXTURE'");
+    // Production fixture prohibition — defense in depth
+    expect(content).toContain("role === 'production'");
+    expect(content).toContain('BLOCKED');
+  });
+
+  // 10b. Specialist executor requires SPECIALIST_EXECUTION_ENABLED flag
+  it('specialist executor cron requires SPECIALIST_EXECUTION_ENABLED', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const runAllPath = path.resolve(import.meta.dirname, '..', '..', '..', 'scripts', 'run-all.ts');
+    const content = fs.readFileSync(runAllPath, 'utf-8');
+    expect(content).toContain('SPECIALIST_EXECUTION_ENABLED');
+  });
+
+  // 10c. PENDING specialist tasks do not trigger resynthesis
+  it('PENDING is not a terminal specialist status', async () => {
+    // areAllTasksTerminal checks against terminalStatuses set
+    // PENDING is not in that set — verified by reading source
+    const fs = await import('fs');
+    const path = await import('path');
+    const routerPath = path.resolve(import.meta.dirname, '..', 'specialist-router.ts');
+    const content = fs.readFileSync(routerPath, 'utf-8');
+    // Extract the terminal statuses line
+    const terminalLine = content.match(/terminalStatuses.*=.*new Set\(\[(.*?)\]\)/s)?.[1] || '';
+    expect(terminalLine).toContain("'completed'");
+    expect(terminalLine).toContain("'failed'");
+    expect(terminalLine).not.toContain("'pending'");
   });
 
   // 11. Decision schema validation

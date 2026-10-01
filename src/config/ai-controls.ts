@@ -38,6 +38,8 @@ export const FEATURE_FLAGS = {
   JAMES_CAPTURE_ENABLED: 'JAMES_CAPTURE_ENABLED',
   /** Maya Review Processing (3C). Fail closed if missing. */
   MAYA_REVIEW_ENABLED: 'MAYA_REVIEW_ENABLED',
+  /** Specialist task execution. Fail closed if missing. Individual specialist commissioning required. */
+  SPECIALIST_EXECUTION_ENABLED: 'SPECIALIST_EXECUTION_ENABLED',
 } as const;
 
 /** Default values for all feature flags — ALL OFF for safety */
@@ -53,6 +55,7 @@ const FLAG_DEFAULTS: Record<string, boolean> = {
   [FEATURE_FLAGS.MAYA_SLACK_PROJECTION_ENABLED]: false,
   [FEATURE_FLAGS.JAMES_CAPTURE_ENABLED]: false,
   [FEATURE_FLAGS.MAYA_REVIEW_ENABLED]: false,
+  [FEATURE_FLAGS.SPECIALIST_EXECUTION_ENABLED]: false,
 };
 
 // Short negative cache to avoid hammering DB on repeated disabled checks

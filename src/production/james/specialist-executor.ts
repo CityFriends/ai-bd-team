@@ -1,25 +1,36 @@
 /**
- * Specialist Executor — Test Fixtures for Milestone 3B
+ * Specialist Executor — Test Fixtures ONLY
  *
- * Executes specialist tasks using deterministic fixtures.
- * Production specialist agents (David, Marcus, Rosa) are NOT enabled in 3B.
+ * TEST_FIXTURE execution is PROHIBITED in production.
+ * Production specialist tasks remain PENDING until the specialist
+ * agent is separately commissioned with a real implementation.
  *
- * All artifacts created here are marked artifact_source: 'TEST_FIXTURE'.
- * Production James must NOT consume TEST_FIXTURE artifacts.
+ * Defense in depth: this module rejects execution when connected
+ * to the production Supabase project, regardless of feature flags.
  */
 
 import { emitEvent, CAPTURE_EVENT_TYPES } from './events.js';
+import { getEnvironmentRole, KNOWN_PROJECTS } from '../../config/environment.js';
 import type { SpecialistTaskType } from './types.js';
 
 /**
  * Execute a specialist task using deterministic test fixtures.
- * Claims the task atomically, creates artifact, emits completion event.
+ * PROHIBITED in production — rejects before task claim.
  */
 export async function executeSpecialistTask(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   taskId: string
 ): Promise<boolean> {
+  // PRODUCTION FIXTURE PROHIBITION — defense in depth below cron/scheduler layer
+  const role = getEnvironmentRole();
+  if (role === 'production') {
+    console.error(
+      `[SpecialistExecutor] TEST_FIXTURE execution BLOCKED — production environment (${KNOWN_PROJECTS.PRODUCTION})`
+    );
+    return false;
+  }
+
   // Claim task atomically
   const { data: task, error: claimErr } = await supabase
     .from('specialist_tasks')
@@ -108,13 +119,17 @@ export async function executeSpecialistTask(
 }
 
 /**
- * Process all pending specialist tasks for a capture.
+ * Process all pending specialist tasks.
+ * In production: returns immediately (fixture execution prohibited).
  */
 export async function processPendingSpecialistTasks(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any
 ): Promise<{ processed: number; completed: number; failed: number }> {
   const result = { processed: 0, completed: 0, failed: 0 };
+
+  // Production guard — do not even query for tasks
+  if (getEnvironmentRole() === 'production') return result;
 
   const { data: tasks } = await supabase
     .from('specialist_tasks')
