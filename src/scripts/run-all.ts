@@ -530,9 +530,16 @@ async function main() {
     }
   });
 
-  // Maya Review Task Processor: Every 5 minutes [AUTONOMOUS: LLM via Gateway]
+  // Maya Review Task Processor: Every 5 minutes [CAPABILITY-SCOPED: collector-created review tasks only]
   cron.schedule('*/5 * * * *', async () => {
-    if (!(await isAutonomousActivityPermitted('maya-review-processor'))) return;
+    const { getFeatureFlag, FEATURE_FLAGS, isAIEnabled } = await import('../config/ai-controls.js');
+    if (!getFeatureFlag(FEATURE_FLAGS.MAYA_REVIEW_ENABLED)) return;
+    if (!(await isAIEnabled())) {
+      console.log(
+        `[autonomous_job_skipped] job=maya-review-processor reason=AI_DISABLED ts=${new Date().toISOString()}`
+      );
+      return;
+    }
     try {
       const { processPendingReviews } = await import('../production/maya/task-processor.js');
       const { createClient } = await import('@supabase/supabase-js');

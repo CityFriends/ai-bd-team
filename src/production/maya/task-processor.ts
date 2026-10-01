@@ -57,6 +57,18 @@ export async function processReviewTask(
   supabase: any,
   taskId: string
 ): Promise<MayaDecision | null> {
+  // 0. Check Maya observation window (if one exists)
+  const { data: obsSlot } = await supabase
+    .rpc('claim_maya_observation_slot', {
+      p_task_id: taskId,
+      p_reserved_cost_usd: 0.02, // Conservative estimate for observation accounting
+    })
+    .catch(() => ({ data: true })); // RPC not found = no window = no limit
+  if (obsSlot === false) {
+    console.log(`[MayaTaskProcessor] Observation window exhausted — skipping task ${taskId}`);
+    return null;
+  }
+
   // 1. Claim the task
   const { data: task, error: claimErr } = await supabase
     .from('maya_review_tasks')
@@ -213,6 +225,16 @@ Be concise. Max 3 reasons, 3 concerns. Do not repeat source text.`;
         model_route: response.model,
       })
       .eq('id', taskId);
+
+    // 9b. Settle Maya observation slot
+    await supabase
+      .rpc('settle_maya_observation_slot', {
+        p_task_id: taskId,
+        p_reserved_cost_usd: 0.02,
+        p_actual_cost_usd: response.costUsd || 0,
+        p_ledger_id: response.ledgerId,
+      })
+      .catch(() => {}); // Non-critical if observation window doesn't exist
 
     // 10. Update opportunity
     await supabase
