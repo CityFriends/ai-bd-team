@@ -54,6 +54,7 @@ import {
   refreshRoutes,
   getAllEnabledRoutes,
 } from './routing.js';
+import { checkModelLifecycle } from './model-lifecycle.js';
 import {
   reserveBudget,
   settleBudget,
@@ -130,6 +131,54 @@ function validateAttribution(request: InferenceRequest | EmbeddingRequest): void
 // Cache refresh
 // ============================================================
 
+/**
+ * Models blocked from execution. Gateway rejects BEFORE budget reservation.
+ *
+ * PROVIDER_RETIRED: Model no longer available at Anthropic. Calls will fail.
+ * ORGANIZATION_BLOCKED: Model still available but prohibited by our policy
+ *   (e.g., deprecated models we choose not to use even before provider retirement).
+ */
+const BLOCKED_MODELS: Record<string, 'PROVIDER_RETIRED' | 'ORGANIZATION_BLOCKED'> = {
+  // Provider-retired models (calls fail with not_found_error)
+  'claude-sonnet-4-20250514': 'PROVIDER_RETIRED',
+  'claude-3-5-sonnet-20241022': 'PROVIDER_RETIRED',
+  'claude-3-5-sonnet-20240620': 'PROVIDER_RETIRED',
+  'claude-3-5-haiku-20241022': 'PROVIDER_RETIRED',
+  'claude-3-haiku-20240307': 'PROVIDER_RETIRED',
+  'claude-3-opus-20240229': 'PROVIDER_RETIRED',
+  'claude-opus-4-20250514': 'PROVIDER_RETIRED',
+  'claude-3-7-sonnet-20250219': 'PROVIDER_RETIRED',
+  // Organization-blocked: deprecated, retires Nov 30 2026
+  'claude-sonnet-4-5-20250929': 'ORGANIZATION_BLOCKED',
+};
+
+function assertModelNotBlocked(model: string): void {
+  const status = BLOCKED_MODELS[model];
+  if (status === 'PROVIDER_RETIRED') {
+    throw new DatabaseUnavailableError(
+      new Error(`PROVIDER RETIRED: ${model} is no longer available. Update ai_model_routing.`)
+    );
+  }
+  if (status === 'ORGANIZATION_BLOCKED') {
+    throw new DatabaseUnavailableError(
+      new Error(
+        `ORGANIZATION BLOCKED: ${model} is deprecated and prohibited by policy. Update ai_model_routing.`
+      )
+    );
+  }
+}
+
+let lifecycleChecked = false;
+
+function checkModelLifecycleOnce(): void {
+  if (lifecycleChecked) return;
+  lifecycleChecked = true;
+  const routes = getAllEnabledRoutes();
+  const modelIds = [...new Set(routes.map((r) => r.model))];
+  const warnings = checkModelLifecycle(modelIds);
+  for (const w of warnings) console.warn(w);
+}
+
 let routePricingValidated = false;
 
 function validateRoutePricingConsistency(): void {
@@ -164,6 +213,10 @@ async function ensurePricingAndRouting(): Promise<void> {
   // Validate: every enabled route must have a corresponding pricing row.
   // Log warnings for misconfigured routes (fail-closed happens at call time).
   validateRoutePricingConsistency();
+
+  // Check model lifecycle — warn about approaching retirement boundaries.
+  // Does NOT auto-switch models.
+  checkModelLifecycleOnce();
 }
 
 // ============================================================
@@ -183,6 +236,9 @@ export async function complete(request: InferenceRequest): Promise<InferenceResp
   const route = getRoute(request.purpose);
   const provider = route.provider;
   const model = route.model;
+
+  // 3b. BLOCKED MODEL GUARD — reject before any budget or provider action
+  assertModelNotBlocked(model);
   const maxOutputTokens = Math.min(
     request.maxOutputTokens || route.maxOutputTokens,
     route.maxOutputTokens

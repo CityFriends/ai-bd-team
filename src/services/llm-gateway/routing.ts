@@ -28,7 +28,7 @@ const DEFAULT_ROUTES: ModelRoute[] = [
     maxOutputTokens: 512,
     maxInputTokens: 8000,
     maxCostUsd: 0.02,
-    enabled: true,
+    enabled: true, // Used by Maya evidence extraction
   },
   {
     taskType: 'summarize',
@@ -37,22 +37,24 @@ const DEFAULT_ROUTES: ModelRoute[] = [
     maxOutputTokens: 512,
     maxInputTokens: 16000,
     maxCostUsd: 0.02,
-    enabled: true,
+    enabled: false, // No commissioned production consumer
   },
+  // Specialist routes — DISABLED until each specialist is commissioned with its own model.
+  // Do NOT pre-enable routes for uncommissioned agents.
   {
     taskType: 'research',
     provider: 'anthropic',
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     maxOutputTokens: 2048,
     maxInputTokens: 16000,
     maxCostUsd: 0.1,
-    enabled: true,
+    enabled: false,
   },
   {
     taskType: 'reason',
     provider: 'anthropic',
-    model: 'claude-sonnet-4-20250514',
-    maxOutputTokens: 1024,
+    model: 'claude-haiku-4-5-20251001', // James commissioned on Haiku 4.5
+    maxOutputTokens: 2048,
     maxInputTokens: 16000,
     maxCostUsd: 0.08,
     enabled: true,
@@ -60,20 +62,20 @@ const DEFAULT_ROUTES: ModelRoute[] = [
   {
     taskType: 'write',
     provider: 'anthropic',
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     maxOutputTokens: 2048,
     maxInputTokens: 16000,
     maxCostUsd: 0.1,
-    enabled: true,
+    enabled: false,
   },
   {
     taskType: 'review',
     provider: 'anthropic',
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     maxOutputTokens: 1024,
     maxInputTokens: 16000,
     maxCostUsd: 0.08,
-    enabled: true,
+    enabled: false,
   },
   {
     taskType: 'embed',
@@ -82,7 +84,7 @@ const DEFAULT_ROUTES: ModelRoute[] = [
     maxOutputTokens: 0,
     maxInputTokens: 30000,
     maxCostUsd: 0.005,
-    enabled: true,
+    enabled: false, // No commissioned production consumer
   },
 ];
 

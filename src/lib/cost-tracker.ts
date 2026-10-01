@@ -59,18 +59,18 @@ export interface CostSummary {
 // ============================================================
 
 const MODEL_PRICING: Record<string, { input: number; output: number; tier: ModelTier }> = {
-  // Claude 3.5/4 Sonnet
+  // Current active models (per Anthropic docs Oct 2026)
+  'claude-sonnet-4-6': { input: 3, output: 15, tier: 'sonnet' },
+  'claude-sonnet-5-5': { input: 2, output: 10, tier: 'sonnet' },
+  'claude-haiku-4-5-20251001': { input: 1, output: 5, tier: 'haiku' },
+  'claude-opus-4-5-20251101': { input: 15, output: 75, tier: 'opus' },
+
+  // Retired models — kept for historical ledger cost lookups only
   'claude-sonnet-4-20250514': { input: 3, output: 15, tier: 'sonnet' },
   'claude-3-5-sonnet-20241022': { input: 3, output: 15, tier: 'sonnet' },
-  'claude-3-5-sonnet-20240620': { input: 3, output: 15, tier: 'sonnet' },
-
-  // Claude 3 Haiku
-  'claude-3-haiku-20240307': { input: 0.25, output: 1.25, tier: 'haiku' },
   'claude-3-5-haiku-20241022': { input: 0.8, output: 4, tier: 'haiku' },
-
-  // Claude 3 Opus
+  'claude-3-haiku-20240307': { input: 0.25, output: 1.25, tier: 'haiku' },
   'claude-3-opus-20240229': { input: 15, output: 75, tier: 'opus' },
-  'claude-opus-4-5-20251101': { input: 15, output: 75, tier: 'opus' },
 };
 
 // Default pricing for unknown models (assume Sonnet pricing)
@@ -281,7 +281,7 @@ export function getRecommendedModel(purpose: CallPurpose): string {
     case 'engagement_decision':
     case 'thinking_session':
     case 'summarization':
-      return 'claude-3-5-haiku-20241022';
+      return 'claude-haiku-4-5-20251001';
 
     // Complex reasoning - use Sonnet
     case 'opportunity_analysis':
@@ -290,10 +290,10 @@ export function getRecommendedModel(purpose: CallPurpose): string {
     case 'conversation':
     case 'discussion':
     case 'synthesis':
-      return 'claude-sonnet-4-20250514';
+      return 'claude-sonnet-4-6';
 
     default:
-      return 'claude-sonnet-4-20250514';
+      return 'claude-sonnet-4-6';
   }
 }
 

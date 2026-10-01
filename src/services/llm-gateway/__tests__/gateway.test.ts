@@ -24,7 +24,7 @@ vi.mock('@anthropic-ai/sdk', () => ({
           id: 'msg_test123',
           content: [{ type: 'text', text: 'test response' }],
           usage: { input_tokens: 100, output_tokens: 50 },
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-haiku-4-5-20251001',
         };
       }),
     };
@@ -133,10 +133,17 @@ import { _loadTestPricing, _resetPricingCache } from '../pricing.js';
 const testPricing = [
   {
     provider: 'anthropic' as const,
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     inputPricePerMillion: 3.0,
     outputPricePerMillion: 15.0,
     tier: 'sonnet',
+  },
+  {
+    provider: 'anthropic' as const,
+    model: 'claude-haiku-4-5-20251001',
+    inputPricePerMillion: 1.0,
+    outputPricePerMillion: 5.0,
+    tier: 'haiku',
   },
   {
     provider: 'openai' as const,
@@ -149,7 +156,7 @@ const testPricing = [
 
 const validRequest = {
   agentId: 'maya' as const,
-  purpose: 'research' as const,
+  purpose: 'classify' as const,
   taskType: 'opportunity_analysis',
   idempotencyKey: 'test:key:1',
   messages: [{ role: 'user' as const, content: 'test message' }],
@@ -338,9 +345,9 @@ describe('LLM Gateway — Final Corrections', () => {
       expect(anthropicCallCount).toBe(2);
     });
 
-    it('embeddings duplicate → ZERO provider calls', async () => {
-      mockReservationResult = { ledger_id: 'existing-embed', is_new: false };
-      await expect(embed(validEmbedRequest)).rejects.toThrow(IdempotentRequestExistsError);
+    it('embeddings route disabled → fails before reservation', async () => {
+      // embed route disabled — no commissioned consumer
+      await expect(embed(validEmbedRequest)).rejects.toThrow();
       expect(openaiCallCount).toBe(0);
     });
   });
@@ -389,6 +396,57 @@ describe('LLM Gateway — Final Corrections', () => {
     });
   });
 
+  describe('Blocked Model Guard', () => {
+    it('BLOCKED_MODELS contains retired claude-sonnet-4-20250514', async () => {
+      const fs = await import('fs');
+      const path = await import('path');
+      const content = fs.readFileSync(
+        path.resolve(import.meta.dirname, '..', 'gateway.ts'),
+        'utf-8'
+      );
+      expect(content).toContain("'claude-sonnet-4-20250514': 'PROVIDER_RETIRED'");
+      expect(content).toContain('assertModelNotBlocked');
+    });
+
+    it('BLOCKED_MODELS contains all known retired models', async () => {
+      const fs = await import('fs');
+      const path = await import('path');
+      const content = fs.readFileSync(
+        path.resolve(import.meta.dirname, '..', 'gateway.ts'),
+        'utf-8'
+      );
+      for (const retired of [
+        'claude-sonnet-4-20250514',
+        'claude-3-5-sonnet-20241022',
+        'claude-3-5-haiku-20241022',
+        'claude-3-haiku-20240307',
+        'claude-3-opus-20240229',
+      ]) {
+        expect(content).toContain(`'${retired}': 'PROVIDER_RETIRED'`);
+      }
+    });
+
+    it('BLOCKED_MODELS separates PROVIDER_RETIRED from ORGANIZATION_BLOCKED', async () => {
+      const fs = await import('fs');
+      const path = await import('path');
+      const content = fs.readFileSync(
+        path.resolve(import.meta.dirname, '..', 'gateway.ts'),
+        'utf-8'
+      );
+      expect(content).toContain("'claude-sonnet-4-5-20250929': 'ORGANIZATION_BLOCKED'");
+    });
+
+    it('commissioned Haiku route is NOT blocked', async () => {
+      const fs = await import('fs');
+      const path = await import('path');
+      const content = fs.readFileSync(
+        path.resolve(import.meta.dirname, '..', 'gateway.ts'),
+        'utf-8'
+      );
+      expect(content).not.toContain("'claude-haiku-4-5-20251001':");
+    });
+  });
+
   describe('Pricing Fail-Closed', () => {
     it('rejects when pricing unavailable', async () => {
       _resetPricingCache();
@@ -429,12 +487,12 @@ describe('LLM Gateway — Final Corrections', () => {
       expect(settleCallCount).toBe(1);
     });
 
-    it('embed() full pipeline', async () => {
-      const result = await embed(validEmbedRequest);
-      expect(result.embeddings).toHaveLength(1);
-      expect(reserveCallCount).toBe(1);
-      expect(openaiCallCount).toBe(1);
-      expect(settleCallCount).toBe(1);
+    it('embed() fails when embed route is disabled', async () => {
+      // embed route is disabled — no commissioned production consumer
+      await expect(embed(validEmbedRequest)).rejects.toThrow();
+      expect(reserveCallCount).toBe(0);
+      expect(openaiCallCount).toBe(0);
+      expect(settleCallCount).toBe(0);
     });
   });
 

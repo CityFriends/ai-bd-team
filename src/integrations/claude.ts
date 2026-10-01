@@ -64,8 +64,8 @@ export function _resetAnthropicClient(): void {
 }
 
 // Model constants
-const MODEL_SONNET = 'claude-sonnet-4-20250514';
-const MODEL_HAIKU = 'claude-3-5-haiku-20241022';
+const MODEL_SONNET = 'claude-sonnet-4-6';
+const MODEL_HAIKU = 'claude-haiku-4-5-20251001';
 
 // Legacy constant for backward compatibility
 const MODEL = MODEL_SONNET;
