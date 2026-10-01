@@ -15,7 +15,51 @@ import {
   markTimedOutTasks,
 } from './specialist-router.js';
 import { emitEvent, CAPTURE_EVENT_TYPES } from './events.js';
-// Budget constants used indirectly via task-processor
+import { CAPTURE_BUDGET } from './types.js';
+
+/**
+ * Check observation window eligibility before James inference.
+ * Returns true if a slot was claimed, false if window is exhausted.
+ */
+async function claimObservationSlot(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  captureId: string,
+  estimatedCostUsd: number
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc('claim_observation_slot', {
+    p_capture_id: captureId,
+    p_reserved_cost_usd: estimatedCostUsd,
+  });
+  if (error) {
+    // RPC not found = observation window not configured = observation not enforced
+    if (error.message?.includes('not find the function')) return true;
+    console.error('[Orchestrator] Observation slot claim failed:', error.message);
+    return false;
+  }
+  return data === true;
+}
+
+/**
+ * Settle observation slot after James inference.
+ */
+async function settleObservationSlot(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  captureId: string,
+  reservedCost: number,
+  actualCost: number,
+  ledgerId: string | null
+): Promise<void> {
+  await supabase
+    .rpc('settle_observation_slot', {
+      p_capture_id: captureId,
+      p_reserved_cost_usd: reservedCost,
+      p_actual_cost_usd: actualCost,
+      p_ledger_id: ledgerId,
+    })
+    .catch(() => {}); // Non-critical if table doesn't exist yet
+}
 
 const MAX_CAPTURES_PER_CYCLE = 3;
 
@@ -73,6 +117,17 @@ async function processPendingAssessments(
   for (const capture of captures) {
     result.processed++;
 
+    // Check observation window before claiming inference slot
+    const slotClaimed = await claimObservationSlot(
+      supabase,
+      capture.id,
+      CAPTURE_BUDGET.INITIAL_ASSESSMENT_USD
+    );
+    if (!slotClaimed) {
+      console.log(`[Orchestrator] Observation window exhausted — skipping capture ${capture.id}`);
+      continue;
+    }
+
     // Transition to initial_assessment
     const transitioned = await transitionCapture(
       supabase,
@@ -85,6 +140,33 @@ async function processPendingAssessments(
     // Run James initial assessment
     const decision = await processInitialAssessment(supabase, capture.id);
     result.initialAssessments++;
+
+    // Settle observation slot with actual cost
+    if (decision) {
+      const { data: decRec } = await supabase
+        .from('capture_decision_records')
+        .select('inference_ledger_id')
+        .eq('capture_id', capture.id)
+        .order('decision_version', { ascending: false })
+        .limit(1)
+        .single();
+      if (decRec?.inference_ledger_id) {
+        const { data: ledger } = await supabase
+          .from('ai_inference_ledger')
+          .select('reserved_cost_usd, actual_cost_usd')
+          .eq('id', decRec.inference_ledger_id)
+          .single();
+        if (ledger) {
+          await settleObservationSlot(
+            supabase,
+            capture.id,
+            Number(ledger.reserved_cost_usd),
+            Number(ledger.actual_cost_usd),
+            decRec.inference_ledger_id
+          );
+        }
+      }
+    }
 
     if (!decision) {
       // Assessment failed — leave in initial_assessment for retry or manual intervention

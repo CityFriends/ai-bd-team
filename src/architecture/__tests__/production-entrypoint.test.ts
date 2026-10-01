@@ -260,9 +260,10 @@ describe('Production Entrypoint: run-all.ts imports AI controls', () => {
 
     // List of all autonomous job names that must be guarded
     // Legacy maya-daily-scan and maya-weekly-summary removed — disabled in Milestone 3A
+    // James uses capability-scoped guard (JAMES_CAPTURE_ENABLED + isAIEnabled),
+    // NOT isAutonomousActivityPermitted. It is excluded from this list.
     const autonomousJobs = [
       'maya-review-processor',
-      'james-capture-orchestrator',
       'david-news-digest',
       'patricia-standup',
       'action-scheduler',

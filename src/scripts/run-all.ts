@@ -553,15 +553,21 @@ async function main() {
 
   // ============================================================
   // JAMES CAPTURE ORCHESTRATION
-  // Processes pending captures through assessment → research → recommendation.
-  // Guarded by JAMES_CAPTURE_ENABLED + autonomous AI controls.
+  // Capability-scoped: requires JAMES_CAPTURE_ENABLED + isAIEnabled().
+  // Does NOT require ENABLE_AUTONOMOUS_AI (legacy autonomous switch).
+  // James only processes captures created by explicit human Send to Capture.
   // ============================================================
 
-  // James Capture Orchestrator: Every 5 minutes [AUTONOMOUS: LLM via Gateway]
+  // James Capture Orchestrator: Every 5 minutes [CAPABILITY-SCOPED: human-triggered captures only]
   cron.schedule('*/5 * * * *', async () => {
-    if (!(await isAutonomousActivityPermitted('james-capture-orchestrator'))) return;
-    const { getFeatureFlag, FEATURE_FLAGS } = await import('../config/ai-controls.js');
+    const { getFeatureFlag, FEATURE_FLAGS, isAIEnabled } = await import('../config/ai-controls.js');
     if (!getFeatureFlag(FEATURE_FLAGS.JAMES_CAPTURE_ENABLED)) return;
+    if (!(await isAIEnabled())) {
+      console.log(
+        `[autonomous_job_skipped] job=james-capture-orchestrator reason=AI_DISABLED ts=${new Date().toISOString()}`
+      );
+      return;
+    }
     try {
       const { processPendingCaptures } = await import('../production/james/orchestrator.js');
       const { createClient } = await import('@supabase/supabase-js');
@@ -580,11 +586,11 @@ async function main() {
     }
   });
 
-  // James Specialist Executor: Every 5 minutes [AUTONOMOUS: test fixtures in 3B]
+  // James Specialist Executor: Every 5 minutes [CAPABILITY-SCOPED: no real specialist inference in 3B]
   cron.schedule('*/5 * * * *', async () => {
-    if (!(await isAutonomousActivityPermitted('james-capture-orchestrator'))) return;
-    const { getFeatureFlag, FEATURE_FLAGS } = await import('../config/ai-controls.js');
+    const { getFeatureFlag, FEATURE_FLAGS, isAIEnabled } = await import('../config/ai-controls.js');
     if (!getFeatureFlag(FEATURE_FLAGS.JAMES_CAPTURE_ENABLED)) return;
+    if (!(await isAIEnabled())) return;
     try {
       const { processPendingSpecialistTasks } =
         await import('../production/james/specialist-executor.js');
