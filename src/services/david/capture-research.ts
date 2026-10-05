@@ -32,7 +32,10 @@ import { DavidResearchResultSchema } from './types.js';
 
 const log = logger.child({ service: 'DavidCaptureResearch' });
 
-/** Maximum cost for a David capture research call */
+/** Shared capture workflow budget ceiling — must match James's CAPTURE_BUDGET.MAX_CAPTURE_USD */
+const CAPTURE_BUDGET_CEILING = 0.25;
+
+/** Maximum cost for a single David capture research call (subordinate to shared ceiling) */
 const DAVID_CAPTURE_TASK_COST_USD = 0.05;
 
 /**
@@ -66,7 +69,7 @@ export async function executeDavidCaptureResearch(
   // 2. Validate capture exists and is in valid state
   const { data: capture, error: captureErr } = await supabase
     .from('captures')
-    .select('id, status, opportunity_id')
+    .select('id, status, opportunity_id, capture_budget_scope_id')
     .eq('id', request.captureId)
     .single();
 
@@ -103,12 +106,15 @@ export async function executeDavidCaptureResearch(
     return insufficientResult(taskId, 'Opportunity ID mismatch');
   }
 
-  // 4. Reserve capture budget
-  const workflowScopeId = `capture-${request.captureId}`;
+  // 4. Reserve against SHARED capture budget (same $0.25 envelope as James)
+  // Obtain the authoritative scope from the capture record, not independent construction
+  const workflowScopeId = `capture-${capture.id}`;
   const taskScopeId = `david-capture-${taskId}`;
 
+  // ensureWorkflowBudget is idempotent — if James already created it, this is a no-op lookup
+  // The critical invariant: James + David + any future specialist share this $0.25 ceiling
   try {
-    await ensureWorkflowBudget(supabase, workflowScopeId, 0.25);
+    await ensureWorkflowBudget(supabase, workflowScopeId, CAPTURE_BUDGET_CEILING);
     await ensureTaskBudget(supabase, taskScopeId, DAVID_CAPTURE_TASK_COST_USD);
   } catch (budgetErr) {
     log.warn(

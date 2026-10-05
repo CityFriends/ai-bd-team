@@ -41,6 +41,11 @@ import {
   classifyForecastChange,
   classifyEventChange,
 } from './material-change.js';
+import {
+  loadPreviousEvidence,
+  normalizeForecastFields,
+  normalizeEventFields,
+} from './evidence-loader.js';
 import type { G2XFailure } from '../g2x/types.js';
 
 const log = logger.child({ service: 'DavidCollectors' });
@@ -368,14 +373,48 @@ async function createDavidIntelligenceTask(
       return null;
     }
 
-    // Step 2: Source changed — persist new evidence/version (always)
-    // Step 3: Is the change MATERIAL enough to wake David?
-    const oldFields = (signal as unknown as Record<string, unknown>).previousFields as Record<string, unknown> || {};
-    const newFields = (signal as unknown as Record<string, unknown>).currentFields as Record<string, unknown> || {};
+    // Step 2: Source changed — load ACTUAL previous persisted record
+    const previous = await loadPreviousEvidence(
+      'g2x',
+      signal.sourceType,
+      signal.sourceId
+    );
 
-    const materialResult = signal.sourceType === 'forecast'
-      ? classifyForecastChange(oldFields, newFields)
-      : classifyEventChange(oldFields, newFields);
+    if (previous.found && !previous.rawPayload) {
+      // Previous record exists but payload corrupt/unparseable
+      // Fail closed: persist new evidence but do NOT wake David
+      log.warn(
+        { sourceId: signal.sourceId },
+        'Previous evidence found but unparseable — fail closed for material change'
+      );
+      await supabase
+        .from('david_watched_signals')
+        .update({ material_hash: contentHash, last_checked_at: new Date().toISOString() })
+        .eq('signal_type', signal.sourceType.toUpperCase())
+        .eq('signal_source_id', signal.sourceId);
+      return null;
+    }
+
+    // Step 3: Typed normalization of previous and current fields
+    // Current fields come from the signal's raw data (already in scope)
+    const currentRaw = (signal as unknown as Record<string, unknown>).rawPayload as Record<string, unknown> || {};
+
+    let materialResult;
+    if (signal.sourceType === 'forecast') {
+      const oldFields = normalizeForecastFields(previous.rawPayload);
+      const newFields = normalizeForecastFields(currentRaw);
+      materialResult = classifyForecastChange(
+        oldFields as unknown as Record<string, unknown>,
+        newFields as unknown as Record<string, unknown>
+      );
+    } else {
+      const oldFields = normalizeEventFields(previous.rawPayload);
+      const newFields = normalizeEventFields(currentRaw);
+      materialResult = classifyEventChange(
+        oldFields as unknown as Record<string, unknown>,
+        newFields as unknown as Record<string, unknown>
+      );
+    }
 
     if (!materialResult.material) {
       log.info(
