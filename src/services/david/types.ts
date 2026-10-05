@@ -514,7 +514,9 @@ export const DAVID_G2X_ALLOWED_TOOLS = [
   'g2x_forecast_scan',
   'g2x_search_events',
   'g2x_get_event',
-  'g2x_get_graph_neighborhood',
+  // g2x_get_graph_neighborhood: DENIED_FOR_DAVID for initial commissioning.
+  // Not required for initial mission; prior benchmark observed transient failure;
+  // deeper relationship analysis overlaps future Rosa commissioning.
 ] as const;
 
 export type DavidG2XAllowedTool = (typeof DAVID_G2X_ALLOWED_TOOLS)[number];

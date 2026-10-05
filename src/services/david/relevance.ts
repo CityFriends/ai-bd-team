@@ -557,29 +557,16 @@ export function computeSignalHash(signal: RelevanceSignal): string {
 }
 
 /**
- * Detect whether a change between two hashes is material enough
- * to re-wake David for a signal that was previously watched or dismissed.
+ * Detect whether a source record changed (content hash comparison).
  *
- * Signal types have different materiality thresholds:
- *   - forecast: Any hash change is material (acquisition details shifted)
- *   - event: Hash change is material (schedule, scope, or speakers changed)
- *   - competitive: Hash change is material (new award, new intel)
- *
- * Returns true if David should be re-notified.
+ * This determines "did the record change?" — NOT "is the change material?"
+ * Use classifyForecastChange/classifyEventChange from material-change.ts
+ * for materiality determination.
  */
-export function detectMaterialChange(
+export function detectSourceChange(
   newHash: string,
-  existingHash: string | null,
-  _signalType: RelevanceSignal['sourceType']
+  existingHash: string | null
 ): boolean {
-  // No existing hash → first observation, always material
-  if (!existingHash) {
-    return true;
-  }
-
-  // Different hash → material change for all signal types
-  // All collector signal types are considered material on content change
-  // because David's deterministic collectors only produce signals from
-  // structured G2X data, not free-form text that fluctuates.
+  if (!existingHash) return true;
   return newHash !== existingHash;
 }

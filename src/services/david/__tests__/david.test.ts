@@ -94,7 +94,7 @@ import { complete } from '../../llm-gateway/gateway.js';
 import {
   calculateProactiveRelevance,
   computeSignalHash,
-  detectMaterialChange,
+  detectSourceChange,
   WAKE_THRESHOLD,
   type RelevanceSignal,
   type RelevanceContext,
@@ -444,15 +444,15 @@ describe('David Intelligence System', () => {
       const hash2 = computeSignalHash(signalV2);
 
       expect(hash1).not.toBe(hash2);
-      expect(detectMaterialChange(hash2, hash1, 'forecast')).toBe(true);
+      expect(detectSourceChange(hash2, hash1)).toBe(true);
     });
 
-    it('10b. detectMaterialChange returns true for first observation (null existing hash)', () => {
-      expect(detectMaterialChange('abc123', null, 'forecast')).toBe(true);
+    it('10b. detectSourceChange returns true for first observation (null existing hash)', () => {
+      expect(detectSourceChange('abc123', null)).toBe(true);
     });
 
-    it('10c. detectMaterialChange returns false for identical hashes', () => {
-      expect(detectMaterialChange('abc123', 'abc123', 'event')).toBe(false);
+    it('10c. detectSourceChange returns false for identical hashes', () => {
+      expect(detectSourceChange('abc123', 'abc123')).toBe(false);
     });
   });
 
@@ -756,11 +756,12 @@ describe('David Intelligence System', () => {
       expect(allowedSet.has('g2x_company_contract_history')).toBe(true);
       expect(allowedSet.has('g2x_get_event')).toBe(true);
       expect(allowedSet.has('g2x_search_records')).toBe(true);
-      expect(allowedSet.has('g2x_get_graph_neighborhood')).toBe(true);
+      // g2x_get_graph_neighborhood removed from initial commissioning
+      expect(allowedSet.has('g2x_get_graph_neighborhood')).toBe(false);
     });
 
-    it('22b. DAVID_G2X_ALLOWED_TOOLS has exactly 8 entries', () => {
-      expect(DAVID_G2X_ALLOWED_TOOLS.length).toBe(8);
+    it('22b. DAVID_G2X_ALLOWED_TOOLS has exactly 7 entries (graph removed)', () => {
+      expect(DAVID_G2X_ALLOWED_TOOLS.length).toBe(7);
     });
   });
 

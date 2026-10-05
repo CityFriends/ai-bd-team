@@ -32,11 +32,15 @@ import {
 import {
   calculateProactiveRelevance,
   computeSignalHash,
-  detectMaterialChange,
+  detectSourceChange,
   WAKE_THRESHOLD,
   type RelevanceSignal,
   type RelevanceContext,
 } from './relevance.js';
+import {
+  classifyForecastChange,
+  classifyEventChange,
+} from './material-change.js';
 import type { G2XFailure } from '../g2x/types.js';
 
 const log = logger.child({ service: 'DavidCollectors' });
@@ -354,22 +358,46 @@ async function createDavidIntelligenceTask(
     .single();
 
   if (watchedSignal) {
-    const isMaterial = detectMaterialChange(
-      contentHash,
-      watchedSignal.content_hash,
-      signal.sourceType
-    );
-
-    if (!isMaterial) {
+    // Step 1: Did the source change at all?
+    const sourceChanged = detectSourceChange(contentHash, watchedSignal.content_hash);
+    if (!sourceChanged) {
       log.debug(
         { sourceId: signal.sourceId, status: watchedSignal.status },
-        'Signal already watched/dismissed with same hash — skipping'
+        'Signal unchanged — skipping'
       );
       return null;
     }
+
+    // Step 2: Source changed — persist new evidence/version (always)
+    // Step 3: Is the change MATERIAL enough to wake David?
+    const oldFields = (signal as unknown as Record<string, unknown>).previousFields as Record<string, unknown> || {};
+    const newFields = (signal as unknown as Record<string, unknown>).currentFields as Record<string, unknown> || {};
+
+    const materialResult = signal.sourceType === 'forecast'
+      ? classifyForecastChange(oldFields, newFields)
+      : classifyEventChange(oldFields, newFields);
+
+    if (!materialResult.material) {
+      log.info(
+        { sourceId: signal.sourceId, changedFields: materialResult.changedFields },
+        'Source changed but non-material — evidence updated, no David wake'
+      );
+      // Update the hash on the watched signal but do NOT create a task
+      await supabase
+        .from('david_watched_signals')
+        .update({ material_hash: contentHash, last_checked_at: new Date().toISOString() })
+        .eq('signal_type', signal.sourceType.toUpperCase())
+        .eq('signal_source_id', signal.sourceId);
+      return null;
+    }
+
     // Material change on watched signal — proceed to create new task
     log.info(
-      { sourceId: signal.sourceId, oldHash: watchedSignal.content_hash, newHash: contentHash },
+      {
+        sourceId: signal.sourceId,
+        materialReasons: materialResult.reasons.map((r) => r.description),
+        changedFields: materialResult.changedFields,
+      },
       'Material change detected on watched signal — creating new David task'
     );
   }
