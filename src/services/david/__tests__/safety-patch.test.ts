@@ -418,6 +418,20 @@ describe('David G2X Tool Allowlist', () => {
     expect(tools).not.toContain('g2x_get_graph_neighborhood');
   });
 
+  it('g2x_get_record does not support forecast record_type', () => {
+    // Discovered during commissioning: g2x_get_record only accepts
+    // "opportunity" and "company", not "forecast".
+    // Forecast details come from g2x_forecast_scan results.
+    // g2x_get_record remains in the allowlist for supported record types.
+    const allowedRecordTypes = ['opportunity', 'company'];
+    expect(allowedRecordTypes).not.toContain('forecast');
+
+    // David collectors must NOT call g2x_get_record for forecast detail
+    // This is enforced by collector code using g2x_forecast_scan results directly
+    expect(DAVID_G2X_ALLOWED_TOOLS).toContain('g2x_get_record'); // Still allowed
+    expect(DAVID_G2X_ALLOWED_TOOLS).toContain('g2x_forecast_scan'); // For forecasts
+  });
+
   it('does NOT include any denied tools', () => {
     const denied = [
       'g2x_nsn_lookup',
