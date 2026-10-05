@@ -14,31 +14,47 @@ import {
   classifySpeakerChange,
 } from '../material-change.js';
 import { detectSourceChange } from '../relevance.js';
+import {
+  normalizeForecastFields,
+  normalizeEventFields,
+} from '../evidence-loader.js';
 import { DAVID_G2X_ALLOWED_TOOLS } from '../types.js';
+
+// Helper: create typed forecast fields from raw-like objects
+function forecastFields(raw: Record<string, unknown>) {
+  return normalizeForecastFields({ facts: raw });
+}
+
+// Helper: create typed event fields from raw-like objects
+function eventFields(raw: Record<string, unknown>) {
+  return normalizeEventFields({ facts: raw });
+}
 
 // ============================================================
 // 1. Material Change Classifier
 // ============================================================
 
 describe('Material Change: Forecasts', () => {
-  it('non-material: whitespace/formatting only → changed but not material', () => {
+  it('non-material: whitespace/formatting only → no material change', () => {
+    // Description is a cosmetic field — normalization doesn't extract it
+    // The source hash detects the raw change; the typed classifier sees no field diff
     const oldFields = { status: 'PUBLISHED', description: 'Cloud  migration' };
     const newFields = { status: 'PUBLISHED', description: 'Cloud migration' };
 
-    const result = classifyForecastChange(oldFields, newFields);
+    const result = classifyForecastChange(forecastFields(oldFields), forecastFields(newFields));
 
-    expect(result.changed).toBe(true); // Source did change
-    expect(result.material).toBe(false); // But not materially
+    // Typed fields are identical (description not in NormalizedForecastFields)
+    expect(result.material).toBe(false);
     expect(result.reasons).toHaveLength(0);
   });
 
   it('non-material: retrieval timestamp change only', () => {
+    // retrieved_at is cosmetic — not in NormalizedForecastFields
     const oldFields = { status: 'PUBLISHED', retrieved_at: '2026-10-01' };
     const newFields = { status: 'PUBLISHED', retrieved_at: '2026-10-05' };
 
-    const result = classifyForecastChange(oldFields, newFields);
+    const result = classifyForecastChange(forecastFields(oldFields), forecastFields(newFields));
 
-    expect(result.changed).toBe(true);
     expect(result.material).toBe(false);
   });
 
@@ -46,7 +62,7 @@ describe('Material Change: Forecasts', () => {
     const oldFields = { award_date: '2027-03-15T00:00:00Z' };
     const newFields = { award_date: '2027-03-15T12:00:00Z' };
 
-    const result = classifyForecastChange(oldFields, newFields);
+    const result = classifyForecastChange(forecastFields(oldFields), forecastFields(newFields));
 
     // Same day, different time → cosmetic (within 24h threshold)
     expect(result.material).toBe(false);
@@ -56,7 +72,7 @@ describe('Material Change: Forecasts', () => {
     const oldFields = { set_aside: null };
     const newFields = { set_aside: '8(a)' };
 
-    const result = classifyForecastChange(oldFields, newFields);
+    const result = classifyForecastChange(forecastFields(oldFields), forecastFields(newFields));
 
     expect(result.material).toBe(true);
     expect(result.reasons.length).toBeGreaterThan(0);
@@ -67,7 +83,7 @@ describe('Material Change: Forecasts', () => {
     const oldFields = { award_date: '2027-03-01' };
     const newFields = { award_date: '2027-06-15' };
 
-    const result = classifyForecastChange(oldFields, newFields);
+    const result = classifyForecastChange(forecastFields(oldFields), forecastFields(newFields));
 
     expect(result.material).toBe(true);
     expect(result.reasons.some((r) => r.field === 'award_date')).toBe(true);
@@ -77,7 +93,7 @@ describe('Material Change: Forecasts', () => {
     const oldFields = { status: 'Market Research' };
     const newFields = { status: 'PUBLISHED' };
 
-    const result = classifyForecastChange(oldFields, newFields);
+    const result = classifyForecastChange(forecastFields(oldFields), forecastFields(newFields));
 
     expect(result.material).toBe(true);
     expect(result.reasons.some((r) => r.field === 'status')).toBe(true);
@@ -87,7 +103,7 @@ describe('Material Change: Forecasts', () => {
     const oldFields = { vehicle: null };
     const newFields = { vehicle: 'GSA MAS' };
 
-    const result = classifyForecastChange(oldFields, newFields);
+    const result = classifyForecastChange(forecastFields(oldFields), forecastFields(newFields));
 
     expect(result.material).toBe(true);
     expect(result.reasons.some((r) => r.field === 'vehicle')).toBe(true);
@@ -97,7 +113,7 @@ describe('Material Change: Forecasts', () => {
     const oldFields = { naics: '541511' };
     const newFields = { naics: '541519' };
 
-    const result = classifyForecastChange(oldFields, newFields);
+    const result = classifyForecastChange(forecastFields(oldFields), forecastFields(newFields));
 
     expect(result.material).toBe(true);
   });
@@ -106,7 +122,7 @@ describe('Material Change: Forecasts', () => {
     const oldFields = { solicitation_number: null };
     const newFields = { solicitation_number: 'FA4890-27-R-0001' };
 
-    const result = classifyForecastChange(oldFields, newFields);
+    const result = classifyForecastChange(forecastFields(oldFields), forecastFields(newFields));
 
     expect(result.material).toBe(true);
     expect(result.reasons.some((r) => r.field === 'solicitation_number')).toBe(true);
@@ -116,7 +132,7 @@ describe('Material Change: Forecasts', () => {
     const oldFields = { cancelled: false };
     const newFields = { cancelled: true };
 
-    const result = classifyForecastChange(oldFields, newFields);
+    const result = classifyForecastChange(forecastFields(oldFields), forecastFields(newFields));
 
     expect(result.material).toBe(true);
   });
@@ -125,7 +141,7 @@ describe('Material Change: Forecasts', () => {
     const oldFields = { estimated_value: 1000000 };
     const newFields = { estimated_value: 1500000 };
 
-    const result = classifyForecastChange(oldFields, newFields);
+    const result = classifyForecastChange(forecastFields(oldFields), forecastFields(newFields));
 
     expect(result.material).toBe(true);
     expect(result.reasons.some((r) => r.field === 'estimated_value')).toBe(true);
@@ -135,7 +151,7 @@ describe('Material Change: Forecasts', () => {
     const oldFields = { estimated_value: 1000000 };
     const newFields = { estimated_value: 1050000 }; // 5% change
 
-    const result = classifyForecastChange(oldFields, newFields);
+    const result = classifyForecastChange(forecastFields(oldFields), forecastFields(newFields));
 
     expect(result.material).toBe(false);
   });
@@ -143,7 +159,7 @@ describe('Material Change: Forecasts', () => {
   it('no change: identical fields', () => {
     const fields = { status: 'PUBLISHED', naics: '541511', set_aside: '8(a)' };
 
-    const result = classifyForecastChange(fields, { ...fields });
+    const result = classifyForecastChange(forecastFields(fields), forecastFields({ ...fields }));
 
     expect(result.changed).toBe(false);
     expect(result.material).toBe(false);
@@ -153,7 +169,7 @@ describe('Material Change: Forecasts', () => {
     const oldFields = { status: 'Draft', vehicle: null };
     const newFields = { status: 'PUBLISHED', vehicle: 'SEWP V' };
 
-    const result = classifyForecastChange(oldFields, newFields);
+    const result = classifyForecastChange(forecastFields(oldFields), forecastFields(newFields));
 
     expect(result).toHaveProperty('changed');
     expect(result).toHaveProperty('material');
@@ -170,12 +186,13 @@ describe('Material Change: Forecasts', () => {
 
 describe('Material Change: Events', () => {
   it('non-material: description formatting only', () => {
+    // Description is cosmetic — not in NormalizedEventFields
     const oldFields = { start_date: '2026-11-15', description: 'Annual  conference' };
     const newFields = { start_date: '2026-11-15', description: 'Annual conference' };
 
-    const result = classifyEventChange(oldFields, newFields);
+    const result = classifyEventChange(eventFields(oldFields), eventFields(newFields));
 
-    expect(result.changed).toBe(true);
+    // Typed fields identical (description not extracted)
     expect(result.material).toBe(false);
   });
 
@@ -183,7 +200,7 @@ describe('Material Change: Events', () => {
     const oldFields = { start_date: '2026-11-15' };
     const newFields = { start_date: '2026-12-01' };
 
-    const result = classifyEventChange(oldFields, newFields);
+    const result = classifyEventChange(eventFields(oldFields), eventFields(newFields));
 
     expect(result.material).toBe(true);
     expect(result.reasons.some((r) => r.field === 'start_date')).toBe(true);
@@ -193,7 +210,7 @@ describe('Material Change: Events', () => {
     const oldFields = { cancelled: false };
     const newFields = { cancelled: true };
 
-    const result = classifyEventChange(oldFields, newFields);
+    const result = classifyEventChange(eventFields(oldFields), eventFields(newFields));
 
     expect(result.material).toBe(true);
   });
@@ -202,7 +219,7 @@ describe('Material Change: Events', () => {
     const oldFields = { location: 'Washington, DC' };
     const newFields = { location: 'Virtual' };
 
-    const result = classifyEventChange(oldFields, newFields);
+    const result = classifyEventChange(eventFields(oldFields), eventFields(newFields));
 
     expect(result.material).toBe(true);
   });
@@ -211,7 +228,7 @@ describe('Material Change: Events', () => {
     const oldFields = { registration_deadline: null };
     const newFields = { registration_deadline: '2026-11-01' };
 
-    const result = classifyEventChange(oldFields, newFields);
+    const result = classifyEventChange(eventFields(oldFields), eventFields(newFields));
 
     expect(result.material).toBe(true);
   });
@@ -220,7 +237,7 @@ describe('Material Change: Events', () => {
     const oldFields = { registration_link: null };
     const newFields = { registration_link: 'https://events.example.com/register' };
 
-    const result = classifyEventChange(oldFields, newFields);
+    const result = classifyEventChange(eventFields(oldFields), eventFields(newFields));
 
     expect(result.material).toBe(true);
   });
@@ -229,18 +246,19 @@ describe('Material Change: Events', () => {
     const oldFields = { virtual: false };
     const newFields = { virtual: true };
 
-    const result = classifyEventChange(oldFields, newFields);
+    const result = classifyEventChange(eventFields(oldFields), eventFields(newFields));
 
     expect(result.material).toBe(true);
   });
 
   it('non-material: sponsor count changes', () => {
+    // sponsors_count is cosmetic — not in NormalizedEventFields
     const oldFields = { sponsors_count: 5, start_date: '2026-11-15' };
     const newFields = { sponsors_count: 7, start_date: '2026-11-15' };
 
-    const result = classifyEventChange(oldFields, newFields);
+    const result = classifyEventChange(eventFields(oldFields), eventFields(newFields));
 
-    expect(result.changed).toBe(true);
+    // Typed fields identical (sponsors_count not extracted)
     expect(result.material).toBe(false);
   });
 });
@@ -290,10 +308,10 @@ describe('Source Change vs Material Change Separation', () => {
     expect(sourceChanged).toBe(true);
 
     const materialResult = classifyForecastChange(
-      { status: 'PUBLISHED', description: 'Old text' },
-      { status: 'PUBLISHED', description: 'Old  text' } // whitespace only
+      forecastFields({ status: 'PUBLISHED', description: 'Old text' }),
+      forecastFields({ status: 'PUBLISHED', description: 'Old  text' }) // whitespace only
     );
-    expect(materialResult.changed).toBe(true);
+    // Typed fields identical (description is cosmetic, not in NormalizedForecastFields)
     expect(materialResult.material).toBe(false);
     // → Evidence version updated, no David task created
   });
@@ -303,8 +321,8 @@ describe('Source Change vs Material Change Separation', () => {
     expect(sourceChanged).toBe(true);
 
     const materialResult = classifyForecastChange(
-      { status: 'Draft' },
-      { status: 'PUBLISHED' }
+      forecastFields({ status: 'Draft' }),
+      forecastFields({ status: 'PUBLISHED' })
     );
     expect(materialResult.changed).toBe(true);
     expect(materialResult.material).toBe(true);

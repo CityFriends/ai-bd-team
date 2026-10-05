@@ -71,10 +71,7 @@ describe('Persisted Previous Record → Material Change Flow', () => {
     const oldFields = normalizeForecastFields(previousRaw);
     const newFields = normalizeForecastFields(currentRaw);
 
-    const result = classifyForecastChange(
-      oldFields as unknown as Record<string, unknown>,
-      newFields as unknown as Record<string, unknown>
-    );
+    const result = classifyForecastChange(oldFields, newFields);
 
     expect(result.material).toBe(false);
     // Evidence should be updated (new version) but no David task
@@ -91,10 +88,7 @@ describe('Persisted Previous Record → Material Change Flow', () => {
     const oldFields = normalizeForecastFields(previousRaw);
     const newFields = normalizeForecastFields(currentRaw);
 
-    const result = classifyForecastChange(
-      oldFields as unknown as Record<string, unknown>,
-      newFields as unknown as Record<string, unknown>
-    );
+    const result = classifyForecastChange(oldFields, newFields);
 
     expect(result.material).toBe(true);
     expect(result.reasons.some((r) => r.field === 'set_aside')).toBe(true);

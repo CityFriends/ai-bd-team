@@ -12,6 +12,10 @@
  */
 
 import { logger } from '../../lib/logger.js';
+import type {
+  NormalizedForecastFields,
+  NormalizedEventFields,
+} from './evidence-loader.js';
 
 const log = logger.child({ service: 'DavidMaterialChange' });
 
@@ -141,17 +145,17 @@ const EVENT_COSMETIC_FIELDS = new Set([
 /**
  * Classify whether a forecast change is material enough to wake David.
  *
- * Both old and new are the structured fact/field objects from G2X.
+ * Accepts typed NormalizedForecastFields from evidence-loader.
  * Cosmetic changes (formatting, description edits) are detected
  * but classified as non-material.
  */
 export function classifyForecastChange(
-  oldFields: Record<string, unknown>,
-  newFields: Record<string, unknown>
+  oldFields: NormalizedForecastFields,
+  newFields: NormalizedForecastFields
 ): MaterialChangeResult {
   return classifyChange(
-    oldFields,
-    newFields,
+    toRecord(oldFields),
+    toRecord(newFields),
     FORECAST_MATERIAL_FIELDS,
     FORECAST_COSMETIC_FIELDS,
     'forecast'
@@ -160,18 +164,29 @@ export function classifyForecastChange(
 
 /**
  * Classify whether an event change is material enough to wake David.
+ *
+ * Accepts typed NormalizedEventFields from evidence-loader.
  */
 export function classifyEventChange(
-  oldFields: Record<string, unknown>,
-  newFields: Record<string, unknown>
+  oldFields: NormalizedEventFields,
+  newFields: NormalizedEventFields
 ): MaterialChangeResult {
   return classifyChange(
-    oldFields,
-    newFields,
+    toRecord(oldFields),
+    toRecord(newFields),
     EVENT_MATERIAL_FIELDS,
     EVENT_COSMETIC_FIELDS,
     'event'
   );
+}
+
+/** Convert typed fields to Record for generic classifier iteration */
+function toRecord(fields: NormalizedForecastFields | NormalizedEventFields): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(fields)) {
+    result[k] = v;
+  }
+  return result;
 }
 
 /**

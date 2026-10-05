@@ -337,7 +337,8 @@ async function createDavidIntelligenceTask(
   trigger: string,
   signal: RelevanceSignal,
   contentHash: string,
-  relevanceScore: number
+  relevanceScore: number,
+  currentRawPayload: Record<string, unknown> | null = null
 ): Promise<string | null> {
   const supabase = getSupabase();
   const idempotencyKey = `david:${signal.sourceType}:${signal.sourceId}:${contentHash}`;
@@ -396,24 +397,30 @@ async function createDavidIntelligenceTask(
     }
 
     // Step 3: Typed normalization of previous and current fields
-    // Current fields come from the signal's raw data (already in scope)
-    const currentRaw = (signal as unknown as Record<string, unknown>).rawPayload as Record<string, unknown> || {};
+    // Current raw payload is passed explicitly from the collector (not via RelevanceSignal)
+    if (!currentRawPayload) {
+      // Malformed current payload — fail closed for David wake
+      log.warn(
+        { sourceId: signal.sourceId },
+        'Current raw payload missing — fail closed for material change'
+      );
+      await supabase
+        .from('david_watched_signals')
+        .update({ material_hash: contentHash, last_checked_at: new Date().toISOString() })
+        .eq('signal_type', signal.sourceType.toUpperCase())
+        .eq('signal_source_id', signal.sourceId);
+      return null;
+    }
 
     let materialResult;
     if (signal.sourceType === 'forecast') {
       const oldFields = normalizeForecastFields(previous.rawPayload);
-      const newFields = normalizeForecastFields(currentRaw);
-      materialResult = classifyForecastChange(
-        oldFields as unknown as Record<string, unknown>,
-        newFields as unknown as Record<string, unknown>
-      );
+      const newFields = normalizeForecastFields(currentRawPayload);
+      materialResult = classifyForecastChange(oldFields, newFields);
     } else {
       const oldFields = normalizeEventFields(previous.rawPayload);
-      const newFields = normalizeEventFields(currentRaw);
-      materialResult = classifyEventChange(
-        oldFields as unknown as Record<string, unknown>,
-        newFields as unknown as Record<string, unknown>
-      );
+      const newFields = normalizeEventFields(currentRawPayload);
+      materialResult = classifyEventChange(oldFields, newFields);
     }
 
     if (!materialResult.material) {
@@ -692,7 +699,8 @@ export async function collectForecasts(): Promise<CollectionStats> {
             DavidTriggerType.FORECAST_SIGNAL,
             signal,
             contentHash,
-            relevance.totalScore
+            relevance.totalScore,
+            raw // Pass raw G2X payload for typed material change classification
           );
           if (taskId) {
             stats.tasksCreated++;
@@ -921,7 +929,8 @@ export async function collectEvents(): Promise<CollectionStats> {
             DavidTriggerType.GOVCON_EVENT,
             signal,
             contentHash,
-            relevance.totalScore
+            relevance.totalScore,
+            raw // Pass raw G2X payload for typed material change classification
           );
           if (taskId) {
             stats.tasksCreated++;
