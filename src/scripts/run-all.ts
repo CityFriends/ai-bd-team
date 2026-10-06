@@ -620,6 +620,32 @@ async function main() {
   });
 
   // ============================================================
+  // MARCUS PURSUIT STEWARDSHIP — DETERMINISTIC DOCUMENT-VERSION PROCESSING
+  // ZERO LLM calls from the scheduler itself.
+  // Processes durable document version work. Does NOT call G2X.
+  // Creates pending Marcus tasks only for material technical changes.
+  // Time passing alone never creates Marcus inference.
+  // ============================================================
+
+  // Marcus Document Version Processor: Every 15 minutes [DETERMINISTIC: checkpoint-based, max 20 per cycle]
+  cron.schedule('*/15 * * * *', async () => {
+    const { getFeatureFlag } = await import('../config/ai-controls.js');
+    if (!getFeatureFlag('MARCUS_PURSUIT_STEWARDSHIP_ENABLED')) return;
+    try {
+      const { processUnprocessedDocumentVersions } =
+        await import('../services/marcus/document-version-driver.js');
+      const result = await processUnprocessedDocumentVersions();
+      if (result.processed > 0 || result.materialChanges > 0) {
+        console.log(
+          `[${new Date().toLocaleString()}] Marcus DocVersion: processed=${result.processed} material=${result.materialChanges} skipped=${result.skipped} errors=${result.errors}`
+        );
+      }
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Marcus DocVersion Processor failed:`, err);
+    }
+  });
+
+  // ============================================================
   // SCHEDULED JOBS - SAFE_INTERNAL_MAINTENANCE
   // No Slack posts, no LLM, no external APIs, no event/workflow creation.
   // These run regardless of AI control state.
