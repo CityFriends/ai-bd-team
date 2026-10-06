@@ -28,7 +28,7 @@ export async function initializeProposalReadiness(
 ): Promise<{ id: string; isNew: boolean }> {
   const stage: ProposalStage = input.hasActionableSolicitation ? 'INTAKE' : 'PRE_SOLICITATION';
 
-  const { data, error } = await supabase
+  const { data: rows, error } = await supabase
     .from('patricia_proposal_readiness')
     .upsert(
       {
@@ -43,37 +43,34 @@ export async function initializeProposalReadiness(
       },
       { onConflict: 'proposal_workspace_id', ignoreDuplicates: true }
     )
-    .select('id')
-    .single();
+    .select('id');
 
-  if (error && !error.message?.includes('duplicate')) {
+  if (error && !error.message?.includes('duplicate') && !error.message?.includes('coerce')) {
     throw new Error(`[Patricia] Failed to initialize readiness: ${error.message}`);
   }
 
-  const isNew = !!data;
+  const newRow = rows?.[0];
+  const isNew = !!newRow;
 
-  if (isNew && data) {
+  if (isNew && newRow) {
     await recordAction(supabase, {
       idempotencyKey: `action-readiness-init-${input.proposalWorkspaceId}`,
       actionType: 'PROPOSAL_STAGE_CHANGED',
       targetType: 'patricia_proposal_readiness',
-      targetId: data.id,
+      targetId: newRow.id,
       evidence: { stage, hasActionableSolicitation: input.hasActionableSolicitation },
-      result: { readinessId: data.id, stage },
+      result: { readinessId: newRow.id, stage },
     });
+    return { id: newRow.id, isNew: true };
   }
 
-  // If not new, fetch existing
-  if (!data) {
-    const { data: existing } = await supabase
-      .from('patricia_proposal_readiness')
-      .select('id')
-      .eq('proposal_workspace_id', input.proposalWorkspaceId)
-      .single();
-    return { id: existing?.id || '', isNew: false };
-  }
-
-  return { id: data.id, isNew };
+  // Not new — fetch existing
+  const { data: existing } = await supabase
+    .from('patricia_proposal_readiness')
+    .select('id')
+    .eq('proposal_workspace_id', input.proposalWorkspaceId)
+    .single();
+  return { id: existing?.id || '', isNew: false };
 }
 
 /**

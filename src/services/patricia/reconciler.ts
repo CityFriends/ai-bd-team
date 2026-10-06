@@ -35,7 +35,7 @@ export async function runReconciliationCycle(
   const cycleId = `reconcile-${new Date().toISOString().slice(0, 16)}`; // minute-level granularity
 
   // Create checkpoint (idempotent — prevents concurrent runs)
-  const { data: checkpoint, error: cpErr } = await supabase
+  const { data: cpRows, error: cpErr } = await supabase
     .from('patricia_reconciliation_checkpoints')
     .upsert(
       {
@@ -45,10 +45,9 @@ export async function runReconciliationCycle(
       },
       { onConflict: 'idempotency_key', ignoreDuplicates: true }
     )
-    .select('id')
-    .single();
+    .select('id');
 
-  if (cpErr && !cpErr.message?.includes('duplicate')) {
+  if (cpErr && !cpErr.message?.includes('duplicate') && !cpErr.message?.includes('coerce')) {
     return {
       checkpointId: '',
       itemsInspected: 0,
@@ -59,6 +58,8 @@ export async function runReconciliationCycle(
       error: `Checkpoint creation failed: ${cpErr.message}`,
     };
   }
+
+  const checkpoint = cpRows?.[0];
 
   // If checkpoint already exists, this is a duplicate run
   if (!checkpoint) {

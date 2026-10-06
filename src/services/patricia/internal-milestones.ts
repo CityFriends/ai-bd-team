@@ -57,27 +57,27 @@ export async function generateMilestonePlan(
         },
         { onConflict: 'idempotency_key', ignoreDuplicates: true }
       )
-      .select('id')
-      .single();
+      .select('id');
 
-    if (error && !error.message?.includes('duplicate')) {
+    if (error && !error.message?.includes('duplicate') && !error.message?.includes('coerce')) {
       console.error(`[Patricia] Failed to create milestone ${milestone.type}:`, error.message);
       continue;
     }
 
-    if (data) {
+    const newRow = data?.[0];
+    if (newRow) {
       created++;
       await recordAction(supabase, {
         idempotencyKey: `action-milestone-${idempotencyKey}`,
         actionType: 'MILESTONE_CREATED',
         targetType: 'patricia_internal_milestones',
-        targetId: data.id,
+        targetId: newRow.id,
         evidence: {
           milestoneType: milestone.type,
           governmentDeadline: input.governmentDeadline,
           offsetDays: milestone.offsetDays,
         },
-        result: { milestoneId: data.id, plannedDate: plannedDate.toISOString() },
+        result: { milestoneId: newRow.id, plannedDate: plannedDate.toISOString() },
       });
     } else {
       skipped++;

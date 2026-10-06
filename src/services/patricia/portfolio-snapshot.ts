@@ -41,7 +41,7 @@ export async function generatePortfolioSnapshot(
   const upcomingDeadlines14 = snapshotData.upcomingDeadlines.filter(d => d.days_remaining <= 14).length;
   const upcomingDeadlines30 = snapshotData.upcomingDeadlines.filter(d => d.days_remaining <= 30).length;
 
-  const { data: snapshot, error } = await supabase
+  const { data: snapshotRows, error } = await supabase
     .from('patricia_portfolio_snapshots')
     .upsert(
       {
@@ -65,12 +65,13 @@ export async function generatePortfolioSnapshot(
       },
       { onConflict: 'idempotency_key', ignoreDuplicates: true }
     )
-    .select('id')
-    .single();
+    .select('id');
 
-  if (error) {
+  if (error && !error.message?.includes('duplicate') && !error.message?.includes('coerce')) {
     throw new Error(`[Patricia] Failed to create snapshot: ${error.message}`);
   }
+
+  const snapshot = snapshotRows?.[0];
 
   if (snapshot) {
     await recordAction(supabase, {
@@ -81,9 +82,17 @@ export async function generatePortfolioSnapshot(
       evidence: { snapshotType },
       result: { snapshotId: snapshot.id },
     });
+    return snapshot.id;
   }
 
-  return snapshot?.id || '';
+  // Already existed — return existing ID
+  const { data: existingSnap } = await supabase
+    .from('patricia_portfolio_snapshots')
+    .select('id')
+    .eq('idempotency_key', idempotencyKey)
+    .single();
+
+  return existingSnap?.id || '';
 }
 
 async function gatherPortfolioData(

@@ -298,9 +298,32 @@ export async function handleSpecialistConflict(
 }
 
 /**
- * Create a pending Jodie analysis task placeholder.
- * Jodie is not commissioned yet — the task remains pending.
- * Idempotent.
+ * Create a pending Jodie analysis task with full handoff contract.
+ *
+ * This is the durable work item that the future Jodie executor will
+ * consume. It is NOT merely a PM reminder — it contains the complete
+ * context needed to reconstruct the analysis scope:
+ *
+ * Jodie Durable Work Contract (provenance field):
+ *   - opportunityId: canonical opportunity reference
+ *   - captureId: capture/pursuit UUID
+ *   - proposalWorkspaceId: workspace where Jodie writes
+ *   - source: 'patricia-proposal-readiness' (originating subsystem)
+ *   - governmentDeadline: if known at creation time
+ *   - solicitationReceived: whether actionable solicitation exists
+ *   - readinessStage: proposal stage when task was created
+ *   - createdAt: timestamp for provenance
+ *
+ * The future Jodie executor can:
+ *   1. Query `captures` by captureId for full capture context
+ *   2. Query `proposal_workspaces` by proposalWorkspaceId for workspace
+ *   3. Query `pipeline_opportunities` by opportunityId for solicitation data
+ *   4. Query `patricia_proposal_readiness` for current stage/deadline
+ *   5. Query `patricia_internal_milestones` for deadline schedule
+ *   6. Query `patricia_dependencies` for known blockers
+ *
+ * Jodie is not commissioned yet — the task remains PENDING.
+ * Idempotent via commitment idempotency_key.
  */
 async function createJodieAnalysisTaskPlaceholder(
   supabase: SupabaseClient,
@@ -308,9 +331,22 @@ async function createJodieAnalysisTaskPlaceholder(
     proposalWorkspaceId: string;
     captureId: string;
     opportunityId: string;
+    governmentDeadline?: string;
   }
 ): Promise<void> {
-  // Create commitment for Jodie analysis
+  // Gather readiness context for provenance
+  const { data: readiness } = await supabase
+    .from('patricia_proposal_readiness')
+    .select('stage, government_deadline, has_actionable_solicitation')
+    .eq('proposal_workspace_id', input.proposalWorkspaceId)
+    .limit(1);
+
+  const readinessRecord = readiness?.[0] || {};
+  const deadline = input.governmentDeadline ||
+    readinessRecord.government_deadline ||
+    new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+
+  // Create commitment for Jodie analysis — full handoff contract in provenance
   const commitmentId = await createCommitment(supabase, {
     idempotencyKey: `jodie-analysis-${input.proposalWorkspaceId}`,
     opportunityId: input.opportunityId,
@@ -322,9 +358,25 @@ async function createJodieAnalysisTaskPlaceholder(
     ownerId: 'jodie',
     sourceType: 'SYSTEM_RULE',
     sourceId: 'patricia-proposal-readiness',
-    dueAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(), // placeholder far future
+    dueAt: deadline,
     hardOrSoft: 'SOFT',
-    provenance: { source: 'patricia-readiness', proposalWorkspaceId: input.proposalWorkspaceId },
+    provenance: {
+      // --- Jodie Durable Work Contract ---
+      source: 'patricia-proposal-readiness',
+      opportunityId: input.opportunityId,
+      captureId: input.captureId,
+      proposalWorkspaceId: input.proposalWorkspaceId,
+      governmentDeadline: deadline,
+      solicitationReceived: readinessRecord.has_actionable_solicitation || false,
+      readinessStage: readinessRecord.stage || 'INTAKE',
+      createdAt: new Date().toISOString(),
+      // --- Resolution pointers ---
+      resolveOpportunity: `SELECT * FROM pipeline_opportunities WHERE source_id = '${input.opportunityId}'`,
+      resolveCapture: `SELECT * FROM captures WHERE id = '${input.captureId}'`,
+      resolveWorkspace: `SELECT * FROM proposal_workspaces WHERE id = '${input.proposalWorkspaceId}'`,
+      resolveMilestones: `SELECT * FROM patricia_internal_milestones WHERE proposal_workspace_id = '${input.proposalWorkspaceId}'`,
+      resolveDependencies: `SELECT * FROM patricia_dependencies WHERE commitment_id = '<this_commitment_id>'`,
+    },
   });
 
   // Update proposal readiness with task reference
@@ -344,6 +396,8 @@ async function createJodieAnalysisTaskPlaceholder(
     targetId: commitmentId,
     evidence: {
       proposalWorkspaceId: input.proposalWorkspaceId,
+      captureId: input.captureId,
+      opportunityId: input.opportunityId,
       jodieCommissioned: false,
     },
     result: { commitmentId, status: 'pending_jodie_commissioning' },

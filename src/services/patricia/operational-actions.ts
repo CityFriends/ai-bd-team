@@ -42,14 +42,13 @@ export async function recordAction(
       },
       { onConflict: 'idempotency_key', ignoreDuplicates: true }
     )
-    .select('id')
-    .single();
+    .select('id');
 
   if (error) {
-    if (error.code === '23505' || error.message?.includes('duplicate')) return null;
+    if (error.code === '23505' || error.message?.includes('duplicate') || error.message?.includes('coerce')) return null;
     console.error(`[Patricia] Failed to record action: ${error.message}`);
     return null;
   }
 
-  return data?.id || null;
+  return data?.[0]?.id || null;
 }
