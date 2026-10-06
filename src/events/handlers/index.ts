@@ -18,6 +18,7 @@ import { feedHandlersByAgent } from './feed.handlers.js';
 
 // Import system handlers (non-agent)
 import { workflowHandlers } from './workflow-auto-create.js';
+import { pursuitStewardshipHandlers } from './pursuit-stewardship.handler.js';
 
 // ============================================================
 // Handler Registry
@@ -107,5 +108,5 @@ export {
  * These handle events that need system-wide processing
  */
 export function getSystemHandlers(): AgentHandlerMap {
-  return workflowHandlers;
+  return mergeHandlerMaps(workflowHandlers, pursuitStewardshipHandlers);
 }
