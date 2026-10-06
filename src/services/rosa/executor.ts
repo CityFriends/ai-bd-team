@@ -345,8 +345,18 @@ INSTRUCTIONS:
 5. DO NOT include unnecessary contact data (phone/email) for fit assessment.
 6. Be concise and factual. Do not speculate beyond evidence.
 
-Return ONLY valid JSON matching PartnerBrief schema:
-{"company":"string","companyIdentifiers":{"uei":null,"cage":null,"sam":null},"contextType":"CAPTURE|PROACTIVE|HUMAN_REQUEST","captureId":"uuid|omit","opportunityId":"string|omit","recommendedRelationship":"PRIME_PARTNER|SUB_TO_PARTNER|JV|EXPLORE|NOT_RECOMMENDED","capabilityComplementarity":"string","customerAccess":"string","vehiclePosition":"string","pastPerformanceComplementarity":"string","socioeconomicStrategy":"string","relationshipAndCompetitiveRisk":"string","knownFFTCRelationships":["string"],"findings":["string"],"evidenceRefs":["string"],"unresolvedQuestions":["string"],"recommendedActions":["string"],"confidence":"HIGH|MEDIUM|LOW"}`;
+CRITICAL: "recommendedRelationship" MUST be EXACTLY one of these 5 values (no other text):
+  PRIME_PARTNER
+  SUB_TO_PARTNER
+  JV
+  EXPLORE
+  NOT_RECOMMENDED
+Any other value will be rejected. Put explanations in "findings", NOT in this field.
+
+"confidence" MUST be EXACTLY: HIGH, MEDIUM, or LOW.
+
+Return ONLY valid JSON (no markdown, no extra text):
+{"company":"string","companyIdentifiers":{"uei":null,"cage":null,"sam":null},"contextType":"CAPTURE|PROACTIVE|HUMAN_REQUEST","recommendedRelationship":"PRIME_PARTNER|SUB_TO_PARTNER|JV|EXPLORE|NOT_RECOMMENDED","capabilityComplementarity":"max500","customerAccess":"max500","vehiclePosition":"max500","pastPerformanceComplementarity":"max500","socioeconomicStrategy":"max500","relationshipAndCompetitiveRisk":"max500","knownFFTCRelationships":["max5"],"findings":["max10"],"evidenceRefs":["max10"],"unresolvedQuestions":["max5"],"recommendedActions":["max5"],"confidence":"HIGH|MEDIUM|LOW"}`;
 }
 
 // ============================================================
@@ -483,16 +493,40 @@ export async function processRosaTask(
     const rawJson = JSON.parse(cleanText.match(/\{[\s\S]*\}/)?.[0] || '{}');
 
     const parsed = PartnerBriefSchema.safeParse(rawJson);
-    let brief: PartnerBrief | Record<string, unknown>;
-    if (parsed.success) {
-      brief = parsed.data;
-    } else {
-      log.warn(
-        { taskId, errors: parsed.error.issues.slice(0, 3) },
-        'PartnerBrief schema validation failed -- storing raw'
+    if (!parsed.success) {
+      // Fail closed: do NOT persist a malformed PartnerBrief
+      const issues = parsed.error.issues.slice(0, 3).map((i) => `${i.path.join('.')}: ${i.message}`);
+      log.error(
+        { taskId, issues },
+        'PartnerBrief schema validation FAILED — inference succeeded but artifact rejected'
       );
-      brief = rawJson;
+
+      // Still settle actual provider cost (inference occurred)
+      // Settle observation (same RPC pattern as success path)
+      await supabase
+        .rpc('settle_rosa_observation_slot', {
+          p_task_id: task.id,
+          p_reserved_cost_usd: 0.03,
+          p_actual_cost_usd: 0, // No artifact produced but provider was called
+          p_ledger_id: response.ledgerId,
+        })
+        .catch(() => {}); // Non-critical
+
+      // Mark task as failed with observable error
+      await supabase
+        .from('rosa_intelligence_tasks')
+        .update({
+          status: 'failed',
+          completed_at: new Date().toISOString(),
+          error_message: `PartnerBrief validation failed: ${issues.join('; ')}`,
+          result_payload: { validationErrors: issues, rawResponse: response.text.substring(0, 500) },
+        })
+        .eq('id', taskId);
+
+      return null;
     }
+
+    const brief = parsed.data;
 
     // 8. Persist to rosa_partner_briefs
     const { data: savedBrief } = await supabase

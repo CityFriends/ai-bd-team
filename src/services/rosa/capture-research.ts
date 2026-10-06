@@ -214,23 +214,14 @@ export async function executeRosaCaptureResearch(
       return result.data;
     }
 
-    // Parse failure -- return what we can
-    log.warn(
-      { captureId: request.captureId, error: result.error.message },
-      'Rosa result parse failure -- returning raw findings'
+    // Fail closed: schema validation is authoritative
+    const issues = result.error.issues.slice(0, 3).map((i) => `${i.path.join('.')}: ${i.message}`);
+    log.error(
+      { captureId: request.captureId, taskId, issues },
+      'Rosa capture research validation FAILED — inference succeeded but result rejected'
     );
 
-    return {
-      taskId,
-      partnerBriefId: savedBrief?.id || taskId,
-      recommendedRelationship: 'EXPLORE',
-      summary: rawJson.summary || 'Research completed with parse issues',
-      findings: rawJson.findings || [response.text.slice(0, 500)],
-      evidenceRefs: rawJson.evidenceRefs || [],
-      unresolvedQuestions: rawJson.unresolvedQuestions || [],
-      recommendedActions: rawJson.recommendedActions || [],
-      confidence: 'LOW',
-    };
+    return insufficientResult(taskId, `Schema validation failed: ${issues.join('; ')}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     log.error(
@@ -261,10 +252,18 @@ INSTRUCTIONS:
 3. Cite sources for every factual claim.
 4. Distinguish between confirmed facts and inferred assessments.
 5. Identify what remains unknown.
-6. Recommend a relationship direction: PRIME_PARTNER, SUB_TO_PARTNER, JV, EXPLORE, or NOT_RECOMMENDED.
-7. DO NOT include unnecessary contact data (phone/email) for fit assessment.
+6. DO NOT include unnecessary contact data (phone/email) for fit assessment.
 
-Return ONLY JSON matching PartnerBrief schema:
+CRITICAL: "recommendedRelationship" MUST be EXACTLY one of these 5 values (no other text):
+  PRIME_PARTNER
+  SUB_TO_PARTNER
+  JV
+  EXPLORE
+  NOT_RECOMMENDED
+Put explanations in "findings", NOT in this field.
+"confidence" MUST be EXACTLY: HIGH, MEDIUM, or LOW.
+
+Return ONLY valid JSON (no markdown):
 {"company":"string","companyIdentifiers":{"uei":null,"cage":null,"sam":null},"contextType":"CAPTURE","captureId":"${request.captureId}","opportunityId":"${request.opportunityId || ''}","recommendedRelationship":"PRIME_PARTNER|SUB_TO_PARTNER|JV|EXPLORE|NOT_RECOMMENDED","capabilityComplementarity":"max500","customerAccess":"max500","vehiclePosition":"max500","pastPerformanceComplementarity":"max500","socioeconomicStrategy":"max500","relationshipAndCompetitiveRisk":"max500","knownFFTCRelationships":["max5"],"findings":["max10"],"evidenceRefs":["max10"],"unresolvedQuestions":["max5"],"recommendedActions":["max5"],"confidence":"HIGH|MEDIUM|LOW"}`;
 }
 
