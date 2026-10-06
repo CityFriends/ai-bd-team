@@ -292,23 +292,21 @@ ${evidenceSummary || 'No evidence retrieved.'}
 ${evidence.errors.length > 0 ? `\nEvidence gaps: ${evidence.errors.join('; ')}` : ''}
 
 INSTRUCTIONS:
-1. Assess the technical feasibility of this opportunity for FFTC.
-2. For every technology decision, classify as REQUIRED (in solicitation), PROPOSED (your recommendation), or ASSUMED (inferred).
-3. Reference evidence by provenance (e.g., "Per SOW Section 3.2") -- never "G2X says".
-4. Evaluate FFTC capability alignment, technical risks, and capability gaps.
-5. If capability gaps exist, identify teaming needs but do NOT recommend specific partners.
-6. Do NOT invent requirements, certifications, clearances, or technical constraints not in evidence.
-7. Be concise and factual. Do not speculate beyond evidence.
+1. Assess technical feasibility concisely. One sentence per item.
+2. Classify technologies: REQUIRED (in solicitation), PROPOSED (your recommendation), ASSUMED (inferred).
+3. Use compact evidence identifiers (e.g., "SOW §3.2") not full passages.
+4. Do NOT repeat the same fact across requirements, constraints, risks, and actions.
+5. Do NOT invent requirements, certifications, clearances, or constraints not in evidence.
+6. Unknown facts must remain in unresolvedQuestions, not invented.
+7. You may NOT make GO/NO_GO decisions. James retains capture strategy authority.
 
-Your technical conclusion MUST be EXACTLY one of: FEASIBLE, FEASIBLE_WITH_RISKS, TEAMING_DEPENDENT, INSUFFICIENT_EVIDENCE, TECHNICALLY_UNSUITABLE
-Any other value will be rejected. Put explanations in "findings", NOT in the conclusion field.
+"conclusion" MUST be EXACTLY one of: FEASIBLE, FEASIBLE_WITH_RISKS, TEAMING_DEPENDENT, INSUFFICIENT_EVIDENCE, TECHNICALLY_UNSUITABLE
+"confidence" MUST be EXACTLY: HIGH, MEDIUM, or LOW
 
-You may NOT make GO/NO_GO decisions. James retains capture strategy authority.
+LIMITS: requirements max 6, constraints max 6, assumptions max 5, technicalRisks max 6, unresolvedQuestions max 4, recommendedActions max 4. deliveryConsiderations max 2 sentences. evidenceRefs use compact identifiers.
 
-"confidence" MUST be EXACTLY: HIGH, MEDIUM, or LOW.
-
-Return ONLY valid JSON matching this EXACT schema (no markdown, no extra text):
-{"captureId":"uuid","opportunityId":"string","conclusion":"FEASIBLE|FEASIBLE_WITH_RISKS|TEAMING_DEPENDENT|INSUFFICIENT_EVIDENCE|TECHNICALLY_UNSUITABLE","confidence":"HIGH|MEDIUM|LOW","requirements":["max10 strings max300 each"],"constraints":["max10 strings max300 each"],"assumptions":["max10 strings max300 each"],"technicalRisks":[{"description":"max300","severity":"HIGH|MEDIUM|LOW","mitigation":"max200"}],"deliveryConsiderations":"max500","evidenceRefs":["max10 strings max500 each"],"unresolvedQuestions":["max5 strings max300 each"],"recommendedActions":["max5 strings max300 each"]}`;
+Return the JSON object only. Do not use Markdown or code fences.
+{"captureId":"uuid","opportunityId":"string","conclusion":"EXACTLY_ONE","confidence":"LEVEL","requirements":["max6"],"constraints":["max6"],"assumptions":["max5"],"technicalRisks":[{"description":"max300","severity":"LEVEL","mitigation":"max200"}],"deliveryConsiderations":"concise","evidenceRefs":["compact refs"],"unresolvedQuestions":["max4"],"recommendedActions":["max4"]}`;
 }
 
 // ============================================================
@@ -420,7 +418,7 @@ export async function processMarcusTechnicalTask(
       taskType,
       idempotencyKey: `marcus:${task.id}`,
       messages: [{ role: 'user', content: prompt }],
-      maxOutputTokens: 2048,
+      maxOutputTokens: 3072,
       maxCostUsd: maxTaskCost,
       workflowId: wfScopeId,
       taskId: taskScopeId,

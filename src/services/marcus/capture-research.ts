@@ -140,7 +140,7 @@ export async function executeMarcusCaptureResearch(
       taskType: 'marcus_capture_research',
       idempotencyKey: `marcus-capture:${request.captureId}:${taskId}`,
       messages: [{ role: 'user', content: prompt }],
-      maxOutputTokens: 2048,
+      maxOutputTokens: 3072,
       maxCostUsd: MARCUS_CAPTURE_TASK_COST,
       workflowId: workflowScopeId,
       taskId: taskScopeId,
@@ -250,23 +250,21 @@ QUESTION: ${request.question}
 ${request.evidenceRefs.length > 0 ? `EXISTING EVIDENCE:\n${request.evidenceRefs.join('\n')}` : ''}
 
 INSTRUCTIONS:
-1. Assess the technical feasibility based on the specific question and available evidence.
-2. For every technology decision, classify as REQUIRED (in solicitation), PROPOSED (your recommendation), or ASSUMED (inferred).
-3. Cite sources for every factual claim.
-4. Distinguish between confirmed facts and inferred assessments.
-5. Identify what remains unknown.
-6. If capability gaps exist, identify teaming needs but do NOT recommend specific partners.
-7. Do NOT invent requirements, certifications, clearances, or technical constraints not in evidence.
+1. Assess technical feasibility concisely. One sentence per item.
+2. Classify technologies: REQUIRED (in solicitation), PROPOSED (recommendation), ASSUMED (inferred).
+3. Use compact evidence identifiers (e.g., "SOW §3.2") not full passages.
+4. Do NOT repeat the same fact across requirements, constraints, risks, and actions.
+5. Do NOT invent requirements, certifications, clearances, or constraints not in evidence.
+6. Unknown → unresolvedQuestions, not invented.
+7. You may NOT make GO/NO_GO decisions. James retains capture strategy authority.
 
-Your technical conclusion MUST be EXACTLY one of: FEASIBLE, FEASIBLE_WITH_RISKS, TEAMING_DEPENDENT, INSUFFICIENT_EVIDENCE, TECHNICALLY_UNSUITABLE
-Any other value will be rejected. Put explanations in "findings", NOT in the conclusion field.
+"conclusion" MUST be EXACTLY one of: FEASIBLE, FEASIBLE_WITH_RISKS, TEAMING_DEPENDENT, INSUFFICIENT_EVIDENCE, TECHNICALLY_UNSUITABLE
+"confidence" MUST be EXACTLY: HIGH, MEDIUM, or LOW
 
-You may NOT make GO/NO_GO decisions. James retains capture strategy authority.
+LIMITS: requirements max 6, constraints max 6, assumptions max 5, technicalRisks max 6, unresolvedQuestions max 4, recommendedActions max 4. deliveryConsiderations max 2 sentences.
 
-"confidence" MUST be EXACTLY: HIGH, MEDIUM, or LOW.
-
-Return ONLY valid JSON matching this EXACT schema (no markdown):
-{"captureId":"${request.captureId}","opportunityId":"${request.opportunityId || ''}","conclusion":"FEASIBLE|FEASIBLE_WITH_RISKS|TEAMING_DEPENDENT|INSUFFICIENT_EVIDENCE|TECHNICALLY_UNSUITABLE","confidence":"HIGH|MEDIUM|LOW","requirements":["max10 strings"],"constraints":["max10 strings"],"assumptions":["max10 strings"],"technicalRisks":[{"description":"max300","severity":"HIGH|MEDIUM|LOW","mitigation":"max200"}],"deliveryConsiderations":"max500","evidenceRefs":["max10 strings"],"unresolvedQuestions":["max5 strings"],"recommendedActions":["max5 strings"]}`;
+Return the JSON object only. Do not use Markdown or code fences.
+{"captureId":"${request.captureId}","opportunityId":"${request.opportunityId || ''}","conclusion":"EXACTLY_ONE","confidence":"LEVEL","requirements":["max6"],"constraints":["max6"],"assumptions":["max5"],"technicalRisks":[{"description":"concise","severity":"LEVEL","mitigation":"concise"}],"deliveryConsiderations":"concise","evidenceRefs":["compact refs"],"unresolvedQuestions":["max4"],"recommendedActions":["max4"]}`;
 }
 
 function insufficientResult(
