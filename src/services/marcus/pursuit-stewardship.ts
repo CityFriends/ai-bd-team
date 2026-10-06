@@ -10,7 +10,7 @@
  */
 
 import { logger } from '../../lib/logger.js';
-import { getFeatureFlag } from '../../config/ai-controls.js';
+// Feature gate controls execution in the executor, not task creation here
 import { getSupabase } from '../../integrations/database/client.js';
 import { classifyTechnicalChange, normalizeTechnicalFields } from './technical-change.js';
 // MaterialTechnicalChangeType values used via classification result
@@ -196,11 +196,9 @@ export async function processSourceDocumentChange(
     return { changeEventId, material: false, ambiguous: false, taskCreated: false, taskId: null };
   }
 
-  // 5. Material change → create Marcus stewardship task
-  if (!getFeatureFlag('MARCUS_PURSUIT_STEWARDSHIP_ENABLED')) {
-    log.info('MARCUS_PURSUIT_STEWARDSHIP_ENABLED=false — material change recorded but no task created');
-    return { changeEventId, material: true, ambiguous: false, taskCreated: false, taskId: null };
-  }
+  // 5. Material change → ALWAYS create a pending stewardship task
+  // The capability gate controls EXECUTION, not durable recognition of work.
+  // A temporary feature disablement must not lose technical amendment work.
 
   // Get current TechnicalSolutionArtifact version
   const { data: artifact } = await supabase

@@ -135,7 +135,7 @@ const MATERIAL_TECHNICAL_FIELDS: Record<
   },
   technicalScope: {
     changeType: MaterialTechnicalChangeType.TECHNICAL_SCOPE,
-    detector: exactChangeDetector('technicalScope', 'Technical scope changed'),
+    detector: scopeChangeDetector(),
   },
 };
 
@@ -215,6 +215,11 @@ export function classifyTechnicalChange(
         if (!classification) {
           classification = materialField.changeType;
         }
+      } else {
+        // Known technical field changed but detector returned null →
+        // the change is too minor/uncertain for deterministic classification.
+        // Mark as ambiguous: TECHNICAL_CHANGE_REVIEW_REQUIRED, no LLM.
+        hasAmbiguous = true;
       }
       continue;
     }
@@ -357,6 +362,57 @@ function exactChangeDetector(
       oldValue: oldStr || null,
       newValue: newStr || null,
     };
+  };
+}
+
+/**
+ * Scope change detector with ambiguity handling.
+ *
+ * Domain rationale: technicalScope changes are only material when they
+ * meaningfully alter what is being delivered. Minor rewording (same words
+ * in different order, small edits < 20% of content) is ambiguous because
+ * a deterministic classifier cannot distinguish substantive scope change
+ * from editorial revision without understanding meaning.
+ *
+ * Material: values differ substantially (> 20% character difference)
+ * Ambiguous: values differ but < 20% — TECHNICAL_CHANGE_REVIEW_REQUIRED
+ * Returns null only if values are identical (handled by outer loop).
+ */
+function scopeChangeDetector(): (oldVal: unknown, newVal: unknown) => TechnicalChangeReason | null {
+  return (oldVal, newVal) => {
+    const oldStr = normalizeValue(oldVal);
+    const newStr = normalizeValue(newVal);
+
+    if (oldStr === newStr) return null;
+    if (!oldStr && !newStr) return null;
+
+    // New scope where none existed → material
+    if (!oldStr && newStr) {
+      return { field: 'technicalScope', description: 'Technical scope added', oldValue: null, newValue: newStr };
+    }
+
+    // Scope removed → material
+    if (oldStr && !newStr) {
+      return { field: 'technicalScope', description: 'Technical scope removed', oldValue: oldStr, newValue: null };
+    }
+
+    // Both present — check if change is substantial
+    const maxLen = Math.max(oldStr.length, newStr.length);
+    let diffChars = 0;
+    for (let i = 0; i < maxLen; i++) {
+      if ((oldStr[i] || '') !== (newStr[i] || '')) diffChars++;
+    }
+    const diffRatio = diffChars / maxLen;
+
+    if (diffRatio > 0.2) {
+      // Substantial change → material
+      return { field: 'technicalScope', description: 'Technical scope changed substantially', oldValue: oldStr, newValue: newStr };
+    }
+
+    // Minor change → ambiguous (cannot determine if material without semantic analysis)
+    // This returns null from the detector, causing the classifier to flag it as ambiguous
+    // via the "unknown field" path since no material reason was produced but field DID change
+    return null;
   };
 }
 
