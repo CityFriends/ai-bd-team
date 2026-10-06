@@ -43,7 +43,7 @@ const log = logger.child({ service: 'MarcusCaptureResearch' });
  * Execute a Marcus capture research task requested by James.
  *
  * Validates:
- * 1. MARCUS_INTELLIGENCE_ENABLED feature gate
+ * 1. MARCUS_CAPTURE_RESEARCH_ENABLED feature gate
  * 2. Capture exists and is in valid state (researching/initial_assessment)
  * 3. Opportunity matches the capture
  * 4. Sufficient remaining capture budget ($0.25 shared ceiling)
@@ -61,9 +61,9 @@ export async function executeMarcusCaptureResearch(
   taskId: string
 ): Promise<MarcusResearchResult> {
   // 1. Feature gate
-  if (!getFeatureFlag('MARCUS_INTELLIGENCE_ENABLED')) {
+  if (!getFeatureFlag('MARCUS_CAPTURE_RESEARCH_ENABLED')) {
     log.info('Marcus intelligence disabled -- returning INSUFFICIENT result');
-    return insufficientResult(taskId, 'MARCUS_INTELLIGENCE_ENABLED is not set');
+    return insufficientResult(taskId, 'MARCUS_CAPTURE_RESEARCH_ENABLED is not set');
   }
 
   // 2. Validate capture exists and is in valid state
@@ -265,8 +265,8 @@ You may NOT make GO/NO_GO decisions. James retains capture strategy authority.
 
 "confidence" MUST be EXACTLY: HIGH, MEDIUM, or LOW.
 
-Return ONLY valid JSON (no markdown):
-{"opportunityId":"${request.opportunityId || ''}","conclusion":"FEASIBLE|FEASIBLE_WITH_RISKS|TEAMING_DEPENDENT|INSUFFICIENT_EVIDENCE|TECHNICALLY_UNSUITABLE","technicalSummary":"max1000","capabilityAlignment":"max500","requirementsAnalysis":[{"requirement":"max300","fftcCapability":"max300","gap":"max300 or null","classification":"REQUIRED|PROPOSED|ASSUMED"}],"technologyDecisions":[{"technology":"max200","classification":"REQUIRED|PROPOSED|ASSUMED","rationale":"max300"}],"technicalRisks":[{"risk":"max300","severity":"HIGH|MEDIUM|LOW","mitigation":"max300"}],"capabilityGaps":[{"gap":"max300","requiredCapability":"max300","teamingRecommendation":"max300"}],"findings":["max10"],"evidenceRefs":["max10"],"unresolvedQuestions":["max5"],"recommendedActions":["max5"],"confidence":"HIGH|MEDIUM|LOW","decisiveTechnicalBlocker":false,"technicalTeamingCandidate":false}`;
+Return ONLY valid JSON matching this EXACT schema (no markdown):
+{"captureId":"${request.captureId}","opportunityId":"${request.opportunityId || ''}","conclusion":"FEASIBLE|FEASIBLE_WITH_RISKS|TEAMING_DEPENDENT|INSUFFICIENT_EVIDENCE|TECHNICALLY_UNSUITABLE","confidence":"HIGH|MEDIUM|LOW","requirements":["max10 strings"],"constraints":["max10 strings"],"assumptions":["max10 strings"],"technicalRisks":[{"description":"max300","severity":"HIGH|MEDIUM|LOW","mitigation":"max200"}],"deliveryConsiderations":"max500","evidenceRefs":["max10 strings"],"unresolvedQuestions":["max5 strings"],"recommendedActions":["max5 strings"]}`;
 }
 
 function insufficientResult(

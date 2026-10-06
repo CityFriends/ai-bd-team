@@ -307,8 +307,8 @@ You may NOT make GO/NO_GO decisions. James retains capture strategy authority.
 
 "confidence" MUST be EXACTLY: HIGH, MEDIUM, or LOW.
 
-Return ONLY valid JSON (no markdown, no extra text):
-{"opportunityId":"string","conclusion":"FEASIBLE|FEASIBLE_WITH_RISKS|TEAMING_DEPENDENT|INSUFFICIENT_EVIDENCE|TECHNICALLY_UNSUITABLE","technicalSummary":"max1000","capabilityAlignment":"max500","requirementsAnalysis":[{"requirement":"max300","fftcCapability":"max300","gap":"max300 or null","classification":"REQUIRED|PROPOSED|ASSUMED"}],"technologyDecisions":[{"technology":"max200","classification":"REQUIRED|PROPOSED|ASSUMED","rationale":"max300"}],"technicalRisks":[{"risk":"max300","severity":"HIGH|MEDIUM|LOW","mitigation":"max300"}],"capabilityGaps":[{"gap":"max300","requiredCapability":"max300","teamingRecommendation":"max300"}],"findings":["max10"],"evidenceRefs":["max10"],"unresolvedQuestions":["max5"],"recommendedActions":["max5"],"confidence":"HIGH|MEDIUM|LOW","decisiveTechnicalBlocker":false,"technicalTeamingCandidate":false}`;
+Return ONLY valid JSON matching this EXACT schema (no markdown, no extra text):
+{"captureId":"uuid","opportunityId":"string","conclusion":"FEASIBLE|FEASIBLE_WITH_RISKS|TEAMING_DEPENDENT|INSUFFICIENT_EVIDENCE|TECHNICALLY_UNSUITABLE","confidence":"HIGH|MEDIUM|LOW","requirements":["max10 strings max300 each"],"constraints":["max10 strings max300 each"],"assumptions":["max10 strings max300 each"],"technicalRisks":[{"description":"max300","severity":"HIGH|MEDIUM|LOW","mitigation":"max200"}],"deliveryConsiderations":"max500","evidenceRefs":["max10 strings max500 each"],"unresolvedQuestions":["max5 strings max300 each"],"recommendedActions":["max5 strings max300 each"]}`;
 }
 
 // ============================================================
@@ -338,9 +338,12 @@ export async function processMarcusTechnicalTask(
   supabase: any,
   taskId: string
 ): Promise<MarcusResearchResult | null> {
-  // 1. Feature gate
-  if (!getFeatureFlag('MARCUS_INTELLIGENCE_ENABLED')) {
-    log.info({ taskId }, 'Marcus intelligence disabled -- skipping task');
+  // 1. Feature gate — check appropriate gate based on trigger type
+  // Capture and pursuit have independent gates
+  // (We check the specific gate after loading the task to know the trigger type.
+  //  For safety, require at least one gate to be true.)
+  if (!getFeatureFlag('MARCUS_CAPTURE_RESEARCH_ENABLED') && !getFeatureFlag('MARCUS_PURSUIT_STEWARDSHIP_ENABLED')) {
+    log.info({ taskId }, 'Both Marcus gates disabled -- skipping task');
     return null;
   }
 
