@@ -27,3 +27,21 @@ VALUES (
   'migration'
 )
 ON CONFLICT (key) DO NOTHING;
+
+-- ============================================================
+-- Row Level Security — service_role only
+-- ============================================================
+-- This table controls AI execution. It MUST NOT be accessible
+-- to anon or authenticated roles via the Data API.
+
+ALTER TABLE system_controls ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "service_role_system_controls"
+  ON system_controls FOR ALL TO service_role
+  USING (true) WITH CHECK (true);
+
+GRANT ALL ON system_controls TO service_role;
+
+COMMENT ON TABLE system_controls IS
+  'Runtime AI controls (kill switch, feature flags). Service-role only. '
+  'anon/authenticated access blocked by RLS.';
