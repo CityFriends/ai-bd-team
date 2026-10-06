@@ -137,7 +137,7 @@ export async function executeDavidCaptureResearch(
   try {
     const response = await complete({
       agentId: 'david',
-      purpose: 'research',
+      purpose: 'reason',
       taskType: 'david_capture_research',
       idempotencyKey: `david-capture:${request.captureId}:${taskId}`,
       messages: [{ role: 'user', content: prompt }],

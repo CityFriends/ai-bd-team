@@ -470,7 +470,7 @@ export async function processDavidTask(
 
     const response = await complete({
       agentId: 'david',
-      purpose: 'research',
+      purpose: 'reason',
       taskType: 'david_intelligence',
       idempotencyKey: `david:${task.id}`,
       messages: [{ role: 'user', content: prompt }],

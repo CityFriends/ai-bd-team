@@ -477,7 +477,7 @@ export async function processRosaTask(
 
     const response = await complete({
       agentId: 'rosa',
-      purpose: 'research',
+      purpose: 'reason',
       taskType: 'rosa_intelligence',
       idempotencyKey: `rosa:${task.id}`,
       messages: [{ role: 'user', content: prompt }],

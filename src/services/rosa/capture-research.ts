@@ -136,7 +136,7 @@ export async function executeRosaCaptureResearch(
   try {
     const response = await complete({
       agentId: 'rosa',
-      purpose: 'research',
+      purpose: 'reason',
       taskType: 'rosa_capture_research',
       idempotencyKey: `rosa-capture:${request.captureId}:${taskId}`,
       messages: [{ role: 'user', content: prompt }],
