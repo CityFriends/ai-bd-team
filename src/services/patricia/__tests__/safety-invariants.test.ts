@@ -44,8 +44,10 @@ describe('Patricia Safety Invariants', () => {
   // ============================================================
   // INV-02: Zero LLM Gateway calls
   // ============================================================
-  it('INV-02: no LLM gateway imports in Patricia service files', () => {
+  it('INV-02: no LLM gateway imports in deterministic Patricia files (reasoning.ts is authorized)', () => {
     for (const file of getPatriciaSourceFiles()) {
+      // reasoning.ts is the ONLY authorized file to import from llm-gateway
+      if (file.endsWith('reasoning.ts')) continue;
       const content = readFile(file);
       expect(content).not.toContain("from '../../llm-gateway");
       expect(content).not.toContain("from '../llm-gateway");

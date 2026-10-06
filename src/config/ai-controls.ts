@@ -42,6 +42,8 @@ export const FEATURE_FLAGS = {
   SPECIALIST_EXECUTION_ENABLED: 'SPECIALIST_EXECUTION_ENABLED',
   /** Patricia deterministic reconciliation. Fail closed if missing. Zero LLM calls. */
   PATRICIA_RECONCILIATION_ENABLED: 'PATRICIA_RECONCILIATION_ENABLED',
+  /** Patricia AI reasoning (risk synthesis + portfolio brief). Fail closed if missing. */
+  PATRICIA_REASONING_ENABLED: 'PATRICIA_REASONING_ENABLED',
   /** Patricia Slack posting. Fail closed if missing. */
   PATRICIA_SLACK_ENABLED: 'PATRICIA_SLACK_ENABLED',
 } as const;
@@ -61,6 +63,7 @@ const FLAG_DEFAULTS: Record<string, boolean> = {
   [FEATURE_FLAGS.MAYA_REVIEW_ENABLED]: false,
   [FEATURE_FLAGS.SPECIALIST_EXECUTION_ENABLED]: false,
   [FEATURE_FLAGS.PATRICIA_RECONCILIATION_ENABLED]: false,
+  [FEATURE_FLAGS.PATRICIA_REASONING_ENABLED]: false,
   [FEATURE_FLAGS.PATRICIA_SLACK_ENABLED]: false,
 };
 
