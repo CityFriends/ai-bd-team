@@ -46,6 +46,14 @@ export const FEATURE_FLAGS = {
   PATRICIA_REASONING_ENABLED: 'PATRICIA_REASONING_ENABLED',
   /** Patricia Slack posting. Fail closed if missing. */
   PATRICIA_SLACK_ENABLED: 'PATRICIA_SLACK_ENABLED',
+  /** Jodie compliance analysis. Fail closed if missing. */
+  JODIE_COMPLIANCE_ENABLED: 'JODIE_COMPLIANCE_ENABLED',
+  /** Jodie section drafting/revision. Fail closed if missing. */
+  JODIE_DRAFTING_ENABLED: 'JODIE_DRAFTING_ENABLED',
+  /** Jodie DOCX/PDF/XLSX rendering. Fail closed if missing. */
+  JODIE_DOCUMENT_RENDERING_ENABLED: 'JODIE_DOCUMENT_RENDERING_ENABLED',
+  /** Jodie Slack posting. Fail closed if missing. */
+  JODIE_SLACK_ENABLED: 'JODIE_SLACK_ENABLED',
 } as const;
 
 /** Default values for all feature flags — ALL OFF for safety */
@@ -65,6 +73,10 @@ const FLAG_DEFAULTS: Record<string, boolean> = {
   [FEATURE_FLAGS.PATRICIA_RECONCILIATION_ENABLED]: false,
   [FEATURE_FLAGS.PATRICIA_REASONING_ENABLED]: false,
   [FEATURE_FLAGS.PATRICIA_SLACK_ENABLED]: false,
+  [FEATURE_FLAGS.JODIE_COMPLIANCE_ENABLED]: false,
+  [FEATURE_FLAGS.JODIE_DRAFTING_ENABLED]: false,
+  [FEATURE_FLAGS.JODIE_DOCUMENT_RENDERING_ENABLED]: false,
+  [FEATURE_FLAGS.JODIE_SLACK_ENABLED]: false,
 };
 
 // Short negative cache to avoid hammering DB on repeated disabled checks
