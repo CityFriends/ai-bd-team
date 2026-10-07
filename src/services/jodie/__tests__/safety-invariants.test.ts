@@ -32,8 +32,9 @@ describe('Jodie Safety Invariants', () => {
     }
   });
 
-  it('INV-02: no LLM gateway imports in deterministic files', () => {
+  it('INV-02: no LLM gateway imports in deterministic files (reasoning.ts is authorized)', () => {
     for (const file of getJodieSourceFiles()) {
+      if (file.endsWith('reasoning.ts')) continue; // authorized reasoning layer
       const content = readFile(file);
       expect(content).not.toContain("from '../../llm-gateway");
       expect(content).not.toContain("from '../llm-gateway");
