@@ -263,8 +263,15 @@ async function repairCancelledPursuitWork(
 // SAFE REPAIR REGISTRY
 // Explicitly allowlisted — only these rules may auto-repair
 // ============================================================
+/**
+ * WH-001 auto-repair is DISABLED in production until PATRICIA-WH001-E2E is closed.
+ * Detection remains enabled — findings are persisted/escalated instead.
+ * WH-005, WH-006, WH-007 are proven safe and enabled everywhere.
+ */
+const WH001_AUTO_REPAIR_ENABLED = process.env.PATRICIA_WH001_REPAIR_ENABLED === 'true';
+
 const REPAIR_REGISTRY: Record<string, (supabase: SupabaseClient, finding: WorkflowFinding) => Promise<RepairResult>> = {
-  'WH-001': repairMissingProposalWorkspace,
+  ...(WH001_AUTO_REPAIR_ENABLED ? { 'WH-001': repairMissingProposalWorkspace } : {}),
   'WH-005': repairObsoletePostSubmissionTasks,
   'WH-006': repairSatisfiedButBlocked,
   'WH-007': repairCancelledPursuitWork,

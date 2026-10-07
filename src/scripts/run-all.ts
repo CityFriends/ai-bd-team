@@ -646,6 +646,104 @@ async function main() {
   });
 
   // ============================================================
+  // PATRICIA DETERMINISTIC RECONCILIATION
+  // ZERO LLM calls from the scheduler itself.
+  // Evaluates deterministic health rules, executes proven safe repairs,
+  // updates commitments/dependencies/escalations.
+  // Reasoning (AT_RISK synthesis, portfolio brief) requires separately
+  // valid triggers and a separate PATRICIA_REASONING_ENABLED check.
+  // ============================================================
+
+  // Patricia Reconciler: Every 15 minutes [DETERMINISTIC: checkpoint-based, bounded processing]
+  cron.schedule('*/15 * * * *', async () => {
+    const { getFeatureFlag, FEATURE_FLAGS } = await import('../config/ai-controls.js');
+    if (!getFeatureFlag(FEATURE_FLAGS.PATRICIA_RECONCILIATION_ENABLED)) return;
+    try {
+      const { acquireCronLock, releaseCronLock } = await import('../integrations/database/cron.js');
+      const lock = await acquireCronLock('patricia-reconciler', 10);
+      if (!lock.acquired) {
+        console.log('[CRON] Patricia reconciler: Another instance already running, skipping');
+        return;
+      }
+      try {
+        const { runReconciliationCycle } = await import('../services/patricia/reconciler.js');
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(
+          process.env.SUPABASE_URL || '',
+          process.env.SUPABASE_SERVICE_KEY || ''
+        );
+        const result = await runReconciliationCycle(supabase);
+        if (result.findingsCount > 0 || result.repairsCount > 0) {
+          console.log(
+            `[${new Date().toLocaleString()}] Patricia Reconciler: inspected=${result.itemsInspected} findings=${result.findingsCount} repairs=${result.repairsCount} escalations=${result.escalationsCount}`
+          );
+        }
+      } finally {
+        if (lock.lockId) {
+          await releaseCronLock(lock.lockId);
+        }
+      }
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Patricia Reconciler failed:`, err);
+    }
+  });
+
+  // Patricia Weekly Portfolio Brief: Mondays 8:00 AM CST (14:00 UTC)
+  // Generates deterministic snapshot, then one bounded AI brief if budget allows.
+  cron.schedule('0 14 * * 1', async () => {
+    const { getFeatureFlag, FEATURE_FLAGS, isAIEnabled } = await import('../config/ai-controls.js');
+    if (!getFeatureFlag(FEATURE_FLAGS.PATRICIA_RECONCILIATION_ENABLED)) return;
+    try {
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabase = createClient(
+        process.env.SUPABASE_URL || '',
+        process.env.SUPABASE_SERVICE_KEY || ''
+      );
+
+      // Step 1: Generate deterministic snapshot (zero LLM)
+      const { generatePortfolioSnapshot } = await import('../services/patricia/portfolio-snapshot.js');
+      const snapshotId = await generatePortfolioSnapshot(supabase, 'WEEKLY');
+
+      // Step 2: If reasoning enabled and AI enabled, generate brief
+      if (getFeatureFlag(FEATURE_FLAGS.PATRICIA_REASONING_ENABLED) && (await isAIEnabled())) {
+        const { data: snapshot } = await supabase
+          .from('patricia_portfolio_snapshots')
+          .select('snapshot_data')
+          .eq('id', snapshotId)
+          .single();
+
+        if (snapshot) {
+          const { executePortfolioBrief } = await import('../services/patricia/reasoning.js');
+          const briefResult = await executePortfolioBrief(supabase, snapshotId, snapshot.snapshot_data);
+
+          // Step 3: If Slack enabled and brief valid, post
+          if (briefResult && getFeatureFlag(FEATURE_FLAGS.PATRICIA_SLACK_ENABLED)) {
+            const { generatePortfolioBriefPayload } = await import('../services/patricia/slack-surface.js');
+            const { postAsAgent } = await import('../integrations/slack.js');
+
+            const snapshotRow = await supabase
+              .from('patricia_portfolio_snapshots')
+              .select('*')
+              .eq('id', snapshotId)
+              .single();
+
+            if (snapshotRow.data) {
+              const payload = generatePortfolioBriefPayload(snapshotRow.data);
+              // Post to AI-BD-TEAM channel
+              const channel = process.env.PATRICIA_BRIEF_CHANNEL || 'ai-bd-team';
+              await postAsAgent('pm', `${payload.text}\n\n_Generated from snapshot ${snapshotId}_`, undefined);
+              console.log(`[${new Date().toLocaleString()}] Patricia: Weekly brief posted to ${channel}`);
+            }
+          }
+        }
+      }
+      console.log(`[${new Date().toLocaleString()}] Patricia: Weekly snapshot ${snapshotId} generated`);
+    } catch (err) {
+      console.error(`[${new Date().toLocaleString()}] Patricia Weekly Brief failed:`, err);
+    }
+  });
+
+  // ============================================================
   // SCHEDULED JOBS - SAFE_INTERNAL_MAINTENANCE
   // No Slack posts, no LLM, no external APIs, no event/workflow creation.
   // These run regardless of AI control state.
@@ -710,6 +808,9 @@ async function main() {
   console.log('    - Deadline monitor: 8:30 AM daily');
   console.log('    - Weekly rollup: 7:00 AM Monday');
   console.log('    - Discussion processor: 10am, 12pm, 2pm, 4pm Mon-Fri');
+  console.log('  Patricia Pipeline Management:');
+  console.log('    - Reconciler: Every 15 minutes (deterministic)');
+  console.log('    - Weekly portfolio brief: 8:00 AM Monday');
   console.log('  System Jobs:');
   console.log('    - Action scheduler: Every 15 minutes');
   console.log('    - Workflow timeouts: Every 5 minutes');
