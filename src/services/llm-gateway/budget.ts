@@ -285,13 +285,19 @@ export async function reserveBudget(
 
     const result = data as { ledger_id: string | null; is_new: boolean | null };
 
-    // Budget exceeded: ledger_id is null
+    // Budget exceeded: ledger_id is null (RPC returns NULL when any scope is exhausted)
     if (!result.ledger_id) {
+      // Report requested cost (actual exhausted scope limit unknown from NULL RPC result)
       return {
         success: false,
         ledgerId: null,
         isNewReservation: false,
-        error: new BudgetExceededError('hierarchical', params.purpose, 0, params.reservedCostUsd),
+        error: new BudgetExceededError(
+          'hierarchical',
+          params.purpose,
+          params.reservedCostUsd, // best available — actual scope limit unknown from NULL
+          params.reservedCostUsd
+        ),
       };
     }
 

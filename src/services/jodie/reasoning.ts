@@ -137,7 +137,7 @@ export async function executeComplianceAnalysis(
   idempotencyKey: string
 ): Promise<{ result: ComplianceExtractionResult; meta: ComplianceExtractionMeta; ledgerId: string; costUsd: number } | null> {
   const taskType = 'jodie_compliance_analysis';
-  const taskScopeId = `jodie-compliance-${workspaceId}`;
+  const taskScopeId = `jodie-compliance-${idempotencyKey}`; // per-chunk scope
   const gatewayKey = `jodie:compliance:${idempotencyKey}`;
   const budget = TASK_BUDGET_CEILINGS[taskType];
   const extractionId = randomUUID();
