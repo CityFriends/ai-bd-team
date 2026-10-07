@@ -477,8 +477,8 @@ export const PROPOSAL_BUDGET_USD = 1.00;
 export const TASK_BUDGET_CEILINGS = {
   jodie_compliance_analysis: 0.10,
   jodie_outline: 0.05,
-  jodie_section_draft: 0.08,
-  jodie_section_revision: 0.08,
+  jodie_section_draft: 0.15,
+  jodie_section_revision: 0.15,
   jodie_coherence_review: 0.15,
 } as const;
 
