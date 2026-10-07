@@ -287,7 +287,8 @@ export async function reserveBudget(
 
     // Budget exceeded: ledger_id is null (RPC returns NULL when any scope is exhausted)
     if (!result.ledger_id) {
-      // Report requested cost (actual exhausted scope limit unknown from NULL RPC result)
+      // Actual exhausted scope limit unknown from NULL RPC result
+      // Report -1 as limit to indicate "unknown" (BudgetExceededError formats it)
       return {
         success: false,
         ledgerId: null,
@@ -295,7 +296,7 @@ export async function reserveBudget(
         error: new BudgetExceededError(
           'hierarchical',
           params.purpose,
-          params.reservedCostUsd, // best available — actual scope limit unknown from NULL
+          -1, // unknown — RPC returns NULL without identifying exhausted scope
           params.reservedCostUsd
         ),
       };

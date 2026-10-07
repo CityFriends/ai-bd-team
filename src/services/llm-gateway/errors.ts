@@ -12,9 +12,10 @@ export class BudgetExceededError extends Error {
     public readonly limitUsd: number,
     public readonly requestedUsd: number
   ) {
+    const limitStr = limitUsd < 0 ? 'unknown' : `$${limitUsd.toFixed(4)}`;
     super(
       `Budget exceeded for ${scopeType}:${scopeId} ` +
-        `(limit: $${limitUsd.toFixed(4)}, requested: $${requestedUsd.toFixed(4)})`
+        `(limit: ${limitStr}, requested: $${requestedUsd.toFixed(4)})`
     );
     this.name = 'BudgetExceededError';
   }
