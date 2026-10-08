@@ -10,7 +10,7 @@ export interface ModelLifecycleEntry {
   modelId: string;
   provider: string;
   lifecycleState: 'active' | 'legacy' | 'deprecated';
-  /** Anthropic's "not sooner than" retirement date, or known retirement date */
+  /** Review/commitment boundary date — provider may extend. NOT verified retirement. */
   retirementBoundary: string | null;
   /** When this entry was last verified against provider documentation */
   lastVerified: string;
@@ -28,7 +28,7 @@ export const MODEL_LIFECYCLE: ModelLifecycleEntry[] = [
     modelId: 'claude-haiku-4-5-20251001',
     provider: 'anthropic',
     lifecycleState: 'active',
-    retirementBoundary: '2026-10-15', // "not sooner than" — NOT a retirement date
+    retirementBoundary: '2026-10-15', // Review/commitment boundary — NOT verified retirement. Provider may extend.
     lastVerified: '2026-10-01',
     recommendedReplacement: null,
   },
@@ -90,12 +90,12 @@ export function checkModelLifecycle(enabledModelIds: string[]): string[] {
 
       if (daysUntil <= 14) {
         warnings.push(
-          `[Lifecycle] ELEVATED WARNING: ${modelId} retirement boundary in ${daysUntil} days (${entry.retirementBoundary}). ` +
+          `[Lifecycle] ELEVATED WARNING: ${modelId} review/commitment boundary in ${daysUntil} days (${entry.retirementBoundary}). ` +
             `Plan replacement commissioning.`
         );
       } else if (daysUntil <= 30) {
         warnings.push(
-          `[Lifecycle] WARNING: ${modelId} retirement boundary in ${daysUntil} days (${entry.retirementBoundary}). ` +
+          `[Lifecycle] WARNING: ${modelId} review/commitment boundary in ${daysUntil} days (${entry.retirementBoundary}). ` +
             `Monitor provider announcements.`
         );
       }

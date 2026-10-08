@@ -256,40 +256,248 @@ function validateEvidenceReferences(
   return { valid: errors.length === 0, errors };
 }
 
+// ============================================================
+// RELATIONSHIP VERIFICATION — deterministic, not keyword-overlap
+// ============================================================
+
+/** Comparative language patterns that establish directional relationships */
+const COMPARATIVE_PATTERNS = {
+  MORE_IMPORTANT: [
+    /(\w+)\s+is\s+(?:not\s+)?(?:significantly\s+)?more\s+important\s+than\s+(\w+)/gi,
+    /(\w+)\s+(?:is|are)\s+(?:not\s+)?(?:significantly\s+)?(?:greater|higher)\s+(?:in\s+)?importan\w*\s+than\s+(\w+)/gi,
+    /(\w+)\s+(?:will\s+)?(?:not\s+)?(?:carry|carries|receive|receives)\s+(?:significantly\s+)?(?:more|greater|higher)\s+(?:weight|importance)\s+than\s+(\w+)/gi,
+  ],
+  MOST_IMPORTANT: [
+    /(\w+)\s+is\s+(?:the\s+)?(?:most|single\s+most|primary|paramount)\s+important/gi,
+    /(\w+)\s+(?:is|are)\s+(?:the\s+)?(?:most|primary|paramount|highest)\s+(?:evaluation\s+)?(?:factor|criterion|consideration)/gi,
+    /(\w+)\s+(?:will\s+be\s+)?(?:weighted|considered)\s+most\s+(?:heavily|importantly)/gi,
+  ],
+  APPROX_EQUAL: [
+    /(\w+)\s+(?:is|are)\s+(?:approximately|roughly|about)\s+equal\s+(?:in\s+importance\s+)?to\s+(\w+)/gi,
+    /(\w+)\s+and\s+(\w+)\s+(?:are|will\s+be)\s+(?:approximately|roughly|about)\s+equal(?:\s+in\s+importance)?/gi,
+    /(?:all|each|both)\s+(?:factors?|criteria)\s+(?:are|will\s+be)\s+(?:weighted\s+)?equally/gi,
+  ],
+  PASS_FAIL: [
+    /(?:pass\s*[\/\\]\s*fail|technically\s+acceptable|acceptable\s*[\/\\]\s*unacceptable)/gi,
+    /evaluated\s+on\s+a\s+pass\s*[\/\\]\s*fail\s+basis/gi,
+  ],
+  LPTA: [
+    /lowest\s+pric\w+[,\s]+technically\s+acceptable/gi,
+  ],
+};
+
+/** Terms that negate or invert a comparison */
+const NEGATION_PATTERNS = [
+  /\bnot\b/i, /\bno\b/i, /\bnor\b/i, /\bnever\b/i, /\bdoes\s+not\b/i,
+  /\bwill\s+not\b/i, /\bshall\s+not\b/i, /\bis\s+not\b/i, /\bare\s+not\b/i,
+];
+
+interface RelationshipVerificationResult {
+  valid: boolean;
+  errors: string[];
+  unresolved: Array<{ factor: string; reason: string }>;
+}
+
 /**
- * Verify that claimed evaluation relationships are supported by cited source text.
- * A syntactically valid citation alone is insufficient.
+ * Deterministic evaluation relationship verification.
+ *
+ * Replaces keyword-overlap with structural checks:
+ * - Validates that claimed relationships are supported by directional language in source
+ * - Rejects inverted comparisons (e.g., claiming A > B when source says B > A)
+ * - Detects negation that reverses a relationship
+ * - Preserves NOT_STATED and PASS_FAIL without requiring comparative language
+ * - When evidence cannot deterministically establish a relationship, marks as unresolved
+ * - Source-ID and document-version validation remains upstream
  */
-function validateRelationshipSupport(
+export function validateRelationshipSupport(
   output: EvaluationAnalysisOutput,
   suppliedEvidence: SuppliedEvidence[]
-): { valid: boolean; errors: string[] } {
+): RelationshipVerificationResult {
   const errors: string[] = [];
+  const unresolved: Array<{ factor: string; reason: string }> = [];
   const evidenceById = new Map(suppliedEvidence.map(e => [e.id, e]));
 
   for (const factor of output.factors) {
+    // NOT_STATED requires no comparative evidence
     if (factor.relativeImportance === 'NOT_STATED') continue;
 
     const evidence = evidenceById.get(factor.sourceEvidenceId);
     if (!evidence) {
-      errors.push(`Factor "${factor.name}": cited evidence not found`);
+      errors.push(`Factor "${factor.name}": cited evidence "${factor.sourceEvidenceId}" not found`);
       continue;
     }
 
-    // Verify the claimed sourceText appears in (or is a reasonable paraphrase of) the evidence
-    // We check for substantial substring overlap rather than exact match
-    const claimedText = factor.sourceText.toLowerCase().trim();
-    const evidenceText = evidence.text.toLowerCase();
-    const words = claimedText.split(/\s+/).filter(w => w.length > 3);
-    const matchCount = words.filter(w => evidenceText.includes(w)).length;
-    const matchRatio = words.length > 0 ? matchCount / words.length : 0;
+    const evidenceText = evidence.text;
+    const factorName = factor.name.toLowerCase().trim();
 
-    if (matchRatio < 0.4) {
-      errors.push(`Factor "${factor.name}": claimed sourceText has low overlap with cited evidence (${Math.round(matchRatio * 100)}% keyword match)`);
+    // PASS_FAIL: verify pass/fail or LPTA language exists in evidence
+    if (factor.relativeImportance === 'PASS_FAIL') {
+      const hasPassFail = COMPARATIVE_PATTERNS.PASS_FAIL.some(p => p.test(evidenceText));
+      const hasLpta = COMPARATIVE_PATTERNS.LPTA.some(p => p.test(evidenceText));
+      // Reset lastIndex after test()
+      for (const p of [...COMPARATIVE_PATTERNS.PASS_FAIL, ...COMPARATIVE_PATTERNS.LPTA]) p.lastIndex = 0;
+
+      if (!hasPassFail && !hasLpta) {
+        unresolved.push({
+          factor: factor.name,
+          reason: 'Claimed PASS_FAIL but no pass/fail or LPTA language found in cited evidence',
+        });
+      }
+      continue;
+    }
+
+    // MOST_IMPORTANT: verify superlative language about this factor
+    if (factor.relativeImportance === 'MOST_IMPORTANT') {
+      let found = false;
+      for (const pattern of COMPARATIVE_PATTERNS.MOST_IMPORTANT) {
+        pattern.lastIndex = 0;
+        let match;
+        while ((match = pattern.exec(evidenceText)) !== null) {
+          const subjectNorm = (match[1] || '').toLowerCase();
+          if (factorNameMatches(factorName, subjectNorm)) {
+            found = true;
+            break;
+          }
+        }
+        pattern.lastIndex = 0;
+        if (found) break;
+      }
+      // Also accept if it's established as "more important" with nothing above it
+      if (!found) {
+        for (const pattern of COMPARATIVE_PATTERNS.MORE_IMPORTANT) {
+          pattern.lastIndex = 0;
+          let match;
+          while ((match = pattern.exec(evidenceText)) !== null) {
+            const subjectNorm = (match[1] || '').toLowerCase();
+            if (factorNameMatches(factorName, subjectNorm)) {
+              // Check if "significantly" present — accept as MOST_IMPORTANT
+              if (/significantly/i.test(match[0])) {
+                found = true;
+                break;
+              }
+            }
+          }
+          pattern.lastIndex = 0;
+          if (found) break;
+        }
+      }
+      if (!found) {
+        unresolved.push({
+          factor: factor.name,
+          reason: 'Claimed MOST_IMPORTANT but no superlative importance language found for this factor in cited evidence',
+        });
+      }
+      continue;
+    }
+
+    // MORE_IMPORTANT: verify comparative language with correct direction
+    if (factor.relativeImportance === 'MORE_IMPORTANT') {
+      const directionResult = verifyComparativeDirection(factorName, evidenceText, 'more');
+      if (directionResult === 'INVERTED') {
+        errors.push(`Factor "${factor.name}": claimed MORE_IMPORTANT but evidence establishes the INVERSE relationship`);
+      } else if (directionResult === 'NOT_FOUND') {
+        unresolved.push({
+          factor: factor.name,
+          reason: 'Claimed MORE_IMPORTANT but no comparative importance language found for this factor in cited evidence',
+        });
+      }
+      continue;
+    }
+
+    // LESS_IMPORTANT: verify comparative language with correct direction (inverse of MORE)
+    if (factor.relativeImportance === 'LESS_IMPORTANT') {
+      const directionResult = verifyComparativeDirection(factorName, evidenceText, 'less');
+      if (directionResult === 'INVERTED') {
+        errors.push(`Factor "${factor.name}": claimed LESS_IMPORTANT but evidence establishes the INVERSE relationship`);
+      } else if (directionResult === 'NOT_FOUND') {
+        unresolved.push({
+          factor: factor.name,
+          reason: 'Claimed LESS_IMPORTANT but no comparative importance language found for this factor in cited evidence',
+        });
+      }
+      continue;
+    }
+
+    // APPROX_EQUAL: verify equality language
+    if (factor.relativeImportance === 'APPROX_EQUAL') {
+      let found = false;
+      for (const pattern of COMPARATIVE_PATTERNS.APPROX_EQUAL) {
+        pattern.lastIndex = 0;
+        if (pattern.test(evidenceText)) {
+          found = true;
+        }
+        pattern.lastIndex = 0;
+        if (found) break;
+      }
+      if (!found) {
+        unresolved.push({
+          factor: factor.name,
+          reason: 'Claimed APPROX_EQUAL but no approximate-equality language found in cited evidence',
+        });
+      }
+      continue;
     }
   }
 
-  return { valid: errors.length === 0, errors };
+  return {
+    valid: errors.length === 0,
+    errors,
+    unresolved,
+  };
+}
+
+/** Check if a factor name matches a captured subject from regex */
+function factorNameMatches(factorName: string, captured: string): boolean {
+  const fn = factorName.replace(/[^a-z]/g, '');
+  const cn = captured.replace(/[^a-z]/g, '');
+  if (fn === cn) return true;
+  // Allow partial matches (e.g., "technical" matches "technical approach")
+  if (fn.startsWith(cn) || cn.startsWith(fn)) return true;
+  if (fn.includes(cn) || cn.includes(fn)) return true;
+  return false;
+}
+
+/**
+ * Verify comparative direction in evidence text.
+ * Returns 'FOUND' if the claimed direction is supported,
+ * 'INVERTED' if the opposite direction is stated,
+ * 'NOT_FOUND' if no comparative language found.
+ */
+function verifyComparativeDirection(
+  factorName: string,
+  evidenceText: string,
+  claimedDirection: 'more' | 'less'
+): 'FOUND' | 'INVERTED' | 'NOT_FOUND' {
+  // Check for negation in the surrounding context
+  for (const pattern of COMPARATIVE_PATTERNS.MORE_IMPORTANT) {
+    pattern.lastIndex = 0;
+    let match;
+    while ((match = pattern.exec(evidenceText)) !== null) {
+      const subject = (match[1] || '').toLowerCase();
+      const object = (match[2] || '').toLowerCase();
+
+      // Check for negation within the match itself or 20 chars before
+      const startPos = Math.max(0, match.index - 20);
+      const contextToCheck = evidenceText.slice(startPos, match.index + match[0].length);
+      const isNegated = NEGATION_PATTERNS.some(np => np.test(contextToCheck));
+
+      if (isNegated) {
+        // Negated: "A is NOT more important than B"
+        if (factorNameMatches(factorName, subject) && claimedDirection === 'more') return 'INVERTED';
+        if (factorNameMatches(factorName, object) && claimedDirection === 'less') return 'INVERTED';
+      } else {
+        // Direct: "A is more important than B"
+        if (factorNameMatches(factorName, subject) && claimedDirection === 'more') return 'FOUND';
+        if (factorNameMatches(factorName, object) && claimedDirection === 'less') return 'FOUND';
+        // Inverted claim check
+        if (factorNameMatches(factorName, object) && claimedDirection === 'more') return 'INVERTED';
+        if (factorNameMatches(factorName, subject) && claimedDirection === 'less') return 'INVERTED';
+      }
+    }
+    pattern.lastIndex = 0;
+  }
+
+  return 'NOT_FOUND';
 }
 
 // ============================================================
@@ -321,26 +529,85 @@ export async function executeEvaluationAnalysis(
   input: EvaluationTaskInput
 ): Promise<EvaluationTaskResult> {
   const taskBudgetKey = `denise-eval-${input.idempotencyKey}`;
+  const claimKey = `denise-eval-${input.idempotencyKey}`;
   const maxCost = DENISE_CAPTURE_TASK_CEILING_USD; // $0.05
 
-  // 1. Check for existing result (idempotency at application level)
-  const { data: existingAnalysis } = await supabase
-    .from('acquisition_analyses')
-    .select('id')
-    .eq('idempotency_key', `denise-eval-analysis-${input.idempotencyKey}`)
-    .single();
+  // 1. Acquire durable claim/lease — prevents concurrent duplicate inference
+  const { data: claimResult, error: claimError } = await supabase.rpc('claim_denise_eval_task', {
+    p_idempotency_key: claimKey,
+    p_lease_seconds: 120,
+  });
 
-  if (existingAnalysis) {
-    return {
-      success: true,
-      analysisId: existingAnalysis.id,
-      evaluationModelId: null,
-      riskIds: [],
-      ledgerId: null,
-      costUsd: 0,
-      validationErrors: [],
-    };
+  if (claimError) {
+    // claim_denise_eval_task RPC may not exist yet (pre-migration)
+    // Fall back to direct analysis check
+    const { data: existingAnalysis } = await supabase
+      .from('acquisition_analyses')
+      .select('id')
+      .eq('idempotency_key', `denise-eval-analysis-${input.idempotencyKey}`)
+      .single();
+
+    if (existingAnalysis) {
+      return {
+        success: true,
+        analysisId: existingAnalysis.id,
+        evaluationModelId: null,
+        riskIds: [],
+        ledgerId: null,
+        costUsd: 0,
+        validationErrors: [],
+      };
+    }
+  } else if (claimResult && claimResult.length > 0) {
+    const claim = claimResult[0];
+
+    // COMPLETED: return existing result
+    if (claim.claim_status === 'COMPLETED') {
+      return {
+        success: true,
+        analysisId: claim.existing_analysis_id,
+        evaluationModelId: null,
+        riskIds: [],
+        ledgerId: null,
+        costUsd: 0,
+        validationErrors: [],
+      };
+    }
+
+    // LEASE_HELD: another caller is executing — reject without provider call
+    if (claim.claim_status === 'LEASE_HELD') {
+      return {
+        success: false,
+        analysisId: null,
+        evaluationModelId: null,
+        riskIds: [],
+        ledgerId: null,
+        costUsd: 0,
+        validationErrors: [],
+        error: 'Concurrent execution in progress — lease held by another caller',
+      };
+    }
+
+    // FAILED/AMBIGUOUS: do NOT auto-retry (could double-charge)
+    if (claim.claim_status === 'FAILED' || claim.claim_status === 'AMBIGUOUS') {
+      return {
+        success: false,
+        analysisId: null,
+        evaluationModelId: null,
+        riskIds: [],
+        ledgerId: null,
+        costUsd: 0,
+        validationErrors: [],
+        error: `Previous execution ${claim.claim_status} — manual review required, no automatic retry`,
+      };
+    }
+
+    // CLAIMED: we won the lease — proceed
   }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const claimId: string | undefined = (claimResult as any)?.[0]?.claim_status === 'CLAIMED'
+    ? (claimResult as any)[0].claim_id : undefined;
 
   // 2. Ensure budget scopes exist
   await ensureWorkflowBudget(supabase, input.workflowId, 0.25);
@@ -349,6 +616,14 @@ export async function executeEvaluationAnalysis(
   // 3. Check observation window
   const windowOk = await checkObservationWindow(supabase, taskBudgetKey, maxCost);
   if (!windowOk) {
+    // Release claim on budget failure
+    if (claimId) {
+      await supabase.rpc('fail_denise_eval_claim', {
+        p_claim_id: claimId,
+        p_error_code: 'OBSERVATION_WINDOW_EXHAUSTED',
+        p_error_message: 'No active observation window',
+      }).then(() => {}, () => {});
+    }
     return {
       success: false,
       analysisId: null,
@@ -402,8 +677,8 @@ Return your analysis as a single JSON object.`;
     // Settle observation window
     await settleObservationWindow(supabase, taskBudgetKey, maxCost, costUsd, ledgerId);
   } catch (err) {
-    // Check for idempotent replay
     const msg = err instanceof Error ? err.message : String(err);
+    // Check for idempotent replay at Gateway level
     if (msg.includes('IDEMPOTENT') || msg.includes('idempotent')) {
       return {
         success: true,
@@ -415,6 +690,23 @@ Return your analysis as a single JSON object.`;
         validationErrors: [],
         error: 'Idempotent replay — no duplicate charge',
       };
+    }
+    // Mark claim as ambiguous (uncertain provider outcome — no auto-retry)
+    if (claimId) {
+      const isDefiniteFailure = msg.includes('BudgetExceeded') || msg.includes('AIDisabled') ||
+        msg.includes('MissingAttribution') || msg.includes('RouteNotFound');
+      if (isDefiniteFailure) {
+        await supabase.rpc('fail_denise_eval_claim', {
+          p_claim_id: claimId, p_error_code: 'GATEWAY_REJECTED',
+          p_error_message: msg.slice(0, 500),
+        }).then(() => {}, () => {});
+      } else {
+        // Provider error, timeout, etc. — AMBIGUOUS, do NOT auto-retry
+        await supabase.rpc('mark_denise_eval_ambiguous', {
+          p_claim_id: claimId, p_error_code: 'PROVIDER_ERROR',
+          p_error_message: msg.slice(0, 500),
+        }).then(() => {}, () => {});
+      }
     }
     return {
       success: false,
@@ -431,6 +723,9 @@ Return your analysis as a single JSON object.`;
   // 6. Parse and validate
   const parsed = parseJsonStrict(rawText);
   if (!parsed) {
+    if (claimId) await supabase.rpc('fail_denise_eval_claim', {
+      p_claim_id: claimId, p_error_code: 'JSON_PARSE_FAILED', p_error_message: 'Invalid JSON output',
+    }).catch(() => {});
     return {
       success: false,
       analysisId: null,
@@ -485,6 +780,7 @@ Return your analysis as a single JSON object.`;
   // 8. Relationship support validation
   const relCheck = validateRelationshipSupport(output, input.evidence);
   if (!relCheck.valid) {
+    // Hard errors: inverted comparisons, missing evidence — reject
     console.error('[Denise:Reasoning] Relationship validation failed:', JSON.stringify(relCheck.errors).slice(0, 500));
     return {
       success: false,
@@ -494,8 +790,24 @@ Return your analysis as a single JSON object.`;
       ledgerId,
       costUsd,
       validationErrors: relCheck.errors,
-      error: 'Relationship support validation failed — citations not supported by source text',
+      error: 'Relationship support validation failed — inverted or unsupported citations',
     };
+  }
+
+  // Unresolved relationships: downgrade to NOT_STATED rather than rejecting
+  // These are claims the verifier cannot deterministically confirm from evidence
+  if (relCheck.unresolved.length > 0) {
+    const unresolvedNames = new Set(relCheck.unresolved.map(u => u.factor));
+    for (const factor of output.factors) {
+      if (unresolvedNames.has(factor.name)) {
+        // Record original claim as unresolved issue, downgrade to NOT_STATED
+        output.unresolvedIssues.push({
+          category: 'UNCERTAINTY',
+          statement: `Factor "${factor.name}" claimed ${factor.relativeImportance} but verifier could not deterministically confirm from evidence. Original claim preserved as unresolved.`,
+        });
+        (factor as { relativeImportance: string }).relativeImportance = 'NOT_STATED';
+      }
+    }
   }
 
   // 9. Persist — immutable, versioned
@@ -603,6 +915,21 @@ Return your analysis as a single JSON object.`;
       riskIds.push(riskId);
     } catch (err) {
       console.error(`[Denise:Reasoning] Failed to persist risk ${i}:`, (err as Error).message?.slice(0, 200));
+    }
+  }
+
+  // 12. Complete claim — marks as COMPLETED with result references
+  if (claimId) {
+    try {
+      await supabase.rpc('complete_denise_eval_claim', {
+        p_claim_id: claimId,
+        p_analysis_id: analysisId,
+        p_eval_model_id: evaluationModelId,
+        p_ledger_id: ledgerId,
+        p_cost_usd: costUsd,
+      });
+    } catch (err) {
+      console.error('[Denise:Reasoning] Failed to complete claim:', (err as Error).message);
     }
   }
 
