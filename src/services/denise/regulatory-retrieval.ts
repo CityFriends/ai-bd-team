@@ -58,13 +58,23 @@ export interface RetrievalResult {
   title: string | null;
   operativeText: string | null;
   sourceUrl: string | null;
-  publicationId: string | null;
-  effectiveDate: string | null;
   retrievedAt: string;
   contentHash: string | null;
-  verificationStatus: 'VERIFIED' | 'UNVERIFIED' | 'FAILED';
   historicalCurrent: 'CURRENT' | 'HISTORICAL' | 'UNKNOWN';
-  publicationVerified: boolean;
+
+  /** Identifier observed on the official source page (FAC number, DFARS Change) */
+  publicationIdObserved: string | null;
+  /** Effective date observed on the official source page */
+  effectiveDateObserved: string | null;
+  /** True only if the publication identifier is supported by an authoritative publication-level source */
+  publicationMetadataVerified: boolean;
+  /** True only if the requested provision identity AND complete text were verified (explicit boundaries) */
+  provisionTextVerified: boolean;
+  /** True only if reliable evidence links the extracted text to the claimed publication */
+  provisionPublicationLinkVerified: boolean;
+  /** Whether this result is eligible for authoritative persistence in regulatory_evidence */
+  eligibleForAuthoritativePersistence: boolean;
+
   error?: string;
   errorCode?: string;
 }
@@ -388,12 +398,12 @@ export async function retrieveRegulatoryProvision(
       provisionId: normalized,
       regulation: request.regulation,
       title: null, operativeText: null, sourceUrl: null,
-      publicationId: request.publicationId || null,
-      effectiveDate: null,
       retrievedAt: now,
       contentHash: null,
-      verificationStatus: 'FAILED',
-      historicalCurrent: 'UNKNOWN', publicationVerified: false,
+      historicalCurrent: 'UNKNOWN',
+      publicationIdObserved: null, effectiveDateObserved: null,
+      publicationMetadataVerified: false, provisionTextVerified: false,
+      provisionPublicationLinkVerified: false, eligibleForAuthoritativePersistence: false,
       error: 'Historical version retrieval not supported in this milestone — archives use ZIP format requiring separate commissioning',
       errorCode: 'HISTORICAL_NOT_SUPPORTED',
     };
@@ -409,8 +419,8 @@ export async function retrieveRegulatoryProvision(
     return {
       success: false, provisionId: normalized, regulation: request.regulation,
       title: null, operativeText: null, sourceUrl: null,
-      publicationId: null, effectiveDate: null, retrievedAt: now,
-      contentHash: null, verificationStatus: 'FAILED', historicalCurrent: 'UNKNOWN', publicationVerified: false,
+      retrievedAt: now,
+      contentHash: null, historicalCurrent: 'UNKNOWN', publicationIdObserved: null, effectiveDateObserved: null, publicationMetadataVerified: false, provisionTextVerified: false, provisionPublicationLinkVerified: false, eligibleForAuthoritativePersistence: false,
       error: `Unsupported regulation: ${request.regulation}`,
       errorCode: 'UNSUPPORTED_REGULATION',
     };
@@ -422,8 +432,8 @@ export async function retrieveRegulatoryProvision(
     return {
       success: false, provisionId: normalized, regulation: request.regulation,
       title: null, operativeText: null, sourceUrl: url,
-      publicationId: null, effectiveDate: null, retrievedAt: now,
-      contentHash: null, verificationStatus: 'FAILED', historicalCurrent: 'UNKNOWN', publicationVerified: false,
+      retrievedAt: now,
+      contentHash: null, historicalCurrent: 'UNKNOWN', publicationIdObserved: null, effectiveDateObserved: null, publicationMetadataVerified: false, provisionTextVerified: false, provisionPublicationLinkVerified: false, eligibleForAuthoritativePersistence: false,
       error: fetchResult.error,
       errorCode: fetchResult.error?.startsWith('NETWORK_TIMEOUT') ? 'NETWORK_TIMEOUT' : 'FETCH_FAILED',
     };
@@ -447,8 +457,8 @@ export async function retrieveRegulatoryProvision(
     return {
       success: false, provisionId: normalized, regulation: request.regulation,
       title: null, operativeText: null, sourceUrl: fetchResult.finalUrl,
-      publicationId: null, effectiveDate: null, retrievedAt: now,
-      contentHash: null, verificationStatus: 'FAILED', historicalCurrent: 'UNKNOWN', publicationVerified: false,
+      retrievedAt: now,
+      contentHash: null, historicalCurrent: 'UNKNOWN', publicationIdObserved: null, effectiveDateObserved: null, publicationMetadataVerified: false, provisionTextVerified: false, provisionPublicationLinkVerified: false, eligibleForAuthoritativePersistence: false,
       error: parsed.error,
       errorCode: 'PARSE_FAILED',
     };
@@ -457,8 +467,21 @@ export async function retrieveRegulatoryProvision(
   // Compute content hash
   const contentHash = createHash('sha256').update(parsed.operativeText).digest('hex');
 
-  // Persist to regulatory_evidence and cache (if supabase provided)
-  if (supabase) {
+  // Determine verification status for each dimension
+  const publicationIdObserved = parsed.facNumber;
+  const effectiveDateObserved = parsed.effectiveDate;
+  // Publication metadata verified: we observed an identifier, but it's site-wide, not provision-specific
+  const publicationMetadataVerified = Boolean(publicationIdObserved);
+  // Provision text verified: we found the provision ID in the page AND have explicit end boundary
+  const provisionTextVerified = Boolean(parsed.hasExplicitEnd);
+  // Publication-provision linkage: cannot be verified from page structure alone
+  // (site-wide FAC ≠ the FAC that last amended this specific clause)
+  const provisionPublicationLinkVerified = false;
+  // Eligible for authoritative persistence only when text boundaries are verified
+  const eligibleForAuthoritativePersistence = provisionTextVerified;
+
+  // Persist ONLY when eligible for authoritative use
+  if (supabase && eligibleForAuthoritativePersistence) {
     await persistEvidence(supabase, request, parsed, fetchResult.finalUrl, contentHash, now);
   }
 
@@ -469,13 +492,15 @@ export async function retrieveRegulatoryProvision(
     title: parsed.title,
     operativeText: parsed.operativeText,
     sourceUrl: fetchResult.finalUrl,
-    publicationId: parsed.facNumber,
-    effectiveDate: parsed.effectiveDate,
     retrievedAt: now,
     contentHash,
-    verificationStatus: parsed.facNumber ? 'VERIFIED' : 'UNVERIFIED',
     historicalCurrent: 'CURRENT',
-    publicationVerified: Boolean(parsed.facNumber),
+    publicationIdObserved,
+    effectiveDateObserved,
+    publicationMetadataVerified,
+    provisionTextVerified,
+    provisionPublicationLinkVerified,
+    eligibleForAuthoritativePersistence,
   };
 }
 
@@ -515,6 +540,8 @@ async function checkCache(
   // If no verifiedPublicationId was provided, we cannot confirm currency — skip cache
   if (!verifiedPublicationId) return null;
 
+  // Cache was persisted only when eligibleForAuthoritativePersistence was true
+  // and publication ID was verified at persistence time — safe to return as verified
   return {
     success: true,
     provisionId,
@@ -522,12 +549,15 @@ async function checkCache(
     title: null,
     operativeText: data.cached_text,
     sourceUrl: data.source_url,
-    publicationId: data.version,
-    effectiveDate: data.effective_date,
     retrievedAt: data.last_validated_at,
     contentHash: data.content_hash,
-    verificationStatus: 'VERIFIED',
     historicalCurrent: 'CURRENT',
+    publicationIdObserved: data.version,
+    effectiveDateObserved: data.effective_date,
+    publicationMetadataVerified: true,
+    provisionTextVerified: true, // Only verified extractions are persisted
+    provisionPublicationLinkVerified: false,
+    eligibleForAuthoritativePersistence: true,
   };
 }
 

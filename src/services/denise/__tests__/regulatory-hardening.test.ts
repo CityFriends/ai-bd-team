@@ -207,8 +207,8 @@ describe('Live Retrieval Regression', () => {
     });
     expect(far.success).toBe(true);
     expect(far.provisionId).toBe('52.219-14');
-    expect(far.publicationVerified).toBeDefined();
-    console.log(`[Hardening Live] FAR: ${far.operativeText?.length} chars, pub=${far.publicationId}, verified=${far.publicationVerified}`);
+    expect(far.publicationMetadataVerified).toBeDefined();
+    console.log(`[Hardening Live] FAR: ${far.operativeText?.length} chars, pub=${far.publicationIdObserved}, textVerified=${far.provisionTextVerified}`);
   });
 
   it('Test 11: historical selectors still fail closed', async () => {
