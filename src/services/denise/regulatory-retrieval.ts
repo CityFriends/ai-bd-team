@@ -64,6 +64,7 @@ export interface RetrievalResult {
   contentHash: string | null;
   verificationStatus: 'VERIFIED' | 'UNVERIFIED' | 'FAILED';
   historicalCurrent: 'CURRENT' | 'HISTORICAL' | 'UNKNOWN';
+  publicationVerified: boolean;
   error?: string;
   errorCode?: string;
 }
@@ -186,6 +187,7 @@ export interface ParsedProvision {
   operativeText: string;
   facNumber: string | null;
   effectiveDate: string | null;
+  hasExplicitEnd?: boolean;
 }
 
 /** Parse a FAR provision from an Acquisition.gov HTML page */
@@ -222,8 +224,12 @@ export function parseFarProvision(html: string, expectedProvisionId: string): Pa
   const effMatch = fullText.match(/[Ee]ffective\s*(?:[Dd]ate)?:?\s*(\d{1,2}\/\d{1,2}\/\d{4})/);
   if (effMatch) effectiveDate = effMatch[1];
 
-  // Extract operative text: find the provision number in body text, take everything until "End of clause/provision"
-  const provIdx = fullText.indexOf(normalized);
+  // Extract operative text: find the provision heading in body text
+  // Use a pattern that matches the provision ID followed by its title text,
+  // to avoid matching navigation/metadata references earlier in the page
+  const provPattern = new RegExp(normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s+\\w');
+  const provMatch = fullText.match(provPattern);
+  const provIdx = provMatch ? fullText.indexOf(provMatch[0]) : fullText.lastIndexOf(normalized);
   if (provIdx < 0) {
     return { error: `Provision ${normalized} not found in body text` };
   }
@@ -250,6 +256,16 @@ export function parseFarProvision(html: string, expectedProvisionId: string): Pa
     return { error: `Incomplete provision text extracted (${operativeText.length} chars)` };
   }
 
+  // Verify extraction didn't start inside another provision
+  // Check if there's a different provision ID before our target in the extracted text
+  const otherProvMatch = operativeText.match(/\b(\d{2}\.\d{3}-\d+)\b/);
+  if (otherProvMatch && otherProvMatch[1] !== normalized && operativeText.indexOf(otherProvMatch[0]) < 20) {
+    return { error: `Extraction may begin inside provision ${otherProvMatch[1]}, not ${normalized}` };
+  }
+
+  // Verify end boundary was explicit (either "End of clause" or bounded extraction)
+  const hasExplicitEnd = endOfClause > 0;
+
   return {
     provisionId: normalized,
     title,
@@ -257,6 +273,7 @@ export function parseFarProvision(html: string, expectedProvisionId: string): Pa
     operativeText,
     facNumber,
     effectiveDate,
+    hasExplicitEnd,
   };
 }
 
@@ -314,6 +331,28 @@ export function parseDfarsProvision(html: string, expectedProvisionId: string): 
     return { error: `Incomplete DFARS provision text (${rawText.length} chars)` };
   }
 
+  // Verify extraction didn't capture adjacent provision content
+  // Check for another 252.xxx-xxxx pattern in the body (not the heading line)
+  const bodyAfterTitle = rawText.slice(rawText.indexOf('\n') + 1);
+  const adjacentMatch = bodyAfterTitle.match(/\b(252\.\d{3}-\d{4})\b/);
+  if (adjacentMatch && adjacentMatch[1] !== normalized) {
+    // Adjacent provision content leaked — truncate at that point
+    const leakIdx = bodyAfterTitle.indexOf(adjacentMatch[0]);
+    const cleanedBody = bodyAfterTitle.slice(0, leakIdx).trim();
+    if (cleanedBody.length < 50) {
+      return { error: `DFARS provision text contaminated by adjacent provision ${adjacentMatch[1]}` };
+    }
+    return {
+      provisionId: normalized,
+      title,
+      clauseDate: null,
+      operativeText: `${rawText.slice(0, rawText.indexOf('\n'))}\n${cleanedBody}`,
+      facNumber,
+      effectiveDate,
+      hasExplicitEnd: endOfClauseMatch > 0 && endOfClauseMatch < (nextMatch > 0 ? nextMatch : Infinity),
+    };
+  }
+
   return {
     provisionId: normalized,
     title,
@@ -321,6 +360,7 @@ export function parseDfarsProvision(html: string, expectedProvisionId: string): 
     operativeText: rawText,
     facNumber,
     effectiveDate,
+    hasExplicitEnd: endOfClauseMatch > 0 && endOfClauseMatch < (nextMatch > 0 ? nextMatch : Infinity),
   };
 }
 
@@ -335,11 +375,9 @@ export async function retrieveRegulatoryProvision(
   const now = new Date().toISOString();
   const normalized = normalizeProvisionId(request.provisionId);
 
-  // Check cache first (if supabase provided)
-  if (supabase && request.versionSelector === 'CURRENT') {
-    const cached = await checkCache(supabase, request.regulation, normalized);
-    if (cached) return cached;
-  }
+  // For CURRENT: we must verify the current publication identity before trusting cache.
+  // Fetch the live page to get the current publication ID, then compare with cache.
+  // This ensures a stale cache from an older FAC is never returned as CURRENT.
 
   // Historical version selection
   if (request.versionSelector === 'AS_OF_DATE' || request.versionSelector === 'EXACT_PUBLICATION') {
@@ -355,7 +393,7 @@ export async function retrieveRegulatoryProvision(
       retrievedAt: now,
       contentHash: null,
       verificationStatus: 'FAILED',
-      historicalCurrent: 'UNKNOWN',
+      historicalCurrent: 'UNKNOWN', publicationVerified: false,
       error: 'Historical version retrieval not supported in this milestone — archives use ZIP format requiring separate commissioning',
       errorCode: 'HISTORICAL_NOT_SUPPORTED',
     };
@@ -372,7 +410,7 @@ export async function retrieveRegulatoryProvision(
       success: false, provisionId: normalized, regulation: request.regulation,
       title: null, operativeText: null, sourceUrl: null,
       publicationId: null, effectiveDate: null, retrievedAt: now,
-      contentHash: null, verificationStatus: 'FAILED', historicalCurrent: 'UNKNOWN',
+      contentHash: null, verificationStatus: 'FAILED', historicalCurrent: 'UNKNOWN', publicationVerified: false,
       error: `Unsupported regulation: ${request.regulation}`,
       errorCode: 'UNSUPPORTED_REGULATION',
     };
@@ -385,7 +423,7 @@ export async function retrieveRegulatoryProvision(
       success: false, provisionId: normalized, regulation: request.regulation,
       title: null, operativeText: null, sourceUrl: url,
       publicationId: null, effectiveDate: null, retrievedAt: now,
-      contentHash: null, verificationStatus: 'FAILED', historicalCurrent: 'UNKNOWN',
+      contentHash: null, verificationStatus: 'FAILED', historicalCurrent: 'UNKNOWN', publicationVerified: false,
       error: fetchResult.error,
       errorCode: fetchResult.error?.startsWith('NETWORK_TIMEOUT') ? 'NETWORK_TIMEOUT' : 'FETCH_FAILED',
     };
@@ -396,12 +434,21 @@ export async function retrieveRegulatoryProvision(
     ? parseFarProvision(fetchResult.text, normalized)
     : parseDfarsProvision(fetchResult.text, normalized);
 
+  // Check cache: if we have a cached entry with SAME publication ID and content hash, use it
+  if (supabase && parsed && !('error' in parsed) && parsed.facNumber) {
+    const cached = await checkCache(supabase, request.regulation, normalized, parsed.facNumber);
+    if (cached && cached.contentHash) {
+      // Cache hit with verified current publication — no need to re-persist
+      return cached;
+    }
+  }
+
   if ('error' in parsed) {
     return {
       success: false, provisionId: normalized, regulation: request.regulation,
       title: null, operativeText: null, sourceUrl: fetchResult.finalUrl,
       publicationId: null, effectiveDate: null, retrievedAt: now,
-      contentHash: null, verificationStatus: 'FAILED', historicalCurrent: 'UNKNOWN',
+      contentHash: null, verificationStatus: 'FAILED', historicalCurrent: 'UNKNOWN', publicationVerified: false,
       error: parsed.error,
       errorCode: 'PARSE_FAILED',
     };
@@ -426,8 +473,9 @@ export async function retrieveRegulatoryProvision(
     effectiveDate: parsed.effectiveDate,
     retrievedAt: now,
     contentHash,
-    verificationStatus: 'VERIFIED',
+    verificationStatus: parsed.facNumber ? 'VERIFIED' : 'UNVERIFIED',
     historicalCurrent: 'CURRENT',
+    publicationVerified: Boolean(parsed.facNumber),
   };
 }
 
@@ -435,28 +483,43 @@ export async function retrieveRegulatoryProvision(
 // CACHE
 // ============================================================
 
+/**
+ * Check cache with publication-identity verification.
+ * Returns cached result ONLY when its publication ID matches the verified current publication.
+ * Cache age alone is never proof of currency.
+ */
 async function checkCache(
   supabase: SupabaseClient,
   regulation: RegulationFamily,
-  provisionId: string
+  provisionId: string,
+  verifiedPublicationId?: string
 ): Promise<RetrievalResult | null> {
-  const { data } = await supabase
+  let query = supabase
     .from('regulatory_source_cache')
     .select('*')
     .eq('authority', regulation)
     .eq('citation', provisionId)
     .eq('freshness_status', 'CURRENT')
     .order('created_at', { ascending: false })
-    .limit(1)
-    .single();
+    .limit(1);
+
+  // If we have a verified publication ID, require it to match
+  if (verifiedPublicationId) {
+    query = query.eq('version', verifiedPublicationId);
+  }
+
+  const { data } = await query.single();
 
   if (!data) return null;
+
+  // If no verifiedPublicationId was provided, we cannot confirm currency — skip cache
+  if (!verifiedPublicationId) return null;
 
   return {
     success: true,
     provisionId,
     regulation,
-    title: null, // Cache doesn't store title separately
+    title: null,
     operativeText: data.cached_text,
     sourceUrl: data.source_url,
     publicationId: data.version,
