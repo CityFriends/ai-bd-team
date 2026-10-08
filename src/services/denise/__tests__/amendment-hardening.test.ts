@@ -20,66 +20,90 @@ function mkSpan(id: string, section: string, text: string, docVer = 'SOL-V1'): E
 }
 
 // ============================================================
-// 1-4. Q&A PROVENANCE (deterministic — validates the logic)
+// 1-5. Q&A PROVENANCE — full containment verification
 // ============================================================
 
-import { AmendmentImpactOutputSchema } from '../amendment-analysis.js';
+import { AmendmentImpactOutputSchema, validateImpactEvidence } from '../amendment-analysis.js';
+import type { AmendmentImpactOutput } from '../amendment-analysis.js';
 
-describe('Q&A Provenance Enforcement', () => {
-  it('Test 1: missing Q&A evidence ID → schema accepts optional but validation downgrades', () => {
-    const output = AmendmentImpactOutputSchema.parse({
-      previousVersion: 'V1', newVersion: 'V1',
-      changeImpacts: [],
-      qaConflicts: [{
-        question: 'What is the page limit?',
-        answer: '30 pages',
-        conflictType: 'CLARIFIES',
-        // sourceEvidenceId intentionally missing
-      }],
-    });
-    // sourceEvidenceId is undefined — validation should flag as UNVERIFIED_SOURCE
-    expect(output.qaConflicts[0].sourceEvidenceId).toBeUndefined();
+function makeQAOutput(qaConflicts: AmendmentImpactOutput['qaConflicts']): AmendmentImpactOutput {
+  return AmendmentImpactOutputSchema.parse({
+    previousVersion: 'V1', newVersion: 'V1', changeImpacts: [], qaConflicts,
+  });
+}
+
+const QA_EVIDENCE = [
+  mkSpan('ev-qa-1', 'Q&A #3', 'Q: Are separate volumes required? A: Yes, technical and price must be in separate volumes.', 'QA-V1'),
+];
+
+describe('Q&A Provenance — Full Containment', () => {
+  it('Test 1: authentic question with fabricated answer → UNVERIFIED_SOURCE', () => {
+    const output = makeQAOutput([{
+      question: 'Are separate volumes required',
+      answer: 'No, a single combined volume is acceptable',  // FABRICATED — not in evidence
+      sourceEvidenceId: 'ev-qa-1',
+      conflictType: 'CLARIFIES',
+    }]);
+    const r = validateImpactEvidence(output, QA_EVIDENCE);
+    // Answer not contained → downgraded
+    expect(r.valid).toBe(true); // validation doesn't reject the whole analysis
+    expect(output.qaConflicts[0].conflictDescription).toContain('UNVERIFIED_SOURCE');
+    expect(output.qaConflicts[0].requiresHumanReview).toBe(true);
   });
 
-  it('Test 2: literal "undefined" evidence ID rejected', () => {
-    const output = AmendmentImpactOutputSchema.parse({
-      previousVersion: 'V1', newVersion: 'V1',
-      changeImpacts: [],
-      qaConflicts: [{
-        question: 'What is the page limit?',
-        answer: '30 pages',
-        sourceEvidenceId: 'undefined',
-        conflictType: 'CLARIFIES',
-      }],
-    });
-    // The string "undefined" should be treated as invalid by validation
-    expect(output.qaConflicts[0].sourceEvidenceId).toBe('undefined');
-    // Validation logic will downgrade this to UNVERIFIED_SOURCE
+  it('Test 2: four-word partial question match → UNVERIFIED_SOURCE', () => {
+    const output = makeQAOutput([{
+      question: 'Are separate volumes required for the technical approach and management plan',  // Suffix fabricated
+      answer: 'Yes, technical and price must be in separate volumes',
+      sourceEvidenceId: 'ev-qa-1',
+      conflictType: 'CLARIFIES',
+    }]);
+    const r = validateImpactEvidence(output, QA_EVIDENCE);
+    // Full question not contained — first 4 words match but full string doesn't
+    expect(output.qaConflicts[0].conflictDescription).toContain('UNVERIFIED_SOURCE');
   });
 
-  it('Test 3: Q&A evidence from wrong document version rejected', () => {
-    // The validateImpactEvidence function checks against supplied evidence
-    // Q&A with evidenceId pointing to wrong doc version won't be in validIds
-    const qa = { sourceEvidenceId: 'ev-qa-1', question: 'q', answer: 'a', conflictType: 'CLARIFIES' as const, requiresHumanReview: true };
-    const evidence = [mkSpan('ev-qa-1', 'Q&A', 'Q: question A: answer', 'QA-WRONG-VERSION')];
-    // validIds built from evidence with QA-WRONG-VERSION but validation checks against all supplied
-    // This is tested end-to-end in amendment-commissioning.test.ts Case 9
-    expect(evidence[0].documentVersion).toBe('QA-WRONG-VERSION');
+  it('Test 3: complete question and complete answer → accepted', () => {
+    const output = makeQAOutput([{
+      question: 'Are separate volumes required',
+      answer: 'Yes, technical and price must be in separate volumes',
+      sourceEvidenceId: 'ev-qa-1',
+      conflictType: 'CLARIFIES',
+    }]);
+    const r = validateImpactEvidence(output, QA_EVIDENCE);
+    expect(r.valid).toBe(true);
+    // Should NOT be downgraded
+    expect(output.qaConflicts[0].conflictDescription || '').not.toContain('UNVERIFIED_SOURCE');
   });
 
-  it('Test 4: Q&A conclusion unsupported by cited answer text', () => {
-    // The verifier checks that question text appears in evidence
-    // If question "What is the deadline?" doesn't appear in evidence about page limits, it's flagged
-    const evidence = [mkSpan('ev-qa', 'Q&A', 'Q: What are the page limits? A: 25 pages maximum.')];
-    // A Q&A about deadlines citing this evidence would fail the 4-word check
-    const deadlineQ = 'When is the proposal deadline for submission';
-    const qWords = deadlineQ.toLowerCase().split(/\s+/).filter(w => w.length > 2);
-    const evNorm = evidence[0].text.toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ');
-    let supported = false;
-    for (let i = 0; i <= qWords.length - 4; i++) {
-      if (evNorm.includes(qWords.slice(i, i + 4).join(' '))) { supported = true; break; }
-    }
-    expect(supported).toBe(false); // Not supported — would be flagged UNVERIFIED_SOURCE
+  it('Test 4: wrong opportunity/version → UNVERIFIED_SOURCE', () => {
+    const wrongEvidence = [
+      mkSpan('ev-qa-wrong', 'Q&A #3', 'Q: Are separate volumes required? A: Yes.', 'QA-WRONG-VERSION'),
+    ];
+    const output = makeQAOutput([{
+      question: 'Are separate volumes required',
+      answer: 'Yes',
+      sourceEvidenceId: 'ev-qa-1',  // Points to ev-qa-1 which is not in wrongEvidence
+      conflictType: 'CLARIFIES',
+    }]);
+    const r = validateImpactEvidence(output, wrongEvidence);
+    // ev-qa-1 not in supplied evidence set
+    expect(output.qaConflicts[0].conflictDescription).toContain('UNVERIFIED_SOURCE');
+  });
+
+  it('Test 5: fabricated solicitation quotation in Q&A → UNVERIFIED_SOURCE', () => {
+    // Q&A claims to quote solicitation language that doesn't exist in evidence
+    const output = makeQAOutput([{
+      question: 'Are separate volumes required',
+      answer: 'Per Section L.4, a performance bond of $5M is required',  // FABRICATED answer
+      sourceEvidenceId: 'ev-qa-1',
+      conflictType: 'PURPORTS_TO_MODIFY',
+    }]);
+    const r = validateImpactEvidence(output, QA_EVIDENCE);
+    expect(output.qaConflicts[0].conflictDescription).toContain('UNVERIFIED_SOURCE');
+    expect(output.qaConflicts[0].requiresHumanReview).toBe(true);
+    // Should NOT be classified as authoritative modification
+    expect(output.qaConflicts[0].conflictType).toBe('POTENTIALLY_CONFLICTS');
   });
 });
 

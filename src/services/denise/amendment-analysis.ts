@@ -127,7 +127,7 @@ function norm(text: string): string {
 // EVIDENCE VALIDATION
 // ============================================================
 
-function validateImpactEvidence(
+export function validateImpactEvidence(
   output: AmendmentImpactOutput,
   suppliedEvidence: EvidenceSpan[]
 ): { valid: boolean; errors: string[] } {
@@ -153,46 +153,51 @@ function validateImpactEvidence(
     }
   }
 
-  // Q&A provenance: every finding needs a valid source or becomes UNVERIFIED_SOURCE
-  const unverifiedQA: number[] = [];
+  // Q&A provenance: require valid evidence ID, full question containment, full answer containment
+  const unverifiedQA: Array<{ idx: number; reason: string }> = [];
   for (let i = 0; i < output.qaConflicts.length; i++) {
     const qa = output.qaConflicts[i];
     const eid = qa.sourceEvidenceId;
-    // Reject invalid sentinel values
+
+    // 1. Require valid evidence ID — reject sentinels and missing
     if (!eid || eid === 'undefined' || eid === 'null' || eid.trim() === '') {
-      unverifiedQA.push(i);
+      unverifiedQA.push({ idx: i, reason: 'Missing or invalid sourceEvidenceId' });
       continue;
     }
     if (!validIds.has(eid)) {
-      unverifiedQA.push(i);
+      unverifiedQA.push({ idx: i, reason: `Evidence "${eid}" not in supplied set` });
       continue;
     }
-    // Verify cited question/answer text is supported by the evidence
+
     const ev = evidenceById.get(eid);
-    if (ev) {
-      const qNorm = norm(qa.question).replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
-      const evNorm = norm(ev.text).replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
-      // Question text must have 4+ consecutive words in evidence
-      const qWords = qNorm.split(/\s+/).filter(w => w.length > 2);
-      let qSupported = false;
-      if (qWords.length >= 4) {
-        for (let j = 0; j <= qWords.length - 4; j++) {
-          if (evNorm.includes(qWords.slice(j, j + 4).join(' '))) { qSupported = true; break; }
-        }
-      } else {
-        qSupported = evNorm.includes(qNorm); // Short question — full containment
-      }
-      if (!qSupported) {
-        unverifiedQA.push(i);
-      }
+    if (!ev) {
+      unverifiedQA.push({ idx: i, reason: `Evidence "${eid}" not found` });
+      continue;
+    }
+
+    const evNormPunct = norm(ev.text).replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+
+    // 2. Require COMPLETE cited question contained in evidence (after conservative normalization)
+    const qNorm = norm(qa.question).replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!evNormPunct.includes(qNorm)) {
+      unverifiedQA.push({ idx: i, reason: 'Cited question not fully contained in evidence' });
+      continue;
+    }
+
+    // 3. Require COMPLETE cited answer contained in evidence
+    const aNorm = norm(qa.answer).replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!evNormPunct.includes(aNorm)) {
+      unverifiedQA.push({ idx: i, reason: 'Cited answer not fully contained in evidence' });
+      continue;
     }
   }
-  // Downgrade unverified Q&A to UNVERIFIED_SOURCE — don't reject the whole analysis
-  for (const idx of unverifiedQA) {
+
+  // Downgrade unverified Q&A to UNVERIFIED_SOURCE — preserve for human review, never authoritative
+  for (const { idx, reason } of unverifiedQA) {
     output.qaConflicts[idx].conflictType = 'POTENTIALLY_CONFLICTS';
     output.qaConflicts[idx].requiresHumanReview = true;
     output.qaConflicts[idx].conflictDescription =
-      `[UNVERIFIED_SOURCE] ${output.qaConflicts[idx].conflictDescription || 'Q&A provenance could not be verified against supplied evidence. Requires human review.'}`;
+      `[UNVERIFIED_SOURCE: ${reason}] ${output.qaConflicts[idx].conflictDescription || 'Q&A provenance could not be verified. Requires human review.'}`;
   }
 
   return { valid: errors.length === 0, errors };
