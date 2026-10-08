@@ -650,7 +650,16 @@ ${evidenceBlock}
 
 Return your analysis as a single JSON object.`;
 
-  // 5. Gateway inference
+  // 5. PROVIDER-ATTEMPT BOUNDARY — record before Gateway dispatch
+  const gatewayIdempotencyKey = `denise:eval:${input.idempotencyKey}`;
+  if (claimId) {
+    await supabase.rpc('mark_denise_inference_attempted', {
+      p_claim_id: claimId,
+      p_gateway_idempotency_key: gatewayIdempotencyKey,
+    }).then(() => {}, () => {});
+  }
+
+  // 6. Gateway inference
   let ledgerId: string | null = null;
   let costUsd = 0;
   let rawText = '';
@@ -660,7 +669,7 @@ Return your analysis as a single JSON object.`;
       agentId: DENISE_AGENT_ID,
       purpose: DENISE_ROUTE,
       taskType: DENISE_ROUTE,
-      idempotencyKey: `denise:eval:${input.idempotencyKey}`,
+      idempotencyKey: gatewayIdempotencyKey,
       workflowId: input.workflowId,
       taskId: taskBudgetKey,
       opportunityId: input.opportunityId,

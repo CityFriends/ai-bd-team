@@ -295,24 +295,86 @@ describe.skipIf(!CAN_RUN_DB)('Concurrent Claim/Lease Mechanism', () => {
     expect(retry[0].claim_status).toBe('FAILED');
   });
 
-  it('expired lease allows recovery claim', async () => {
-    const key = `claim-test-5-${testRunId}`;
-    // Create claim with 1-second lease
+  // ============================================================
+  // Crash-recovery scenarios with provider-attempt boundary
+  // ============================================================
+
+  it('CRASH SCENARIO 1: crash before provider-attempt boundary → safe recovery', async () => {
+    const key = `crash-pre-attempt-${testRunId}`;
+    // Worker claims, then crashes BEFORE marking inference_attempted
     const { data: claim } = await supabase.rpc('claim_denise_eval_task', {
       p_idempotency_key: key, p_lease_seconds: 1,
     });
     expect(claim[0].claim_status).toBe('CLAIMED');
 
-    // Wait for expiry
+    // Verify inference_attempted is FALSE (no mark_denise_inference_attempted call)
+    const { data: row } = await supabase.from('denise_task_claims')
+      .select('inference_attempted').eq('id', claim[0].claim_id).single();
+    expect(row.inference_attempted).toBe(false);
+
+    // Wait for lease expiry
     await new Promise(r => setTimeout(r, 1500));
 
-    // New claim should succeed (expired lease recovered)
+    // Recovery: safe re-claim permitted (no inference was attempted)
     const { data: recovery } = await supabase.rpc('claim_denise_eval_task', {
       p_idempotency_key: key, p_lease_seconds: 60,
     });
-    // After expiry, recovery should get EXPIRED (old claim expired), CLAIMED (new claim),
-    // or LEASE_HELD (if timing is tight and the old claim hasn't expired from DB perspective)
-    expect(['EXPIRED', 'CLAIMED', 'LEASE_HELD']).toContain(recovery[0].claim_status);
+    // Should get new CLAIMED (the expired claim had no inference attempt)
+    expect(['CLAIMED']).toContain(recovery[0].claim_status);
+  });
+
+  it('CRASH SCENARIO 2: crash after provider-attempt boundary, before response → AMBIGUOUS, no second call', async () => {
+    const key = `crash-post-attempt-${testRunId}`;
+    // Worker claims and marks inference_attempted, then crashes
+    const { data: claim } = await supabase.rpc('claim_denise_eval_task', {
+      p_idempotency_key: key, p_lease_seconds: 1,
+    });
+    expect(claim[0].claim_status).toBe('CLAIMED');
+
+    // Mark inference attempted (simulates the pre-Gateway boundary)
+    await supabase.rpc('mark_denise_inference_attempted', {
+      p_claim_id: claim[0].claim_id,
+      p_gateway_idempotency_key: `denise:eval:${key}`,
+    });
+
+    // Verify inference_attempted is TRUE
+    const { data: row } = await supabase.from('denise_task_claims')
+      .select('inference_attempted').eq('id', claim[0].claim_id).single();
+    expect(row.inference_attempted).toBe(true);
+
+    // Wait for lease expiry (simulates crash)
+    await new Promise(r => setTimeout(r, 1500));
+
+    // Recovery attempt: should get AMBIGUOUS (inference was attempted, outcome unknown)
+    const { data: recovery } = await supabase.rpc('claim_denise_eval_task', {
+      p_idempotency_key: key, p_lease_seconds: 60,
+    });
+    expect(recovery[0].claim_status).toBe('AMBIGUOUS');
+  });
+
+  it('CRASH SCENARIO 3: crash after provider response, before completion → AMBIGUOUS, no second call', async () => {
+    const key = `crash-post-response-${testRunId}`;
+    // Worker claims, marks inference, gets response, but crashes before complete_denise_eval_claim
+    const { data: claim } = await supabase.rpc('claim_denise_eval_task', {
+      p_idempotency_key: key, p_lease_seconds: 1,
+    });
+
+    // Mark inference attempted
+    await supabase.rpc('mark_denise_inference_attempted', {
+      p_claim_id: claim[0].claim_id,
+      p_gateway_idempotency_key: `denise:eval:${key}`,
+    });
+
+    // Worker would have received provider response and settled budget here
+    // But crashes BEFORE calling complete_denise_eval_claim
+
+    await new Promise(r => setTimeout(r, 1500));
+
+    // Recovery: AMBIGUOUS (inference was attempted)
+    const { data: recovery } = await supabase.rpc('claim_denise_eval_task', {
+      p_idempotency_key: key, p_lease_seconds: 60,
+    });
+    expect(recovery[0].claim_status).toBe('AMBIGUOUS');
   });
 
   it('concurrent duplicate delivery produces at most one provider call', async () => {
