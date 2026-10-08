@@ -153,10 +153,46 @@ function validateImpactEvidence(
     }
   }
 
-  for (const qa of output.qaConflicts) {
-    if (qa.sourceEvidenceId && qa.sourceEvidenceId !== 'undefined' && !validIds.has(qa.sourceEvidenceId)) {
-      errors.push(`Q&A conflict: evidence "${qa.sourceEvidenceId}" not in supplied set`);
+  // Q&A provenance: every finding needs a valid source or becomes UNVERIFIED_SOURCE
+  const unverifiedQA: number[] = [];
+  for (let i = 0; i < output.qaConflicts.length; i++) {
+    const qa = output.qaConflicts[i];
+    const eid = qa.sourceEvidenceId;
+    // Reject invalid sentinel values
+    if (!eid || eid === 'undefined' || eid === 'null' || eid.trim() === '') {
+      unverifiedQA.push(i);
+      continue;
     }
+    if (!validIds.has(eid)) {
+      unverifiedQA.push(i);
+      continue;
+    }
+    // Verify cited question/answer text is supported by the evidence
+    const ev = evidenceById.get(eid);
+    if (ev) {
+      const qNorm = norm(qa.question).replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+      const evNorm = norm(ev.text).replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+      // Question text must have 4+ consecutive words in evidence
+      const qWords = qNorm.split(/\s+/).filter(w => w.length > 2);
+      let qSupported = false;
+      if (qWords.length >= 4) {
+        for (let j = 0; j <= qWords.length - 4; j++) {
+          if (evNorm.includes(qWords.slice(j, j + 4).join(' '))) { qSupported = true; break; }
+        }
+      } else {
+        qSupported = evNorm.includes(qNorm); // Short question — full containment
+      }
+      if (!qSupported) {
+        unverifiedQA.push(i);
+      }
+    }
+  }
+  // Downgrade unverified Q&A to UNVERIFIED_SOURCE — don't reject the whole analysis
+  for (const idx of unverifiedQA) {
+    output.qaConflicts[idx].conflictType = 'POTENTIALLY_CONFLICTS';
+    output.qaConflicts[idx].requiresHumanReview = true;
+    output.qaConflicts[idx].conflictDescription =
+      `[UNVERIFIED_SOURCE] ${output.qaConflicts[idx].conflictDescription || 'Q&A provenance could not be verified against supplied evidence. Requires human review.'}`;
   }
 
   return { valid: errors.length === 0, errors };
@@ -399,7 +435,28 @@ Return your impact analysis as a single JSON object.`;
     return { ...emptyResult('Evidence validation failed'), ledgerId, costUsd, diffResult: diff, validationErrors: evCheck.errors };
   }
 
-  // 11. Persist as new versioned analysis
+  // 11. Update change dispositions and enforce coverage
+  const analyzedSections = new Set(output.changeImpacts.map(c => c.section));
+  for (const change of diff.changes) {
+    if (change.changeType === 'POSSIBLE_RENUMBER') {
+      change.disposition = 'UNRESOLVED';
+    } else if (change.determinedMateriality === 'ADMINISTRATIVE_ONLY') {
+      change.disposition = 'NOT_APPLICABLE';
+    } else if (analyzedSections.has(change.section)) {
+      change.disposition = 'ANALYZED';
+    } else {
+      change.disposition = 'PENDING_ANALYSIS';
+    }
+  }
+
+  const pendingMaterial = diff.changes.filter(c =>
+    c.disposition === 'PENDING_ANALYSIS' &&
+    c.determinedMateriality !== 'ADMINISTRATIVE_ONLY' &&
+    c.changeType !== 'POSSIBLE_RENUMBER'
+  );
+  const finalCoverage = pendingMaterial.length > 0 ? 'PARTIAL' : diff.coverageStatus;
+
+  // 12. Persist as new versioned analysis
   const existingVersion = await getLatestAnalysis(supabase, input.opportunityId);
   const newVersion = existingVersion ? existingVersion.version + 1 : 1;
 
@@ -411,7 +468,11 @@ Return your impact analysis as a single JSON object.`;
     sourceRefs: allEvidence.map(e => ({ id: e.evidenceId, section: e.section })),
     interpretation: {
       amendmentId: input.amendmentId,
-      diffSummary: { changeCount: diff.changes.length, materialCount: materialChanges.length, coverageStatus: diff.coverageStatus },
+      diffSummary: {
+        changeCount: diff.changes.length, materialCount: materialChanges.length,
+        coverageStatus: finalCoverage,
+        dispositions: Object.fromEntries(diff.changes.map(c => [c.section, c.disposition])),
+      },
       changeImpacts: output.changeImpacts,
       qaConflicts: output.qaConflicts,
       captureReassessmentRequired: output.captureReassessmentRequired,
@@ -445,7 +506,7 @@ Return your impact analysis as a single JSON object.`;
     materialChanges: materialChanges.length, proposedActions,
     qaConflicts: output.qaConflicts.length,
     captureReassessmentRequired: output.captureReassessmentRequired,
-    ledgerId, costUsd, coverageStatus: diff.coverageStatus,
+    ledgerId, costUsd, coverageStatus: finalCoverage,
     validationErrors: [],
   };
 }

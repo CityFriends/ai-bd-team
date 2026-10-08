@@ -23,8 +23,10 @@ export interface EvidenceSpan {
   text: string;
 }
 
+export type ChangeDisposition = 'ANALYZED' | 'PENDING_ANALYSIS' | 'UNRESOLVED' | 'NOT_APPLICABLE';
+
 export interface ChangeRecord {
-  changeType: 'ADDED' | 'REMOVED' | 'MODIFIED';
+  changeType: 'ADDED' | 'REMOVED' | 'MODIFIED' | 'POSSIBLE_RENUMBER';
   section: string;
   oldSpan: EvidenceSpan | null;
   newSpan: EvidenceSpan | null;
@@ -33,7 +35,10 @@ export interface ChangeRecord {
   fingerprint: string;
   determinedMateriality: AmendmentImpactClass | null;
   requiresReasoning: boolean;
+  disposition: ChangeDisposition;
   summary: string;
+  /** For POSSIBLE_RENUMBER: the paired section */
+  pairedSection?: string;
 }
 
 export interface DiffResult {
@@ -166,23 +171,16 @@ export function diffEvidence(
 
   const coverageOk = oldEvidence.length > 0 && newEvidence.length > 0;
 
+  // Collect removed and added sections for renumbering detection
+  const removedSections: Array<{ section: string; span: EvidenceSpan }> = [];
+  const addedSections: Array<{ section: string; span: EvidenceSpan }> = [];
+
   // Find modifications and removals
   for (const [section, oldSpan] of oldBySection) {
     const newSpan = newBySection.get(section);
     if (!newSpan) {
-      // Section removed
-      const mat = classifyMateriality(oldSpan.text, null);
-      changes.push({
-        changeType: 'REMOVED', section,
-        oldSpan, newSpan: null,
-        oldText: oldSpan.text, newText: null,
-        fingerprint: changeFingerprint(section, oldSpan.text, null),
-        determinedMateriality: mat.classifications[0] || null,
-        requiresReasoning: mat.requiresReasoning,
-        summary: `Section ${section} removed`,
-      });
+      removedSections.push({ section, span: oldSpan });
     } else {
-      // Check for modification
       const oldNorm = normalizeForDiff(oldSpan.text);
       const newNorm = normalizeForDiff(newSpan.text);
       if (oldNorm !== newNorm) {
@@ -194,29 +192,84 @@ export function diffEvidence(
           fingerprint: changeFingerprint(section, oldSpan.text, newSpan.text),
           determinedMateriality: mat.classifications[0] || null,
           requiresReasoning: mat.requiresReasoning,
+          disposition: mat.classifications[0] === 'ADMINISTRATIVE_ONLY' ? 'NOT_APPLICABLE' : 'PENDING_ANALYSIS',
           summary: `Section ${section} modified`,
         });
       }
     }
   }
 
-  // Find additions
+  // Collect additions
   for (const [section, newSpan] of newBySection) {
     if (!oldBySection.has(section)) {
-      const mat = classifyMateriality(null, newSpan.text);
-      changes.push({
-        changeType: 'ADDED', section,
-        oldSpan: null, newSpan,
-        oldText: null, newText: newSpan.text,
-        fingerprint: changeFingerprint(section, null, newSpan.text),
-        determinedMateriality: mat.classifications[0] || null,
-        requiresReasoning: mat.requiresReasoning,
-        summary: `Section ${section} added`,
-      });
+      addedSections.push({ section, span: newSpan });
     }
   }
 
-  const materialChanges = changes.filter(c => c.determinedMateriality !== 'ADMINISTRATIVE_ONLY');
+  // Detect possible renumbering: removed + added with equivalent normalized text
+  const matchedRemovals = new Set<string>();
+  const matchedAdditions = new Set<string>();
+
+  for (const removed of removedSections) {
+    const removedNorm = normalizeForDiff(removed.span.text);
+    for (const added of addedSections) {
+      if (matchedAdditions.has(added.section)) continue;
+      const addedNorm = normalizeForDiff(added.span.text);
+      if (removedNorm === addedNorm) {
+        // Equivalent text, different section — possible renumbering
+        changes.push({
+          changeType: 'POSSIBLE_RENUMBER', section: removed.section,
+          oldSpan: removed.span, newSpan: added.span,
+          oldText: removed.span.text, newText: added.span.text,
+          fingerprint: changeFingerprint(removed.section + '→' + added.section, removed.span.text, added.span.text),
+          determinedMateriality: 'ADMINISTRATIVE_ONLY',
+          requiresReasoning: false,
+          disposition: 'UNRESOLVED',
+          summary: `Section ${removed.section} possibly renumbered to ${added.section}`,
+          pairedSection: added.section,
+        });
+        matchedRemovals.add(removed.section);
+        matchedAdditions.add(added.section);
+        break;
+      }
+    }
+  }
+
+  // Remaining removals (not renumbered)
+  for (const removed of removedSections) {
+    if (matchedRemovals.has(removed.section)) continue;
+    const mat = classifyMateriality(removed.span.text, null);
+    changes.push({
+      changeType: 'REMOVED', section: removed.section,
+      oldSpan: removed.span, newSpan: null,
+      oldText: removed.span.text, newText: null,
+      fingerprint: changeFingerprint(removed.section, removed.span.text, null),
+      determinedMateriality: mat.classifications[0] || null,
+      requiresReasoning: mat.requiresReasoning,
+      disposition: 'PENDING_ANALYSIS',
+      summary: `Section ${removed.section} removed`,
+    });
+  }
+
+  // Remaining additions (not renumbered)
+  for (const added of addedSections) {
+    if (matchedAdditions.has(added.section)) continue;
+    const mat = classifyMateriality(null, added.span.text);
+    changes.push({
+      changeType: 'ADDED', section: added.section,
+      oldSpan: null, newSpan: added.span,
+      oldText: null, newText: added.span.text,
+      fingerprint: changeFingerprint(added.section, null, added.span.text),
+      determinedMateriality: mat.classifications[0] || null,
+      requiresReasoning: mat.requiresReasoning,
+      disposition: 'PENDING_ANALYSIS',
+      summary: `Section ${added.section} added`,
+    });
+  }
+
+  const materialChanges = changes.filter(c =>
+    c.determinedMateriality !== 'ADMINISTRATIVE_ONLY' && c.changeType !== 'POSSIBLE_RENUMBER'
+  );
   const adminOnly = changes.length > 0 && materialChanges.length === 0;
 
   return {
