@@ -147,6 +147,7 @@ describe('RLS Security: Agent-Specific Tables', () => {
     { agent: 'G2X Research', pattern: 'g2x_research' },
     { agent: 'G2X Credentials', pattern: 'external_credentials' },
     { agent: 'G2X Enrichment', pattern: 'g2x_enrichment' },
+    { agent: 'Denise', pattern: 'denise_acquisition' },
   ];
 
   for (const { agent, pattern } of agentMigrations) {

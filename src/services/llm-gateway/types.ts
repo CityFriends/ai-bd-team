@@ -27,6 +27,7 @@ export type AgentId =
   | 'patricia'
   | 'marcus'
   | 'jodie'
+  | 'denise'
   | 'system';
 
 /** Ledger entry status lifecycle */

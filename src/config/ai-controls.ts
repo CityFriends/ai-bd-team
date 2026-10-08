@@ -54,6 +54,14 @@ export const FEATURE_FLAGS = {
   JODIE_DOCUMENT_RENDERING_ENABLED: 'JODIE_DOCUMENT_RENDERING_ENABLED',
   /** Jodie Slack posting. Fail closed if missing. */
   JODIE_SLACK_ENABLED: 'JODIE_SLACK_ENABLED',
+  /** Denise capture acquisition intelligence. Fail closed if missing. */
+  DENISE_CAPTURE_ENABLED: 'DENISE_CAPTURE_ENABLED',
+  /** Denise pursuit acquisition intelligence. Fail closed if missing. */
+  DENISE_PURSUIT_ENABLED: 'DENISE_PURSUIT_ENABLED',
+  /** Denise Slack posting. Fail closed if missing. */
+  DENISE_SLACK_ENABLED: 'DENISE_SLACK_ENABLED',
+  /** Denise regulatory research adapter. Fail closed if missing. */
+  DENISE_REGULATORY_RESEARCH_ENABLED: 'DENISE_REGULATORY_RESEARCH_ENABLED',
 } as const;
 
 /** Default values for all feature flags — ALL OFF for safety */
@@ -77,6 +85,10 @@ const FLAG_DEFAULTS: Record<string, boolean> = {
   [FEATURE_FLAGS.JODIE_DRAFTING_ENABLED]: false,
   [FEATURE_FLAGS.JODIE_DOCUMENT_RENDERING_ENABLED]: false,
   [FEATURE_FLAGS.JODIE_SLACK_ENABLED]: false,
+  [FEATURE_FLAGS.DENISE_CAPTURE_ENABLED]: false,
+  [FEATURE_FLAGS.DENISE_PURSUIT_ENABLED]: false,
+  [FEATURE_FLAGS.DENISE_SLACK_ENABLED]: false,
+  [FEATURE_FLAGS.DENISE_REGULATORY_RESEARCH_ENABLED]: false,
 };
 
 // Short negative cache to avoid hammering DB on repeated disabled checks

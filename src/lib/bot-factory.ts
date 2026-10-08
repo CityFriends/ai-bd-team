@@ -14,7 +14,7 @@
 import { App, LogLevel } from '@slack/bolt';
 import { createAgentLogger, type Logger } from './logger.js';
 
-export type AgentId = 'maya' | 'david' | 'rosa' | 'james' | 'patricia' | 'marcus' | 'jodie';
+export type AgentId = 'maya' | 'david' | 'rosa' | 'james' | 'patricia' | 'marcus' | 'jodie' | 'denise';
 
 interface BotTokens {
   botToken: string;

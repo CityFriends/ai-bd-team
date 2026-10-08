@@ -6,7 +6,8 @@ export type AgentName =
   | 'strategist'
   | 'pm'
   | 'engineer'
-  | 'writer';
+  | 'writer'
+  | 'acquisition';
 
 export interface Agent {
   name: AgentName;
@@ -22,6 +23,7 @@ export const AGENTS: Record<AgentName, Agent> = {
   pm: { name: 'pm', displayName: 'PM', emoji: '📋' },
   engineer: { name: 'engineer', displayName: 'Engineer', emoji: '⚙️' },
   writer: { name: 'writer', displayName: 'Writer', emoji: '✍️' },
+  acquisition: { name: 'acquisition', displayName: 'Acquisition Intelligence', emoji: '📜' },
 };
 
 // Opportunity types

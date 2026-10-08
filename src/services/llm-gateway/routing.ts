@@ -86,6 +86,52 @@ const DEFAULT_ROUTES: ModelRoute[] = [
     maxCostUsd: 0.005,
     enabled: false, // No commissioned production consumer
   },
+  // Denise routes — DISABLED until commissioning
+  {
+    taskType: 'denise_capture_acquisition' as TaskType,
+    provider: 'anthropic',
+    model: 'claude-haiku-4-5-20251001',
+    maxOutputTokens: 2048,
+    maxInputTokens: 16000,
+    maxCostUsd: 0.05,
+    enabled: false,
+  },
+  {
+    taskType: 'denise_clause_analysis' as TaskType,
+    provider: 'anthropic',
+    model: 'claude-haiku-4-5-20251001',
+    maxOutputTokens: 2048,
+    maxInputTokens: 16000,
+    maxCostUsd: 0.05,
+    enabled: false,
+  },
+  {
+    taskType: 'denise_amendment_analysis' as TaskType,
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-6',
+    maxOutputTokens: 2048,
+    maxInputTokens: 16000,
+    maxCostUsd: 0.05,
+    enabled: false,
+  },
+  {
+    taskType: 'denise_clarification_draft' as TaskType,
+    provider: 'anthropic',
+    model: 'claude-haiku-4-5-20251001',
+    maxOutputTokens: 1024,
+    maxInputTokens: 8000,
+    maxCostUsd: 0.03,
+    enabled: false,
+  },
+  {
+    taskType: 'denise_evaluation_analysis' as TaskType,
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-6',
+    maxOutputTokens: 2048,
+    maxInputTokens: 16000,
+    maxCostUsd: 0.05,
+    enabled: false,
+  },
 ];
 
 let routeCache: Map<TaskType, ModelRoute> = new Map();
