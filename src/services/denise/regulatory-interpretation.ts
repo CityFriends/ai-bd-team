@@ -349,17 +349,21 @@ Return your analysis as a single JSON object.`;
       clause_register_entry_id: request.clauseRegisterEntryId || null,
       interpretation_question: request.interpretationQuestion,
       source_facts: output.sourceFacts,
-      regulatory_context: [],
+      // Derive regulatory_context from sourceFacts with REGULATORY_CONTEXT category
+      regulatory_context: output.sourceFacts.filter(f => f.category === 'REGULATORY_CONTEXT'),
       interpretations: output.interpretations,
       operational_implications: output.operationalImplications,
       uncertainties: output.uncertainties || [],
-      unresolved_questions: [],
+      // Derive unresolved questions from uncertainties
+      unresolved_questions: (output.uncertainties || []).map(u => u.statement),
       suggested_owner: output.suggestedOwner,
-      impact_areas: [],
+      // Derive impact areas from operational implications
+      impact_areas: output.operationalImplications.map(oi => oi.statement.slice(0, 100)),
       legal_review_required: output.legalReviewRequired,
       legal_review_reason: output.legalReviewReason,
       confidence: output.confidence,
-      coverage_status: 'COMPLETE',
+      // Coverage: PARTIAL when bounded output (max 3) may not cover longer provisions
+      coverage_status: output.sourceFacts.length >= 3 || output.interpretations.length >= 3 ? 'PARTIAL' : 'COMPLETE',
       model_id: 'claude-haiku-4-5-20251001',
       prompt_version: PROMPT_VERSION,
       gateway_ledger_id: ledgerId,
