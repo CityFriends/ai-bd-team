@@ -295,6 +295,137 @@ const NEGATION_PATTERNS = [
   /\bwill\s+not\b/i, /\bshall\s+not\b/i, /\bis\s+not\b/i, /\bare\s+not\b/i,
 ];
 
+// ============================================================
+// DETERMINISTIC RELATIONSHIP EXTRACTION
+// ============================================================
+
+export interface ExtractedRelationship {
+  type: 'MORE_IMPORTANT' | 'MOST_IMPORTANT' | 'APPROX_EQUAL' | 'PASS_FAIL' | 'LPTA';
+  subject: string;
+  object?: string;
+  negated: boolean;
+  matchedText: string;
+  sourceEvidenceId: string;
+}
+
+export interface ExtractionResult {
+  relationships: ExtractedRelationship[];
+  contradictions: Array<{ a: ExtractedRelationship; b: ExtractedRelationship; reason: string }>;
+  evaluationMethod: 'LPTA' | 'BEST_VALUE' | 'TRADEOFF' | 'NOT_STATED';
+}
+
+/**
+ * Deterministically extract explicit evaluation relationships from evidence
+ * BEFORE invoking the model. Uses regex patterns to find comparative language.
+ * Contradictions are detected and persisted as unresolved conflicts.
+ */
+export function extractRelationships(
+  evidence: Array<{ id: string; text: string }>
+): ExtractionResult {
+  const relationships: ExtractedRelationship[] = [];
+
+  for (const ev of evidence) {
+    const text = ev.text;
+
+    // Check LPTA first
+    for (const pattern of COMPARATIVE_PATTERNS.LPTA) {
+      pattern.lastIndex = 0;
+      if (pattern.test(text)) {
+        relationships.push({
+          type: 'LPTA', subject: 'Price', negated: false,
+          matchedText: text.match(pattern)?.[0] || '', sourceEvidenceId: ev.id,
+        });
+      }
+      pattern.lastIndex = 0;
+    }
+
+    // PASS_FAIL
+    for (const pattern of COMPARATIVE_PATTERNS.PASS_FAIL) {
+      pattern.lastIndex = 0;
+      if (pattern.test(text)) {
+        relationships.push({
+          type: 'PASS_FAIL', subject: 'Technical', negated: false,
+          matchedText: text.match(pattern)?.[0] || '', sourceEvidenceId: ev.id,
+        });
+      }
+      pattern.lastIndex = 0;
+    }
+
+    // MORE_IMPORTANT
+    for (const pattern of COMPARATIVE_PATTERNS.MORE_IMPORTANT) {
+      pattern.lastIndex = 0;
+      let match;
+      while ((match = pattern.exec(text)) !== null) {
+        const startPos = Math.max(0, match.index - 20);
+        const context = text.slice(startPos, match.index + match[0].length);
+        const negated = NEGATION_PATTERNS.some(np => np.test(context));
+        relationships.push({
+          type: 'MORE_IMPORTANT', subject: match[1], object: match[2],
+          negated, matchedText: match[0], sourceEvidenceId: ev.id,
+        });
+      }
+      pattern.lastIndex = 0;
+    }
+
+    // MOST_IMPORTANT
+    for (const pattern of COMPARATIVE_PATTERNS.MOST_IMPORTANT) {
+      pattern.lastIndex = 0;
+      let match;
+      while ((match = pattern.exec(text)) !== null) {
+        relationships.push({
+          type: 'MOST_IMPORTANT', subject: match[1], negated: false,
+          matchedText: match[0], sourceEvidenceId: ev.id,
+        });
+      }
+      pattern.lastIndex = 0;
+    }
+
+    // APPROX_EQUAL
+    for (const pattern of COMPARATIVE_PATTERNS.APPROX_EQUAL) {
+      pattern.lastIndex = 0;
+      let match;
+      while ((match = pattern.exec(text)) !== null) {
+        relationships.push({
+          type: 'APPROX_EQUAL', subject: match[1] || 'all', object: match[2],
+          negated: false, matchedText: match[0], sourceEvidenceId: ev.id,
+        });
+      }
+      pattern.lastIndex = 0;
+    }
+  }
+
+  // Detect contradictions
+  const contradictions: ExtractionResult['contradictions'] = [];
+  for (let i = 0; i < relationships.length; i++) {
+    for (let j = i + 1; j < relationships.length; j++) {
+      const a = relationships[i];
+      const b = relationships[j];
+      if (a.sourceEvidenceId === b.sourceEvidenceId) continue; // Same source can't contradict itself
+      // Check for directional conflict: A > B in one evidence, B > A in another
+      if (a.type === 'MORE_IMPORTANT' && b.type === 'MORE_IMPORTANT' &&
+          a.subject && b.subject && a.object && b.object) {
+        const aSub = a.subject.toLowerCase();
+        const aObj = a.object.toLowerCase();
+        const bSub = b.subject.toLowerCase();
+        const bObj = b.object.toLowerCase();
+        if (factorNameMatches(aSub, bObj) && factorNameMatches(aObj, bSub)) {
+          contradictions.push({ a, b, reason: `${a.subject} > ${a.object} contradicts ${b.subject} > ${b.object}` });
+        }
+      }
+    }
+  }
+
+  // Determine evaluation method
+  const hasLpta = relationships.some(r => r.type === 'LPTA');
+  const hasPassFail = relationships.some(r => r.type === 'PASS_FAIL');
+  const hasComparative = relationships.some(r => r.type === 'MORE_IMPORTANT' || r.type === 'MOST_IMPORTANT');
+  const evaluationMethod = hasLpta ? 'LPTA' as const
+    : (hasComparative || relationships.length > 0) ? 'BEST_VALUE' as const
+    : 'NOT_STATED' as const;
+
+  return { relationships, contradictions, evaluationMethod };
+}
+
 interface RelationshipVerificationResult {
   valid: boolean;
   errors: string[];
@@ -639,21 +770,48 @@ export async function executeEvaluationAnalysis(
     };
   }
 
-  // 4. Build user message with evidence
+  // 4. Deterministic pre-extraction of evaluation relationships
+  const extraction = extractRelationships(input.evidence);
+
+  // 5. Build user message with evidence AND pre-extracted constraints
   const evidenceBlock = input.evidence.map(e =>
     `[Evidence ID: ${e.id}]\nSection: ${e.section}\nDocument Version: ${e.documentVersion}\n---\n${e.text}\n---`
   ).join('\n\n');
 
+  let constraintBlock = '';
+  if (extraction.relationships.length > 0) {
+    const relLines = extraction.relationships.map(r => {
+      if (r.negated) return `- NEGATED: ${r.matchedText} [${r.sourceEvidenceId}]`;
+      if (r.type === 'LPTA') return `- LPTA evaluation detected [${r.sourceEvidenceId}]`;
+      if (r.type === 'PASS_FAIL') return `- PASS/FAIL for ${r.subject} [${r.sourceEvidenceId}]`;
+      if (r.type === 'MOST_IMPORTANT') return `- ${r.subject} is MOST_IMPORTANT [${r.sourceEvidenceId}]`;
+      if (r.type === 'APPROX_EQUAL') return `- ${r.subject} APPROX_EQUAL ${r.object || ''} [${r.sourceEvidenceId}]`;
+      return `- ${r.subject} MORE_IMPORTANT than ${r.object} [${r.sourceEvidenceId}]`;
+    });
+    constraintBlock = `\nPRE-EXTRACTED EVALUATION RELATIONSHIPS (use these exact directions for relativeImportance — do NOT reverse them):\n${relLines.join('\n')}\n`;
+  }
+
+  if (extraction.contradictions.length > 0) {
+    const conflictLines = extraction.contradictions.map(c =>
+      `- CONFLICT: ${c.reason} — add to unresolvedIssues, do NOT resolve`
+    );
+    constraintBlock += `\nDETECTED CONTRADICTIONS (persist as unresolvedIssues, do NOT reconcile):\n${conflictLines.join('\n')}\n`;
+  }
+
+  if (extraction.evaluationMethod !== 'NOT_STATED') {
+    constraintBlock += `\nDETERMINED evaluationMethod: ${extraction.evaluationMethod}\n`;
+  }
+
   const userMessage = `Analyze the following Section L/M evidence for opportunity ${input.opportunityId} (solicitation version: ${input.solicitationVersion}).
 
 Extract the evaluation structure, factors, relative importance, and any acquisition risks.
-
+${constraintBlock}
 SUPPLIED EVIDENCE:
 ${evidenceBlock}
 
 Return your analysis as a single JSON object.`;
 
-  // 5. PROVIDER-ATTEMPT BOUNDARY — record before Gateway dispatch
+  // 6. PROVIDER-ATTEMPT BOUNDARY — record before Gateway dispatch
   const gatewayIdempotencyKey = `denise:eval:${input.idempotencyKey}`;
   if (claimId) {
     await supabase.rpc('mark_denise_inference_attempted', {
@@ -662,7 +820,7 @@ Return your analysis as a single JSON object.`;
     }).then(() => {}, () => {});
   }
 
-  // 6. Gateway inference
+  // 7. Gateway inference
   let ledgerId: string | null = null;
   let costUsd = 0;
   let rawText = '';
@@ -822,7 +980,22 @@ Return your analysis as a single JSON object.`;
     }
   }
 
-  // 9. Persist — immutable, versioned
+  // 9. Merge deterministically-detected contradictions into unresolved issues
+  if (extraction.contradictions.length > 0) {
+    for (const c of extraction.contradictions) {
+      const alreadyHas = output.unresolvedIssues.some(u =>
+        u.statement.includes(c.a.subject) && u.statement.includes(c.b.subject)
+      );
+      if (!alreadyHas) {
+        output.unresolvedIssues.push({
+          category: 'UNCERTAINTY',
+          statement: `Contradictory evaluation relationship: ${c.reason}. Sources: ${c.a.sourceEvidenceId}, ${c.b.sourceEvidenceId}.`,
+        });
+      }
+    }
+  }
+
+  // 10. Persist — immutable, versioned
   const existingVersion = await getLatestAnalysis(supabase, input.opportunityId);
   const newVersion = existingVersion ? existingVersion.version + 1 : 1;
   const supersedesId = existingVersion?.id || null;

@@ -219,23 +219,19 @@ function norm(text: string): string {
   return text.replace(/\s+/g, ' ').toLowerCase().trim();
 }
 
-/** Safe containment: exact substring after whitespace normalization, or 4+ consecutive word match. */
-function excerptContainedInEvidence(excerpt: string, evidenceText: string): boolean {
+/**
+ * Full excerpt containment after conservative normalization.
+ * Accepts only if the entire excerpt (whitespace/punctuation-normalized)
+ * is a substring of the evidence. No partial-word or fragment matching.
+ */
+export function excerptContainedInEvidence(excerpt: string, evidenceText: string): boolean {
   const ne = norm(excerpt);
   const nv = norm(evidenceText);
   if (nv.includes(ne)) return true;
-  // Punctuation-stripped containment
+  // Punctuation-stripped full containment
   const neNp = ne.replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
   const nvNp = nv.replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
-  if (nvNp.includes(neNp)) return true;
-  // 4-consecutive-word containment
-  const words = neNp.split(/\s+/).filter(w => w.length > 2);
-  if (words.length >= 4) {
-    for (let i = 0; i <= words.length - 4; i++) {
-      if (nvNp.includes(words.slice(i, i + 4).join(' '))) return true;
-    }
-  }
-  return false;
+  return nvNp.includes(neNp);
 }
 
 /**
