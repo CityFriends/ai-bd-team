@@ -10,7 +10,7 @@ import { registerButtonHandlers } from './button-handlers.js';
 import { registerSlashCommands } from './slash-commands.js';
 import { registerMayaActions } from '../production/maya/slack-surface.js';
 import { registerJamesActions } from '../production/james/slack-surface.js';
-import { registerDeniseActions } from '../services/denise/slack-adapter.js';
+import { startDeniseSlackApp, stopDeniseSlackApp } from '../services/denise/slack-adapter.js';
 import { jodie } from './jodie.js';
 
 const agents = [
@@ -75,18 +75,26 @@ async function main() {
             registerSlashCommands(mayaApp);
             registerMayaActions(mayaApp);
             registerJamesActions(mayaApp);
-            registerDeniseActions(mayaApp);
             console.log(`✓ Interactive button handlers registered with Maya`);
             console.log(`✓ Slash commands (/pipeline) registered with Maya`);
             console.log(`✓ Maya production action handlers registered`);
             console.log(`✓ James capture action handlers registered`);
-            console.log(`✓ Denise action handlers registered (gated on DENISE_SLACK_ENABLED)`);
           }
         }
       } catch (err) {
         console.error(`✗ ${a.name} FAILED TO CONNECT:`, err);
         throw err;
       }
+    }
+
+    // Start dedicated Denise Slack app (independent of Maya)
+    console.log('');
+    console.log('Starting Denise dedicated Slack app...');
+    const deniseResult = await startDeniseSlackApp();
+    if (deniseResult.started) {
+      console.log('✓ Denise Slack app started (dedicated Socket Mode, actions gated on DB control)');
+    } else {
+      console.log(`  Denise Slack app not started: ${deniseResult.reason}`);
     }
 
     // Start event processors for all agents
@@ -120,7 +128,10 @@ async function main() {
     // Handle shutdown
     process.on('SIGINT', async () => {
       console.log('\nShutting down team...');
-      await Promise.all(configuredAgents.map((a) => a.agent.disconnect()));
+      await Promise.all([
+        ...configuredAgents.map((a) => a.agent.disconnect()),
+        stopDeniseSlackApp(),
+      ]);
       console.log('All agents disconnected.');
       process.exit(0);
     });

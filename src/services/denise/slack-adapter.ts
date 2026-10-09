@@ -8,9 +8,11 @@
  * NOT activated in production during commissioning.
  */
 
+import { App, LogLevel } from '@slack/bolt';
 import { getAgentTokens } from '../../lib/bot-factory.js';
 import { getFeatureFlag, FEATURE_FLAGS } from '../../config/ai-controls.js';
 import { getMainChannelId } from '../../config/channels.js';
+import { getSupabase } from '../../integrations/supabase.js';
 import type { SupabaseClient } from './types.js';
 import type { DeniseSlackPayload } from './slack-surface.js';
 
@@ -20,6 +22,66 @@ import type { DeniseSlackPayload } from './slack-surface.js';
 
 export function isDeniseSlackEnabled(): boolean {
   return getFeatureFlag(FEATURE_FLAGS.DENISE_SLACK_ENABLED);
+}
+
+// ============================================================
+// DATABASE EMERGENCY STOP — Denise-specific, independent of global AI
+// ============================================================
+
+let lastDeniseDbCheck = 0;
+let lastDeniseDbResult: boolean | null = null;
+const DENISE_DB_CACHE_MS = 5_000;
+
+/**
+ * Check if Denise Slack is enabled via database control.
+ *
+ * Dual authorization: Denise Slack operates ONLY when BOTH:
+ *   1. Environment: DENISE_SLACK_ENABLED=true
+ *   2. Database: system_controls.denise_slack_enabled=true
+ *
+ * Fail-closed: missing env, missing DB row, DB error → DISABLED.
+ * Does NOT affect other agents — this is Denise-specific.
+ */
+export async function isDeniseSlackAuthorized(): Promise<boolean> {
+  // 1. Environment gate — must be explicitly true
+  if (!isDeniseSlackEnabled()) return false;
+
+  // 2. Database gate — check with short negative cache
+  const now = Date.now();
+  if (lastDeniseDbResult === false && now - lastDeniseDbCheck < DENISE_DB_CACHE_MS) {
+    return false;
+  }
+
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from('system_controls')
+      .select('value')
+      .eq('key', 'denise_slack_enabled')
+      .single();
+
+    if (error || !data) {
+      // DB row missing or error → fail closed
+      lastDeniseDbResult = false;
+      lastDeniseDbCheck = now;
+      return false;
+    }
+
+    const dbEnabled = data.value === true;
+    lastDeniseDbResult = dbEnabled;
+    lastDeniseDbCheck = now;
+    return dbEnabled;
+  } catch {
+    lastDeniseDbResult = false;
+    lastDeniseDbCheck = now;
+    return false;
+  }
+}
+
+/** Reset Denise DB cache — for testing only */
+export function _resetDeniseDbCache(): void {
+  lastDeniseDbCheck = 0;
+  lastDeniseDbResult = null;
 }
 
 // ============================================================
@@ -652,7 +714,7 @@ export function registerDeniseActions(app: any): void {
     async ({ ack, body, client }: { ack: () => Promise<void>; body: any; client: any }) => {
       await ack();
 
-      if (!isDeniseSlackEnabled()) return;
+      if (!(await isDeniseSlackAuthorized())) return;
 
       const context: SlackActionContext = {
         userId: body.user?.id || '',
@@ -687,7 +749,7 @@ export function registerDeniseActions(app: any): void {
     async ({ ack, body, client }: { ack: () => Promise<void>; body: any; client: any }) => {
       await ack();
 
-      if (!isDeniseSlackEnabled()) return;
+      if (!(await isDeniseSlackAuthorized())) return;
 
       const context: SlackActionContext = {
         userId: body.user?.id || '',
@@ -737,8 +799,8 @@ export async function executeDelivery(
   slackPostFn: (msg: DeniseSlackMessage) => Promise<{ ok: boolean; ts?: string; error?: string }>,
   channelId: string
 ): Promise<DeliveryResult> {
-  if (!isDeniseSlackEnabled()) {
-    return { status: 'DISABLED', slackTs: null, slackChannel: null, reason: 'DENISE_SLACK_ENABLED is false' };
+  if (!(await isDeniseSlackAuthorized())) {
+    return { status: 'DISABLED', slackTs: null, slackChannel: null, reason: 'Denise Slack not authorized (env or DB control)' };
   }
 
   const claimKey = `denise-delivery-${candidate.idempotencyKey}`;
@@ -796,4 +858,78 @@ export async function executeDelivery(
     });
     return { status: 'AMBIGUOUS', slackTs: null, slackChannel: channelId, reason: `Delivery uncertain: ${msg}` };
   }
+}
+
+// ============================================================
+// DEDICATED DENISE SLACK PROCESS
+// ============================================================
+
+let deniseApp: App | null = null;
+let deniseStarted = false;
+
+/**
+ * Start the dedicated Denise Bolt app with its own Socket Mode connection.
+ *
+ * Requires DENISE_BOT_TOKEN and DENISE_APP_TOKEN.
+ * Fail-closed: returns false if tokens are missing or connection fails.
+ * Prevents duplicate listeners — only one instance per process.
+ * Does NOT require DENISE_SLACK_ENABLED — the app starts but action
+ * handlers check isDeniseSlackAuthorized() at invocation time.
+ */
+export async function startDeniseSlackApp(): Promise<{ started: boolean; reason: string }> {
+  if (deniseStarted && deniseApp) {
+    return { started: false, reason: 'Denise Slack app already running — duplicate prevented' };
+  }
+
+  const tokens = getAgentTokens('denise');
+  if (!tokens) {
+    return { started: false, reason: 'Missing DENISE_BOT_TOKEN or DENISE_APP_TOKEN' };
+  }
+
+  try {
+    const app = new App({
+      token: tokens.botToken,
+      appToken: tokens.appToken,
+      socketMode: true,
+      logLevel: LogLevel.WARN,
+    });
+
+    registerDeniseActions(app);
+    await app.start();
+    deniseApp = app;
+    deniseStarted = true;
+
+    return { started: true, reason: 'Denise Slack app started with dedicated Socket Mode connection' };
+  } catch (err) {
+    deniseApp = null;
+    deniseStarted = false;
+    const msg = err instanceof Error ? err.message : String(err);
+    return { started: false, reason: `Denise Slack app failed to start: ${msg}` };
+  }
+}
+
+/**
+ * Stop the dedicated Denise Slack app gracefully.
+ */
+export async function stopDeniseSlackApp(): Promise<void> {
+  if (deniseApp) {
+    try {
+      await deniseApp.stop();
+    } catch {
+      // Best-effort shutdown
+    }
+  }
+  deniseApp = null;
+  deniseStarted = false;
+}
+
+/** Whether the Denise Slack app is currently running */
+export function isDeniseSlackAppRunning(): boolean {
+  return deniseStarted && deniseApp !== null;
+}
+
+/** Reset Denise Slack app state — for testing only */
+export function _resetDeniseSlackApp(): void {
+  deniseApp = null;
+  deniseStarted = false;
 }

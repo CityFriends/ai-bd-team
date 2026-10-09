@@ -471,7 +471,7 @@ export const DENISE_G2X_DENYLIST = [
 export const DENISE_GATEWAY_ROUTES = [
   'denise_capture_acquisition',
   'denise_clause_analysis',
-  'denise_amendment_analysis',
+  'denise_amendment_impact',
   'denise_clarification_draft',
   'denise_evaluation_analysis',
 ] as const;
@@ -519,7 +519,7 @@ export const DENISE_PURSUIT_MAX_SPEND_USD = 0.25;
 export const DENISE_TASK_BUDGET_CEILINGS = {
   denise_capture_acquisition: 0.05,
   denise_clause_analysis: 0.05,
-  denise_amendment_analysis: 0.05,
+  denise_amendment_impact: 0.05,
   denise_clarification_draft: 0.03,
   denise_evaluation_analysis: 0.05,
 } as const;
@@ -531,7 +531,7 @@ export const DENISE_TASK_BUDGET_CEILINGS = {
 export const DENISE_AI_TASK_TYPES = [
   'denise_capture_acquisition',
   'denise_clause_analysis',
-  'denise_amendment_analysis',
+  'denise_amendment_impact',
   'denise_clarification_draft',
   'denise_evaluation_analysis',
 ] as const;

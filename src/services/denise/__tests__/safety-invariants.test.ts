@@ -502,7 +502,7 @@ describe('Gateway routes', () => {
   it('all Denise routes are defined', () => {
     expect(DENISE_GATEWAY_ROUTES).toContain('denise_capture_acquisition');
     expect(DENISE_GATEWAY_ROUTES).toContain('denise_clause_analysis');
-    expect(DENISE_GATEWAY_ROUTES).toContain('denise_amendment_analysis');
+    expect(DENISE_GATEWAY_ROUTES).toContain('denise_amendment_impact');
     expect(DENISE_GATEWAY_ROUTES).toContain('denise_clarification_draft');
     expect(DENISE_GATEWAY_ROUTES).toContain('denise_evaluation_analysis');
   });
@@ -570,10 +570,153 @@ describe('WS4: Legacy dependency containment', () => {
     for (const file of files) {
       const content = fs.readFileSync(path.join(liveDir, file), 'utf-8');
       if (file === 'run-team.ts') {
-        expect(content).toContain('registerDeniseActions');
+        // Denise uses a dedicated Slack app — startDeniseSlackApp, not registerDeniseActions on Maya
+        expect(content).toContain('startDeniseSlackApp');
+        expect(content).toContain('stopDeniseSlackApp');
+        // Must NOT register Denise actions on Maya's app
+        expect(content).not.toContain('registerDeniseActions(mayaApp)');
       } else {
         expect(content).not.toMatch(/from\s+['"].*denise/);
       }
     }
+  });
+});
+
+// ============================================================
+// Dedicated Denise Slack process invariants
+// ============================================================
+describe('Dedicated Denise Slack process', () => {
+  it('slack-adapter exports startDeniseSlackApp and stopDeniseSlackApp', async () => {
+    const adapter = await import('../slack-adapter.js');
+    expect(typeof adapter.startDeniseSlackApp).toBe('function');
+    expect(typeof adapter.stopDeniseSlackApp).toBe('function');
+    expect(typeof adapter.isDeniseSlackAppRunning).toBe('function');
+  });
+
+  it('isDeniseSlackAppRunning returns false before start', async () => {
+    const { isDeniseSlackAppRunning, _resetDeniseSlackApp } = await import('../slack-adapter.js');
+    _resetDeniseSlackApp();
+    expect(isDeniseSlackAppRunning()).toBe(false);
+  });
+
+  it('startDeniseSlackApp fails closed when tokens are missing', async () => {
+    const { startDeniseSlackApp, _resetDeniseSlackApp } = await import('../slack-adapter.js');
+    _resetDeniseSlackApp();
+
+    const savedBot = process.env.DENISE_BOT_TOKEN;
+    const savedApp = process.env.DENISE_APP_TOKEN;
+    delete process.env.DENISE_BOT_TOKEN;
+    delete process.env.DENISE_APP_TOKEN;
+
+    const result = await startDeniseSlackApp();
+    expect(result.started).toBe(false);
+    expect(result.reason).toContain('Missing DENISE_BOT_TOKEN');
+
+    if (savedBot) process.env.DENISE_BOT_TOKEN = savedBot;
+    if (savedApp) process.env.DENISE_APP_TOKEN = savedApp;
+  });
+
+  it('run-team.ts does not register Denise on Maya app', () => {
+    const runTeamContent = fs.readFileSync(
+      path.join(import.meta.dirname, '..', '..', '..', 'live', 'run-team.ts'),
+      'utf-8'
+    );
+    expect(runTeamContent).not.toContain('registerDeniseActions(mayaApp)');
+    expect(runTeamContent).not.toContain("registerDeniseActions(maya");
+  });
+});
+
+// ============================================================
+// Denise emergency stop invariants
+// ============================================================
+describe('Denise emergency stop', () => {
+  it('isDeniseSlackAuthorized is exported and async', async () => {
+    const { isDeniseSlackAuthorized } = await import('../slack-adapter.js');
+    expect(typeof isDeniseSlackAuthorized).toBe('function');
+    // Should return a promise
+    const result = isDeniseSlackAuthorized();
+    expect(result).toBeInstanceOf(Promise);
+    // Clean up
+    await result;
+  });
+
+  it('isDeniseSlackAuthorized returns false when env flag is off', async () => {
+    const { isDeniseSlackAuthorized, _resetDeniseDbCache } = await import('../slack-adapter.js');
+    _resetDeniseDbCache();
+
+    const saved = process.env.DENISE_SLACK_ENABLED;
+    delete process.env.DENISE_SLACK_ENABLED;
+
+    const result = await isDeniseSlackAuthorized();
+    expect(result).toBe(false);
+
+    if (saved) process.env.DENISE_SLACK_ENABLED = saved;
+  });
+
+  it('DB migration for denise_slack_enabled exists', () => {
+    const migrationPath = path.join(
+      import.meta.dirname, '..', '..', '..', '..', 'supabase', 'migrations',
+      '20261009_denise_slack_db_control.sql'
+    );
+    expect(fs.existsSync(migrationPath)).toBe(true);
+    const content = fs.readFileSync(migrationPath, 'utf-8');
+    expect(content).toContain('denise_slack_enabled');
+    expect(content).toContain("'false'::jsonb");
+  });
+
+  it('action handlers use isDeniseSlackAuthorized (DB check), not isDeniseSlackEnabled (env only)', () => {
+    const adapterContent = fs.readFileSync(
+      path.join(import.meta.dirname, '..', 'slack-adapter.ts'),
+      'utf-8'
+    );
+    // The registerDeniseActions function should use isDeniseSlackAuthorized
+    const registerSection = adapterContent.slice(
+      adapterContent.indexOf('export function registerDeniseActions')
+    );
+    expect(registerSection).toContain('isDeniseSlackAuthorized');
+    // Should NOT use the env-only check in action handlers
+    expect(registerSection).not.toContain('isDeniseSlackEnabled()');
+  });
+
+  it('executeDelivery uses isDeniseSlackAuthorized (DB check)', () => {
+    const adapterContent = fs.readFileSync(
+      path.join(import.meta.dirname, '..', 'slack-adapter.ts'),
+      'utf-8'
+    );
+    const deliverySection = adapterContent.slice(
+      adapterContent.indexOf('export async function executeDelivery')
+    );
+    expect(deliverySection).toContain('isDeniseSlackAuthorized');
+  });
+});
+
+// ============================================================
+// Amendment route name alignment
+// ============================================================
+describe('Amendment route name alignment', () => {
+  it('types.ts uses denise_amendment_impact (not denise_amendment_analysis)', () => {
+    const typesContent = fs.readFileSync(
+      path.join(import.meta.dirname, '..', 'types.ts'),
+      'utf-8'
+    );
+    expect(typesContent).toContain('denise_amendment_impact');
+    expect(typesContent).not.toContain('denise_amendment_analysis');
+  });
+
+  it('routing.ts DEFAULT_ROUTES uses denise_amendment_impact', () => {
+    const routingContent = fs.readFileSync(
+      path.join(import.meta.dirname, '..', '..', 'llm-gateway', 'routing.ts'),
+      'utf-8'
+    );
+    expect(routingContent).toContain("'denise_amendment_impact'");
+    expect(routingContent).not.toContain("'denise_amendment_analysis'");
+  });
+
+  it('amendment-analysis.ts implementation uses denise_amendment_impact', () => {
+    const implContent = fs.readFileSync(
+      path.join(import.meta.dirname, '..', 'amendment-analysis.ts'),
+      'utf-8'
+    );
+    expect(implContent).toContain("'denise_amendment_impact'");
   });
 });

@@ -106,7 +106,7 @@ const DEFAULT_ROUTES: ModelRoute[] = [
     enabled: false,
   },
   {
-    taskType: 'denise_amendment_analysis' as TaskType,
+    taskType: 'denise_amendment_impact' as TaskType,
     provider: 'anthropic',
     model: 'claude-sonnet-4-6',
     maxOutputTokens: 2048,

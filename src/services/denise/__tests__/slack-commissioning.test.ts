@@ -986,12 +986,12 @@ describe('Kill-switch independence', () => {
       new URL('../slack-adapter.ts', import.meta.url).pathname,
       'utf-8'
     );
-    // executeDelivery checks isDeniseSlackEnabled but not isAIEnabled
+    // executeDelivery checks isDeniseSlackAuthorized (DB + env dual authorization) but not isAIEnabled
     const fnBody = source.slice(
       source.indexOf('export async function executeDelivery'),
       source.indexOf('\n}\n', source.indexOf('export async function executeDelivery')) + 3
     );
-    expect(fnBody).toContain('isDeniseSlackEnabled');
+    expect(fnBody).toContain('isDeniseSlackAuthorized');
     expect(fnBody).not.toContain('isAIEnabled');
   });
 
