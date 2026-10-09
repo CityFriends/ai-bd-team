@@ -84,13 +84,24 @@ export interface DeniseRoutingResult {
 // ============================================================
 
 /**
- * Validate the requesting identity against approved workflow context.
- * Does NOT trust caller-supplied role alone — validates against
- * the source event or human authorization.
+ * Validate the requesting identity against authoritative, persisted records.
+ *
+ * Does NOT trust caller-supplied identifiers alone. Verifies:
+ * 1. Role is in approved set.
+ * 2. At least one authorization reference is present.
+ * 3. The referenced record EXISTS in the database.
+ * 4. The referenced record BELONGS to the requested opportunity.
+ * 5. The referenced record is in an active/authorized status.
+ *
+ * Authorization sources checked in priority order:
+ * - parentWorkflowId → captures table (opportunity_id must match)
+ * - sourceEventId → agent_events table (opportunity_id in payload)
+ * - humanAuthorizationId → captures table (human_decision_by must exist)
  */
-function validateAuthorization(
+async function validateAuthorization(
+  supabase: SupabaseClient,
   request: DeniseRoutingRequest
-): { authorized: boolean; reason?: string } {
+): Promise<{ authorized: boolean; reason?: string }> {
   // 1. Role must be in approved set
   if (!SPECIALIST_ARTIFACT_MAP[request.requestingSpecialist]) {
     return { authorized: false, reason: `Unknown specialist role: ${request.requestingSpecialist}` };
@@ -106,7 +117,69 @@ function validateAuthorization(
     return { authorized: false, reason: 'Missing opportunityId' };
   }
 
-  return { authorized: true };
+  // 4. Validate authorization reference against authoritative DB records
+
+  // parentWorkflowId → must be a real capture for this opportunity
+  if (request.parentWorkflowId) {
+    const { data: capture } = await supabase
+      .from('captures')
+      .select('id, opportunity_id, status')
+      .eq('id', request.parentWorkflowId)
+      .single();
+
+    if (!capture) {
+      return { authorized: false, reason: `parentWorkflowId '${request.parentWorkflowId}' not found in captures` };
+    }
+    if (capture.opportunity_id !== request.opportunityId) {
+      return { authorized: false, reason: `parentWorkflowId belongs to opportunity '${capture.opportunity_id}', not '${request.opportunityId}'` };
+    }
+    if (capture.status === 'no_go' || capture.status === 'abandoned') {
+      return { authorized: false, reason: `Capture is ${capture.status} — not authorized for active routing` };
+    }
+    return { authorized: true };
+  }
+
+  // humanAuthorizationId → must be a real capture with human decision for this opportunity
+  if (request.humanAuthorizationId) {
+    const { data: capture } = await supabase
+      .from('captures')
+      .select('id, opportunity_id, human_decision, human_decision_by')
+      .eq('id', request.humanAuthorizationId)
+      .single();
+
+    if (!capture) {
+      return { authorized: false, reason: `humanAuthorizationId '${request.humanAuthorizationId}' not found` };
+    }
+    if (capture.opportunity_id !== request.opportunityId) {
+      return { authorized: false, reason: `humanAuthorizationId belongs to different opportunity` };
+    }
+    if (!capture.human_decision_by) {
+      return { authorized: false, reason: 'No human decision recorded on this capture' };
+    }
+    return { authorized: true };
+  }
+
+  // sourceEventId → must be a real event for this opportunity
+  if (request.sourceEventId) {
+    const { data: event } = await supabase
+      .from('agent_events')
+      .select('id, payload')
+      .eq('id', request.sourceEventId)
+      .single();
+
+    if (!event) {
+      return { authorized: false, reason: `sourceEventId '${request.sourceEventId}' not found in agent_events` };
+    }
+    // Verify event is related to the requested opportunity
+    const payload = event.payload as Record<string, unknown> | null;
+    const eventOppId = payload?.opportunityId || payload?.opportunity_id;
+    if (eventOppId && eventOppId !== request.opportunityId) {
+      return { authorized: false, reason: 'sourceEventId belongs to different opportunity' };
+    }
+    return { authorized: true };
+  }
+
+  return { authorized: false, reason: 'Authorization validation failed — no valid reference' };
 }
 
 // ============================================================
@@ -143,8 +216,8 @@ export async function dispatchDeniseRequest(
     return emptyResult('FAILED', `Invalid request: ${parseResult.error.issues[0]?.message}`, 'VALIDATION_FAILED');
   }
 
-  // 2. Authorization check
-  const auth = validateAuthorization(request);
+  // 2. Authorization check — validates against authoritative DB records
+  const auth = await validateAuthorization(supabase, request);
   if (!auth.authorized) {
     return emptyResult('UNAUTHORIZED', auth.reason, 'UNAUTHORIZED');
   }

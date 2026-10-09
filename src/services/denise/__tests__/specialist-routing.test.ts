@@ -107,7 +107,7 @@ function req(specialist: string, key: string, overrides?: Partial<DeniseRoutingR
     requestingSpecialist: specialist as any,
     workflowPhase: 'PURSUIT',
     requestType: 'ACQUISITION_INTELLIGENCE',
-    parentWorkflowId: `wf-${testRunId}`,
+    parentWorkflowId: captureId, // Actual capture UUID — validated against captures table
     idempotencyKey: `${key}-${testRunId}`,
     ...overrides,
   };
@@ -195,13 +195,25 @@ describe.skipIf(!CAN_RUN)('Specialist Workflow Routing — 20 Cases', () => {
     expect(statuses.filter((s: string) => s === 'LEASE_HELD')).toHaveLength(4);
   });
 
-  // Case 10 — Missing artifacts
+  // Case 10 — Missing artifacts (use valid capture but different opportunity with no artifacts)
   it('Case 10: missing artifacts return typed absence', async () => {
+    // Create a capture for an opportunity with no Denise artifacts
+    const emptyOppId = `empty-opp-${testRunId}`;
+    const emptyCaptureId = randomUUID();
+    await supabase.from('captures').insert({
+      id: emptyCaptureId, opportunity_id: emptyOppId,
+      source_material_hash: 'h', status: 'pursuit_authorized',
+      created_by_human_id: 'test', idempotency_key: `cap-empty-${testRunId}`,
+    });
+
     const r = await dispatchDeniseRequest(supabase, req('JODIE', 'c10', {
-      opportunityId: `nonexistent-${testRunId}`,
+      opportunityId: emptyOppId,
+      parentWorkflowId: emptyCaptureId,
     }));
     expect(r.disposition).toBe('MISSING_ARTIFACTS');
     expect(r.missingArtifacts.length).toBeGreaterThan(0);
+
+    await supabase.from('captures').delete().like('idempotency_key', `cap-empty-${testRunId}`);
   });
 
   // Case 11 — Disabled capability (deterministic stub)
@@ -331,6 +343,134 @@ describe.skipIf(!CAN_RUN)('Specialist Workflow Routing — 20 Cases', () => {
       .select('set_aside, version').eq('id', analysisId).single();
     expect(data.set_aside).toBe('SDVOSB');
     expect(data.version).toBe(1);
+  });
+});
+
+// ============================================================
+// AUTHORIZATION VERIFICATION — 10 cases
+// ============================================================
+
+describe.skipIf(!CAN_RUN)('Authorization Verification', () => {
+  // Auth 1 — Valid authorized request (already covered by Case 1, but explicit)
+  it('Auth 1: valid capture-backed authorization succeeds', async () => {
+    const r = await dispatchDeniseRequest(supabase, req('JAMES', 'auth1'));
+    expect(['ARTIFACTS_DELIVERED', 'COMPLETED', 'MISSING_ARTIFACTS']).toContain(r.disposition);
+    expect(r.disposition).not.toBe('UNAUTHORIZED');
+  });
+
+  // Auth 2 — Fabricated parentWorkflowId
+  it('Auth 2: fabricated parentWorkflowId rejected', async () => {
+    const r = await dispatchDeniseRequest(supabase, req('JAMES', 'auth2', {
+      parentWorkflowId: '00000000-0000-0000-0000-000000000000', // Non-existent UUID
+    }));
+    expect(r.disposition).toBe('UNAUTHORIZED');
+    expect(r.failureReason).toContain('not found');
+  });
+
+  // Auth 3 — Authorization belonging to another opportunity
+  it('Auth 3: parentWorkflowId from different opportunity rejected', async () => {
+    // Create a capture for a different opportunity
+    const otherCaptureId = randomUUID();
+    await supabase.from('captures').insert({
+      id: otherCaptureId, opportunity_id: `other-opp-auth-${testRunId}`,
+      source_material_hash: 'h', status: 'pursuit_authorized',
+      created_by_human_id: 'test', idempotency_key: `cap-auth-other-${testRunId}`,
+    });
+
+    const r = await dispatchDeniseRequest(supabase, req('JAMES', 'auth3', {
+      parentWorkflowId: otherCaptureId, // Exists but wrong opportunity
+    }));
+    expect(r.disposition).toBe('UNAUTHORIZED');
+    expect(r.failureReason).toContain('not');
+
+    await supabase.from('captures').delete().like('idempotency_key', `cap-auth-other-${testRunId}`);
+  });
+
+  // Auth 4 — Fabricated humanAuthorizationId
+  it('Auth 4: fabricated humanAuthorizationId rejected', async () => {
+    const r = await dispatchDeniseRequest(supabase, req('PATRICIA', 'auth4', {
+      parentWorkflowId: undefined,
+      humanAuthorizationId: '00000000-0000-0000-0000-000000000000',
+    }));
+    expect(r.disposition).toBe('UNAUTHORIZED');
+    expect(r.failureReason).toContain('not found');
+  });
+
+  // Auth 5 — humanAuthorizationId without human decision
+  it('Auth 5: capture without human decision rejects humanAuthorizationId', async () => {
+    // captureId has status=pursuit_authorized but created_by_human_id, not human_decision_by
+    // human_decision_by is NULL
+    const r = await dispatchDeniseRequest(supabase, req('JAMES', 'auth5', {
+      parentWorkflowId: undefined,
+      humanAuthorizationId: captureId,
+    }));
+    expect(r.disposition).toBe('UNAUTHORIZED');
+    expect(r.failureReason).toContain('No human decision');
+  });
+
+  // Auth 6 — Fabricated sourceEventId
+  it('Auth 6: fabricated sourceEventId rejected', async () => {
+    const r = await dispatchDeniseRequest(supabase, req('MARCUS', 'auth6', {
+      parentWorkflowId: undefined,
+      sourceEventId: '00000000-0000-0000-0000-000000000000',
+    }));
+    expect(r.disposition).toBe('UNAUTHORIZED');
+    expect(r.failureReason).toContain('not found');
+  });
+
+  // Auth 7 — Abandoned capture blocks authorization
+  it('Auth 7: abandoned capture blocks routing', async () => {
+    const abandonedId = randomUUID();
+    await supabase.from('captures').insert({
+      id: abandonedId, opportunity_id: oppId,
+      source_material_hash: 'h', status: 'abandoned',
+      created_by_human_id: 'test', idempotency_key: `cap-abandoned-${testRunId}`,
+    });
+
+    const r = await dispatchDeniseRequest(supabase, req('JAMES', 'auth7', {
+      parentWorkflowId: abandonedId,
+    }));
+    expect(r.disposition).toBe('UNAUTHORIZED');
+    expect(r.failureReason).toContain('abandoned');
+
+    await supabase.from('captures').delete().like('idempotency_key', `cap-abandoned-${testRunId}`);
+  });
+
+  // Auth 8 — No authorization reference at all
+  it('Auth 8: missing all authorization references rejected', async () => {
+    const r = await dispatchDeniseRequest(supabase, {
+      opportunityId: oppId,
+      requestingSpecialist: 'ROSA',
+      workflowPhase: 'PURSUIT',
+      requestType: 'test',
+      idempotencyKey: `auth8-${testRunId}`,
+      // No sourceEventId, humanAuthorizationId, or parentWorkflowId
+    });
+    expect(r.disposition).toBe('UNAUTHORIZED');
+  });
+
+  // Auth 9 — Duplicate of authorized request still idempotent
+  it('Auth 9: duplicate authorized request is idempotent', async () => {
+    const r = await dispatchDeniseRequest(supabase, req('JAMES', 'auth1')); // Same as Auth 1
+    expect(r.disposition).toBe('DUPLICATE');
+  });
+
+  // Auth 10 — no_go capture blocks authorization
+  it('Auth 10: no_go capture blocks routing', async () => {
+    const noGoId = randomUUID();
+    await supabase.from('captures').insert({
+      id: noGoId, opportunity_id: oppId,
+      source_material_hash: 'h', status: 'no_go',
+      created_by_human_id: 'test', idempotency_key: `cap-nogo-${testRunId}`,
+    });
+
+    const r = await dispatchDeniseRequest(supabase, req('PATRICIA', 'auth10', {
+      parentWorkflowId: noGoId,
+    }));
+    expect(r.disposition).toBe('UNAUTHORIZED');
+    expect(r.failureReason).toContain('no_go');
+
+    await supabase.from('captures').delete().like('idempotency_key', `cap-nogo-${testRunId}`);
   });
 });
 
