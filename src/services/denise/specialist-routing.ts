@@ -41,6 +41,13 @@ export const DeniseRoutingRequestSchema = z.object({
   sourceEventId: z.string().optional(),
   humanAuthorizationId: z.string().optional(),
   parentWorkflowId: z.string().optional(),
+  /**
+   * Trusted caller identity from the authenticated execution context
+   * (bot token, agent ID from event infrastructure). NOT from request payload.
+   * Must match requestingSpecialist. Set by the calling infrastructure,
+   * not by the external requester.
+   */
+  trustedCallerIdentity: z.string().optional(),
   idempotencyKey: z.string().min(1),
 });
 
@@ -83,20 +90,45 @@ export interface DeniseRoutingResult {
 // AUTHORIZATION
 // ============================================================
 
+// ============================================================
+// EVENT TYPE ALLOWLIST
+// ============================================================
+
+/**
+ * Event types that legitimately authorize Denise routing requests.
+ * Only events that represent real workflow authorization qualify.
+ */
+const AUTHORIZED_EVENT_TYPES = new Set([
+  'PURSUIT_SCHEDULED',        // Pursuit authorized — specialists need acquisition intelligence
+  'GO_NO_GO_DECISION',        // Capture decision — James/Patricia need Denise findings
+  'TECH_ASSESSMENT_COMPLETE', // Marcus completed tech review — may need regulatory context
+  'RESEARCH_COMPLETE',        // David completed research — James may need acquisition structure
+  'RELATIONSHIP_CHECK_COMPLETE', // Rosa completed teaming check — needs subcontracting analysis
+  'DEADLINE_WARNING',         // Patricia deadline alert — may need submission requirements
+  'RISK_ALERT',              // System risk alert — specialists need risk context
+]);
+
+/**
+ * Map from trusted agent identity (lowercase) to specialist role (uppercase).
+ * Established by bot tokens in the Slack infrastructure.
+ */
+const AGENT_TO_SPECIALIST: Record<string, string> = {
+  james: 'JAMES', strategist: 'JAMES',
+  patricia: 'PATRICIA', pm: 'PATRICIA',
+  jodie: 'JODIE', writer: 'JODIE',
+  marcus: 'MARCUS', engineer: 'MARCUS',
+  rosa: 'ROSA', connector: 'ROSA',
+};
+
 /**
  * Validate the requesting identity against authoritative, persisted records.
  *
- * Does NOT trust caller-supplied identifiers alone. Verifies:
- * 1. Role is in approved set.
- * 2. At least one authorization reference is present.
- * 3. The referenced record EXISTS in the database.
- * 4. The referenced record BELONGS to the requested opportunity.
- * 5. The referenced record is in an active/authorized status.
- *
- * Authorization sources checked in priority order:
- * - parentWorkflowId → captures table (opportunity_id must match)
- * - sourceEventId → agent_events table (opportunity_id in payload)
- * - humanAuthorizationId → captures table (human_decision_by must exist)
+ * 1. Validates specialist role.
+ * 2. Verifies trusted caller identity matches requested specialist.
+ * 3. Requires at least one authorization source.
+ * 4. Validates the referenced record exists, belongs to the opportunity,
+ *    and is in an authorized status.
+ * 5. For events: validates event type is in the allowlist and opportunity matches.
  */
 async function validateAuthorization(
   supabase: SupabaseClient,
@@ -107,17 +139,32 @@ async function validateAuthorization(
     return { authorized: false, reason: `Unknown specialist role: ${request.requestingSpecialist}` };
   }
 
-  // 2. Must have at least one authorization source
+  // 2. Trusted caller identity must match requested specialist
+  if (request.trustedCallerIdentity) {
+    const expectedRole = AGENT_TO_SPECIALIST[request.trustedCallerIdentity.toLowerCase()];
+    if (!expectedRole) {
+      return { authorized: false, reason: `Unknown trusted identity: ${request.trustedCallerIdentity}` };
+    }
+    if (expectedRole !== request.requestingSpecialist) {
+      return { authorized: false, reason: `Identity mismatch: trusted identity '${request.trustedCallerIdentity}' maps to ${expectedRole}, not ${request.requestingSpecialist}` };
+    }
+  }
+  // If trustedCallerIdentity is not provided, the entry point is not yet wired
+  // to authenticated infrastructure. Fail closed for sourceEventId path
+  // (which could be called externally). parentWorkflowId/humanAuthorizationId
+  // paths are internal-only (require valid capture UUID).
+
+  // 3. Must have at least one authorization source
   if (!request.sourceEventId && !request.humanAuthorizationId && !request.parentWorkflowId) {
     return { authorized: false, reason: 'No authorization source: requires sourceEventId, humanAuthorizationId, or parentWorkflowId' };
   }
 
-  // 3. Opportunity ID must be present
+  // 4. Opportunity ID must be present
   if (!request.opportunityId) {
     return { authorized: false, reason: 'Missing opportunityId' };
   }
 
-  // 4. Validate authorization reference against authoritative DB records
+  // 5. Validate authorization reference against authoritative DB records
 
   // parentWorkflowId → must be a real capture for this opportunity
   if (request.parentWorkflowId) {
@@ -139,7 +186,7 @@ async function validateAuthorization(
     return { authorized: true };
   }
 
-  // humanAuthorizationId → must be a real capture with human decision for this opportunity
+  // humanAuthorizationId → must be a real capture with human decision
   if (request.humanAuthorizationId) {
     const { data: capture } = await supabase
       .from('captures')
@@ -159,23 +206,46 @@ async function validateAuthorization(
     return { authorized: true };
   }
 
-  // sourceEventId → must be a real event for this opportunity
+  // sourceEventId → must be a real event with authorized type and matching opportunity
   if (request.sourceEventId) {
+    // Require trustedCallerIdentity for event-based authorization
+    if (!request.trustedCallerIdentity) {
+      return { authorized: false, reason: 'sourceEventId requires trustedCallerIdentity from authenticated infrastructure' };
+    }
+
     const { data: event } = await supabase
       .from('agent_events')
-      .select('id, payload')
+      .select('id, event_type, payload')
       .eq('id', request.sourceEventId)
       .single();
 
     if (!event) {
       return { authorized: false, reason: `sourceEventId '${request.sourceEventId}' not found in agent_events` };
     }
-    // Verify event is related to the requested opportunity
+
+    // Event type must be in the allowlist
+    if (!AUTHORIZED_EVENT_TYPES.has(event.event_type)) {
+      return { authorized: false, reason: `Event type '${event.event_type}' is not authorized for Denise routing` };
+    }
+
+    // Opportunity must match
     const payload = event.payload as Record<string, unknown> | null;
-    const eventOppId = payload?.opportunityId || payload?.opportunity_id;
-    if (eventOppId && eventOppId !== request.opportunityId) {
+    const eventOppId = payload?.opportunityId || payload?.opportunity_id || payload?.noticeId;
+    if (!eventOppId) {
+      return { authorized: false, reason: 'Event missing opportunity context in payload' };
+    }
+    if (eventOppId !== request.opportunityId) {
       return { authorized: false, reason: 'sourceEventId belongs to different opportunity' };
     }
+
+    // Pursuit match when applicable
+    if (request.pursuitId) {
+      const eventPursuitId = payload?.pursuitId || payload?.capture_id;
+      if (eventPursuitId && eventPursuitId !== request.pursuitId) {
+        return { authorized: false, reason: 'sourceEventId belongs to different pursuit' };
+      }
+    }
+
     return { authorized: true };
   }
 

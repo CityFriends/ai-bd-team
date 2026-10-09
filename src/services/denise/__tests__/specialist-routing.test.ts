@@ -408,11 +408,12 @@ describe.skipIf(!CAN_RUN)('Authorization Verification', () => {
     expect(r.failureReason).toContain('No human decision');
   });
 
-  // Auth 6 — Fabricated sourceEventId
+  // Auth 6 — Fabricated sourceEventId (with required trustedCallerIdentity)
   it('Auth 6: fabricated sourceEventId rejected', async () => {
     const r = await dispatchDeniseRequest(supabase, req('MARCUS', 'auth6', {
       parentWorkflowId: undefined,
       sourceEventId: '00000000-0000-0000-0000-000000000000',
+      trustedCallerIdentity: 'marcus',
     }));
     expect(r.disposition).toBe('UNAUTHORIZED');
     expect(r.failureReason).toContain('not found');
@@ -471,6 +472,158 @@ describe.skipIf(!CAN_RUN)('Authorization Verification', () => {
     expect(r.failureReason).toContain('no_go');
 
     await supabase.from('captures').delete().like('idempotency_key', `cap-nogo-${testRunId}`);
+  });
+});
+
+// ============================================================
+// TRUST BOUNDARY HARDENING — 10 cases
+// ============================================================
+
+describe.skipIf(!CAN_RUN)('Trust Boundary Hardening', () => {
+  // TB 1 — Authorized event with matching opportunity
+  it('TB 1: authorized event type with matching opportunity succeeds', async () => {
+    // Create a real event
+    const { data: ev } = await supabase.rpc('publish_event', {
+      p_event_type: 'PURSUIT_SCHEDULED',
+      p_source_agent: 'james',
+      p_payload: { opportunityId: oppId, action: 'pursuit' },
+    });
+    const eventId = ev;
+
+    if (eventId) {
+      const r = await dispatchDeniseRequest(supabase, req('JAMES', 'tb1', {
+        parentWorkflowId: undefined,
+        sourceEventId: eventId,
+        trustedCallerIdentity: 'james',
+      }));
+      expect(r.disposition).not.toBe('UNAUTHORIZED');
+    }
+  });
+
+  // TB 2 — Unknown event type
+  it('TB 2: unknown event type rejected', async () => {
+    // Create an event with a non-authorizing type
+    const { data: ev } = await supabase.rpc('publish_event', {
+      p_event_type: 'FEED_POST_CREATED',
+      p_source_agent: 'system',
+      p_payload: { opportunityId: oppId },
+    });
+
+    if (ev) {
+      const r = await dispatchDeniseRequest(supabase, req('JAMES', 'tb2', {
+        parentWorkflowId: undefined,
+        sourceEventId: ev,
+        trustedCallerIdentity: 'james',
+      }));
+      expect(r.disposition).toBe('UNAUTHORIZED');
+      expect(r.failureReason).toContain('not authorized');
+    }
+  });
+
+  // TB 3 — Event missing opportunity context
+  it('TB 3: event missing opportunity context rejected', async () => {
+    const { data: ev } = await supabase.rpc('publish_event', {
+      p_event_type: 'PURSUIT_SCHEDULED',
+      p_source_agent: 'system',
+      p_payload: { note: 'no opportunity here' },
+    });
+
+    if (ev) {
+      const r = await dispatchDeniseRequest(supabase, req('JAMES', 'tb3', {
+        parentWorkflowId: undefined,
+        sourceEventId: ev,
+        trustedCallerIdentity: 'james',
+      }));
+      expect(r.disposition).toBe('UNAUTHORIZED');
+      expect(r.failureReason).toContain('missing opportunity');
+    }
+  });
+
+  // TB 4 — Event referencing another opportunity
+  it('TB 4: event from different opportunity rejected', async () => {
+    const { data: ev } = await supabase.rpc('publish_event', {
+      p_event_type: 'PURSUIT_SCHEDULED',
+      p_source_agent: 'james',
+      p_payload: { opportunityId: `other-${testRunId}` },
+    });
+
+    if (ev) {
+      const r = await dispatchDeniseRequest(supabase, req('JAMES', 'tb4', {
+        parentWorkflowId: undefined,
+        sourceEventId: ev,
+        trustedCallerIdentity: 'james',
+      }));
+      expect(r.disposition).toBe('UNAUTHORIZED');
+      expect(r.failureReason).toContain('different opportunity');
+    }
+  });
+
+  // TB 5 — Pursuit mismatch
+  it('TB 5: pursuit mismatch rejected', async () => {
+    const { data: ev } = await supabase.rpc('publish_event', {
+      p_event_type: 'PURSUIT_SCHEDULED',
+      p_source_agent: 'james',
+      p_payload: { opportunityId: oppId, pursuitId: 'pursuit-A' },
+    });
+
+    if (ev) {
+      const r = await dispatchDeniseRequest(supabase, req('JAMES', 'tb5', {
+        parentWorkflowId: undefined,
+        sourceEventId: ev,
+        trustedCallerIdentity: 'james',
+        pursuitId: 'pursuit-B', // Mismatch
+      }));
+      expect(r.disposition).toBe('UNAUTHORIZED');
+      expect(r.failureReason).toContain('different pursuit');
+    }
+  });
+
+  // TB 6 — Valid trusted specialist identity
+  it('TB 6: valid trusted identity matches specialist', async () => {
+    const r = await dispatchDeniseRequest(supabase, req('JAMES', 'tb6', {
+      trustedCallerIdentity: 'james',
+    }));
+    expect(r.disposition).not.toBe('UNAUTHORIZED');
+  });
+
+  // TB 7 — Specialist impersonation attempt
+  it('TB 7: impersonation attempt rejected', async () => {
+    const r = await dispatchDeniseRequest(supabase, req('JAMES', 'tb7', {
+      trustedCallerIdentity: 'rosa', // Rosa trying to act as James
+    }));
+    expect(r.disposition).toBe('UNAUTHORIZED');
+    expect(r.failureReason).toContain('Identity mismatch');
+  });
+
+  // TB 8 — Missing trusted identity on event path
+  it('TB 8: missing trusted identity on event path fails closed', async () => {
+    const { data: ev } = await supabase.rpc('publish_event', {
+      p_event_type: 'PURSUIT_SCHEDULED',
+      p_source_agent: 'james',
+      p_payload: { opportunityId: oppId },
+    });
+
+    if (ev) {
+      const r = await dispatchDeniseRequest(supabase, req('JAMES', 'tb8', {
+        parentWorkflowId: undefined,
+        sourceEventId: ev,
+        // No trustedCallerIdentity
+      }));
+      expect(r.disposition).toBe('UNAUTHORIZED');
+      expect(r.failureReason).toContain('trustedCallerIdentity');
+    }
+  });
+
+  // TB 9 — Valid capture-backed authorization (regression)
+  it('TB 9: valid capture-backed authorization still works', async () => {
+    const r = await dispatchDeniseRequest(supabase, req('PATRICIA', 'tb9'));
+    expect(r.disposition).not.toBe('UNAUTHORIZED');
+  });
+
+  // TB 10 — Duplicate still idempotent
+  it('TB 10: duplicate authorized routing remains idempotent', async () => {
+    const r = await dispatchDeniseRequest(supabase, req('JAMES', 'tb6')); // Same as TB 6
+    expect(r.disposition).toBe('DUPLICATE');
   });
 });
 
