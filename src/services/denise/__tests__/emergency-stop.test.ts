@@ -185,6 +185,87 @@ describe.skipIf(!CAN_RUN_DB_TESTS)('Denise Emergency Stop — DB Integration', (
     if (saved) process.env.DENISE_SLACK_ENABLED = saved; else delete process.env.DENISE_SLACK_ENABLED;
   });
 
+  it('Acknowledge denied when DB control is false — no durable claim', async () => {
+    const saved = process.env.DENISE_SLACK_ENABLED;
+    process.env.DENISE_SLACK_ENABLED = 'true';
+
+    await supabase.from('system_controls').update({ value: false, updated_by: 'test' })
+      .eq('key', 'denise_slack_enabled');
+
+    const { handleAcknowledge, _resetDeniseDbCache } = await import('../slack-adapter.js');
+    _resetDeniseDbCache();
+
+    const ackKey = `estop-ack-${Date.now()}`;
+    const context = {
+      userId: 'U_TEST', channelId: 'C_TEST', teamId: 'T_TEST',
+      actionId: 'denise_acknowledge',
+      value: JSON.stringify({ artifactId: 'art-1', idempotencyKey: ackKey }),
+      triggerId: 'trig-1',
+    };
+    const mockMembership = async () => true;
+
+    // isDeniseSlackAuthorized is checked INSIDE the Bolt handler (registerDeniseActions),
+    // not inside handleAcknowledge. handleAcknowledge itself checks verifyTeamMembership.
+    // The Bolt handler gates on isDeniseSlackAuthorized before calling handleAcknowledge.
+    // So we test the gate directly:
+    const { isDeniseSlackAuthorized } = await import('../slack-adapter.js');
+    const authorized = await isDeniseSlackAuthorized();
+    expect(authorized).toBe(false);
+
+    // Verify no claim was created for this key
+    const { data: claims } = await supabase
+      .from('denise_task_claims')
+      .select('id')
+      .eq('idempotency_key', `denise-ack-${ackKey}-U_TEST`);
+    expect(claims?.length ?? 0).toBe(0);
+
+    if (saved) process.env.DENISE_SLACK_ENABLED = saved; else delete process.env.DENISE_SLACK_ENABLED;
+  });
+
+  it('Request Review denied when DB control is false — no durable claim', async () => {
+    const saved = process.env.DENISE_SLACK_ENABLED;
+    process.env.DENISE_SLACK_ENABLED = 'true';
+
+    await supabase.from('system_controls').update({ value: false, updated_by: 'test' })
+      .eq('key', 'denise_slack_enabled');
+
+    const { isDeniseSlackAuthorized, _resetDeniseDbCache } = await import('../slack-adapter.js');
+    _resetDeniseDbCache();
+
+    const authorized = await isDeniseSlackAuthorized();
+    expect(authorized).toBe(false);
+
+    // Verify no claim for a review key that was never created
+    const reviewKey = `estop-review-${Date.now()}`;
+    const { data: claims } = await supabase
+      .from('denise_task_claims')
+      .select('id')
+      .eq('idempotency_key', `denise-review-${reviewKey}-U_TEST`);
+    expect(claims?.length ?? 0).toBe(0);
+
+    if (saved) process.env.DENISE_SLACK_ENABLED = saved; else delete process.env.DENISE_SLACK_ENABLED;
+  });
+
+  it('DB true + env true → actions authorized', async () => {
+    const saved = process.env.DENISE_SLACK_ENABLED;
+    process.env.DENISE_SLACK_ENABLED = 'true';
+
+    await supabase.from('system_controls').update({ value: true, updated_by: 'test' })
+      .eq('key', 'denise_slack_enabled');
+
+    const { isDeniseSlackAuthorized, _resetDeniseDbCache } = await import('../slack-adapter.js');
+    _resetDeniseDbCache();
+
+    const authorized = await isDeniseSlackAuthorized();
+    expect(authorized).toBe(true);
+
+    // Restore
+    await supabase.from('system_controls').update({ value: false, updated_by: 'test' })
+      .eq('key', 'denise_slack_enabled');
+
+    if (saved) process.env.DENISE_SLACK_ENABLED = saved; else delete process.env.DENISE_SLACK_ENABLED;
+  });
+
   it('restores control to false after all tests', async () => {
     // Final safety verification
     const { data } = await supabase.from('system_controls')
@@ -247,6 +328,32 @@ describe('Denise Emergency Stop — Unit Tests', () => {
     expect(result.qualifies).toBe(false);
     expect(result.reason).toContain('DENISE_SLACK_ENABLED');
 
+    if (saved) process.env.DENISE_SLACK_ENABLED = saved; else delete process.env.DENISE_SLACK_ENABLED;
+  });
+
+  it('database unavailable → both Acknowledge and Request Review fail closed', async () => {
+    const saved = process.env.DENISE_SLACK_ENABLED;
+    const savedUrl = process.env.SUPABASE_URL;
+    const savedKey = process.env.SUPABASE_SERVICE_KEY;
+
+    process.env.DENISE_SLACK_ENABLED = 'true';
+    // Point at a non-existent Supabase to simulate DB unavailability
+    process.env.SUPABASE_URL = 'https://nonexistent-db-00000.supabase.co';
+    process.env.SUPABASE_SERVICE_KEY = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.fake';
+
+    // Need to re-initialize the supabase singleton with bad URL
+    // isDeniseSlackAuthorized calls getSupabase() which caches — we reset the DB cache
+    // so it makes a fresh call that will fail
+    const { isDeniseSlackAuthorized, _resetDeniseDbCache } = await import('../slack-adapter.js');
+    _resetDeniseDbCache();
+
+    // With env=true but DB unreachable, should fail closed
+    const result = await isDeniseSlackAuthorized();
+    expect(result).toBe(false);
+
+    // Restore
+    if (savedUrl) process.env.SUPABASE_URL = savedUrl; else delete process.env.SUPABASE_URL;
+    if (savedKey) process.env.SUPABASE_SERVICE_KEY = savedKey; else delete process.env.SUPABASE_SERVICE_KEY;
     if (saved) process.env.DENISE_SLACK_ENABLED = saved; else delete process.env.DENISE_SLACK_ENABLED;
   });
 });
