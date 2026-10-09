@@ -511,7 +511,7 @@ export async function handleAcknowledge(
     });
   }
 
-  return { success: true, message: `Acknowledged by ${context.userId}` };
+  return { success: true, message: `Acknowledged by <@${context.userId}>` };
 }
 
 /**
@@ -550,7 +550,7 @@ export async function handleRequestReview(
     });
   }
 
-  return { success: true, message: `Review requested by ${context.userId} for ${parsed.artifactId}` };
+  return { success: true, message: `Review requested by <@${context.userId}> for ${parsed.artifactId}` };
 }
 
 // ============================================================
