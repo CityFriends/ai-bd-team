@@ -179,7 +179,7 @@ describe('Slack Signature / Authentication (structural)', () => {
     // Action handlers require SlackActionContext with userId
     // Missing userId would fail at the type level
     const context: SlackActionContext = {
-      userId: '', channelId: 'C123', actionId: 'test', value: '{}', triggerId: 'T123',
+      userId: '', channelId: 'C123', teamId: 'T_FFTC', actionId: 'test', value: '{}', triggerId: 'T123',
     };
     expect(context.userId).toBe(''); // Empty userId — handler would use this for audit
   });
@@ -207,12 +207,21 @@ describe('Slack Signature / Authentication (structural)', () => {
 // ============================================================
 
 describe.skipIf(!CAN_RUN)('Delivery and Actions', () => {
+  const savedTeamId = process.env.SLACK_TEAM_ID;
+  const savedChannelId = process.env.SLACK_CHANNEL_ID;
+
   beforeAll(async () => {
     supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!);
     testRunId = `slack-${Math.random().toString(36).slice(2, 8)}`;
+    // Ensure config is set for authorization checks
+    if (!process.env.SLACK_TEAM_ID) process.env.SLACK_TEAM_ID = 'T_FFTC';
+    if (!process.env.SLACK_CHANNEL_ID) process.env.SLACK_CHANNEL_ID = process.env.SLACK_CHANNEL_ID || 'C_BD_TEAM';
   });
 
   afterAll(async () => {
+    // Restore
+    if (savedTeamId) process.env.SLACK_TEAM_ID = savedTeamId; else delete process.env.SLACK_TEAM_ID;
+    if (savedChannelId) process.env.SLACK_CHANNEL_ID = savedChannelId; else delete process.env.SLACK_CHANNEL_ID;
     if (!supabase) return;
     await supabase.from('denise_task_claims').delete().like('idempotency_key', `%slack%${testRunId}%`);
     await supabase.from('denise_task_claims').delete().like('idempotency_key', `%ack%${testRunId}%`);
@@ -343,6 +352,8 @@ describe.skipIf(!CAN_RUN)('Remediation: Authorization, Routing, Delivery', () =>
   beforeAll(async () => {
     supabase = supabase || createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!);
     testRunId = testRunId || `slack-${Math.random().toString(36).slice(2, 8)}`;
+    if (!process.env.SLACK_TEAM_ID) process.env.SLACK_TEAM_ID = 'T_FFTC';
+    if (!process.env.SLACK_CHANNEL_ID) process.env.SLACK_CHANNEL_ID = process.env.SLACK_CHANNEL_ID || 'C_BD_TEAM';
     captureId = randomUUID();
     analysisId = randomUUID();
 
@@ -557,11 +568,12 @@ import { verifyTeamMembership } from '../slack-adapter.js';
 
 describe.skipIf(!CAN_RUN)('Team Membership Authorization', () => {
   let memberAnalysisId: string;
-  const approvedChannel = process.env.SLACK_CHANNEL_ID || 'C_BD_TEAM';
 
   beforeAll(async () => {
     supabase = supabase || createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!);
     testRunId = testRunId || `slack-${Math.random().toString(36).slice(2, 8)}`;
+    if (!process.env.SLACK_TEAM_ID) process.env.SLACK_TEAM_ID = 'T_FFTC';
+    if (!process.env.SLACK_CHANNEL_ID) process.env.SLACK_CHANNEL_ID = process.env.SLACK_CHANNEL_ID || 'C_BD_TEAM';
     memberAnalysisId = randomUUID();
     await supabase.from('acquisition_analyses').insert({
       id: memberAnalysisId, opportunity_id: `opp-member-${testRunId}`,
@@ -578,7 +590,9 @@ describe.skipIf(!CAN_RUN)('Team Membership Authorization', () => {
   });
 
   const ctx = (overrides?: Partial<SlackActionContext>): SlackActionContext => ({
-    userId: 'U_MEMBER', channelId: approvedChannel, teamId: 'T_FFTC',
+    userId: 'U_MEMBER',
+    channelId: process.env.SLACK_CHANNEL_ID || 'C_BD_TEAM',
+    teamId: process.env.SLACK_TEAM_ID || 'T_FFTC',
     actionId: 'denise_acknowledge', triggerId: 'T1',
     value: JSON.stringify({ artifactId: memberAnalysisId }),
     ...overrides,
@@ -612,13 +626,14 @@ describe.skipIf(!CAN_RUN)('Team Membership Authorization', () => {
 
   // M4 — Wrong workspace rejected
   it('M4: wrong workspace rejected', async () => {
+    const saved = process.env.SLACK_TEAM_ID;
     process.env.SLACK_TEAM_ID = 'T_FFTC_REAL';
     const r = await handleAcknowledge(supabase, ctx({ teamId: 'T_WRONG_WORKSPACE' }),
       async () => true
     );
     expect(r.success).toBe(false);
     expect(r.message).toContain('Wrong workspace');
-    delete process.env.SLACK_TEAM_ID;
+    process.env.SLACK_TEAM_ID = saved || 'T_FFTC'; // Restore
   });
 
   // M5 — Action from unauthorized channel
@@ -693,5 +708,72 @@ describe.skipIf(!CAN_RUN)('Team Membership Authorization', () => {
   it('M11: disabled feature flag blocks (structural)', () => {
     delete process.env.DENISE_SLACK_ENABLED;
     expect(isDeniseSlackEnabled()).toBe(false);
+  });
+});
+
+// ============================================================
+// CONFIGURATION HARDENING — fail closed on missing config
+// ============================================================
+
+describe('Configuration Hardening', () => {
+  it('CFG1: missing SLACK_TEAM_ID fails closed', async () => {
+    const saved = process.env.SLACK_TEAM_ID;
+    delete process.env.SLACK_TEAM_ID;
+
+    const r = await verifyTeamMembership(
+      { userId: 'U1', channelId: 'C1', teamId: 'T1', actionId: 'test', value: '', triggerId: 'T' },
+      async () => true
+    );
+    expect(r.authorized).toBe(false);
+    expect(r.reason).toContain('SLACK_TEAM_ID not configured');
+
+    if (saved) process.env.SLACK_TEAM_ID = saved;
+  });
+
+  it('CFG2: missing SLACK_CHANNEL_ID fails closed', async () => {
+    const savedTeam = process.env.SLACK_TEAM_ID;
+    const savedCh = process.env.SLACK_CHANNEL_ID;
+    process.env.SLACK_TEAM_ID = 'T_TEST';
+    delete process.env.SLACK_CHANNEL_ID;
+
+    const r = await verifyTeamMembership(
+      { userId: 'U1', channelId: 'C1', teamId: 'T_TEST', actionId: 'test', value: '', triggerId: 'T' },
+      async () => true
+    );
+    expect(r.authorized).toBe(false);
+    expect(r.reason).toContain('SLACK_CHANNEL_ID not configured');
+
+    if (savedTeam) process.env.SLACK_TEAM_ID = savedTeam; else delete process.env.SLACK_TEAM_ID;
+    if (savedCh) process.env.SLACK_CHANNEL_ID = savedCh; else delete process.env.SLACK_CHANNEL_ID;
+  });
+
+  it('CFG3: workspace mismatch rejected', async () => {
+    const saved = process.env.SLACK_TEAM_ID;
+    process.env.SLACK_TEAM_ID = 'T_CORRECT';
+
+    const r = await verifyTeamMembership(
+      { userId: 'U1', channelId: 'C1', teamId: 'T_WRONG', actionId: 'test', value: '', triggerId: 'T' },
+      async () => true
+    );
+    expect(r.authorized).toBe(false);
+    expect(r.reason).toContain('Wrong workspace');
+
+    if (saved) process.env.SLACK_TEAM_ID = saved; else delete process.env.SLACK_TEAM_ID;
+  });
+
+  it('CFG4: valid configuration passes', async () => {
+    const savedTeam = process.env.SLACK_TEAM_ID;
+    const savedCh = process.env.SLACK_CHANNEL_ID;
+    process.env.SLACK_TEAM_ID = 'T_OK';
+    process.env.SLACK_CHANNEL_ID = 'C_OK';
+
+    const r = await verifyTeamMembership(
+      { userId: 'U1', channelId: 'C_OK', teamId: 'T_OK', actionId: 'test', value: '', triggerId: 'T' },
+      async () => true
+    );
+    expect(r.authorized).toBe(true);
+
+    if (savedTeam) process.env.SLACK_TEAM_ID = savedTeam; else delete process.env.SLACK_TEAM_ID;
+    if (savedCh) process.env.SLACK_CHANNEL_ID = savedCh; else delete process.env.SLACK_CHANNEL_ID;
   });
 });

@@ -312,15 +312,21 @@ export async function verifyTeamMembership(
     return { authorized: false, reason: 'Missing authenticated Slack userId' };
   }
 
-  // 2. Workspace verification
+  // 2. Workspace verification — REQUIRED, fail closed when missing
   const approvedWorkspace = getApprovedWorkspaceId();
-  if (approvedWorkspace && context.teamId !== approvedWorkspace) {
-    return { authorized: false, reason: `Wrong workspace: ${context.teamId} is not the approved FFTC workspace` };
+  if (!approvedWorkspace) {
+    return { authorized: false, reason: 'SLACK_TEAM_ID not configured — cannot verify workspace' };
+  }
+  if (context.teamId !== approvedWorkspace) {
+    return { authorized: false, reason: `Wrong workspace: expected configured workspace, got ${context.teamId}` };
   }
 
-  // 3. Channel verification
+  // 3. Channel verification — REQUIRED, fail closed when missing
   const approvedChannel = getApprovedChannelId();
-  if (approvedChannel && context.channelId !== approvedChannel) {
+  if (!approvedChannel) {
+    return { authorized: false, reason: 'SLACK_CHANNEL_ID not configured — cannot verify channel' };
+  }
+  if (context.channelId !== approvedChannel) {
     return { authorized: false, reason: `Action from unauthorized channel ${context.channelId}` };
   }
 
