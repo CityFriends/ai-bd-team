@@ -233,7 +233,7 @@ describe.skipIf(!CAN_RUN)('Delivery and Actions', () => {
 
     const idemKey = `ack-test-${testRunId}`;
     const ctx: SlackActionContext = {
-      userId: 'U12345', channelId: 'C12345', actionId: 'denise_acknowledge',
+      userId: 'U12345', channelId: process.env.SLACK_CHANNEL_ID || 'C12345', teamId: 'T_FFTC', actionId: 'denise_acknowledge',
       value: JSON.stringify({ artifactId: localAnalysisId, idempotencyKey: idemKey }),
       triggerId: 'T12345',
     };
@@ -252,7 +252,7 @@ describe.skipIf(!CAN_RUN)('Delivery and Actions', () => {
   // Case 16 — Unauthorized action (invalid payload)
   it('Case 16: invalid action payload rejected', async () => {
     const ctx: SlackActionContext = {
-      userId: 'U12345', channelId: 'C12345', actionId: 'denise_acknowledge',
+      userId: 'U12345', channelId: process.env.SLACK_CHANNEL_ID || 'C12345', teamId: 'T_FFTC', actionId: 'denise_acknowledge',
       value: 'NOT_JSON', triggerId: 'T12345',
     };
     const r = await handleAcknowledge(supabase, ctx);
@@ -272,7 +272,7 @@ describe.skipIf(!CAN_RUN)('Delivery and Actions', () => {
     });
 
     const ctx: SlackActionContext = {
-      userId: 'U12345', channelId: 'C12345', actionId: 'denise_request_review',
+      userId: 'U12345', channelId: process.env.SLACK_CHANNEL_ID || 'C12345', teamId: 'T_FFTC', actionId: 'denise_request_review',
       value: JSON.stringify({ artifactId: localAnalysisId, opportunityId: localOppId }),
       triggerId: 'T12345',
     };
@@ -369,7 +369,7 @@ describe.skipIf(!CAN_RUN)('Remediation: Authorization, Routing, Delivery', () =>
   // R1 — Authorized user acknowledges valid artifact
   it('R1: authorized user acknowledges valid artifact', async () => {
     const r = await handleAcknowledge(supabase, {
-      userId: 'U_AUTH', channelId: 'C123', actionId: 'denise_acknowledge',
+      userId: 'U_AUTH', channelId: process.env.SLACK_CHANNEL_ID || 'C123', teamId: 'T_FFTC', actionId: 'denise_acknowledge',
       value: JSON.stringify({ artifactId: analysisId }), triggerId: 'T1',
     });
     expect(r.success).toBe(true);
@@ -378,7 +378,7 @@ describe.skipIf(!CAN_RUN)('Remediation: Authorization, Routing, Delivery', () =>
   // R2 — Unauthorized user (empty userId)
   it('R2: empty userId rejected', async () => {
     const r = await handleAcknowledge(supabase, {
-      userId: '', channelId: 'C123', actionId: 'denise_acknowledge',
+      userId: '', channelId: 'C123', teamId: 'T_FFTC', actionId: 'denise_acknowledge',
       value: JSON.stringify({ artifactId: analysisId }), triggerId: 'T2',
     });
     expect(r.success).toBe(false);
@@ -391,7 +391,7 @@ describe.skipIf(!CAN_RUN)('Remediation: Authorization, Routing, Delivery', () =>
   // R4 — Cross-opportunity artifact rejected
   it('R4: cross-opportunity artifact rejected', async () => {
     const r = await handleAcknowledge(supabase, {
-      userId: 'U_AUTH', channelId: 'C123', actionId: 'denise_acknowledge',
+      userId: 'U_AUTH', channelId: process.env.SLACK_CHANNEL_ID || 'C123', teamId: 'T_FFTC', actionId: 'denise_acknowledge',
       value: JSON.stringify({ artifactId: analysisId, opportunityId: 'wrong-opp' }), triggerId: 'T4',
     });
     expect(r.success).toBe(false);
@@ -401,7 +401,7 @@ describe.skipIf(!CAN_RUN)('Remediation: Authorization, Routing, Delivery', () =>
   // R5 — Forged artifact ID rejected
   it('R5: forged artifact ID rejected', async () => {
     const r = await handleAcknowledge(supabase, {
-      userId: 'U_AUTH', channelId: 'C123', actionId: 'denise_acknowledge',
+      userId: 'U_AUTH', channelId: process.env.SLACK_CHANNEL_ID || 'C123', teamId: 'T_FFTC', actionId: 'denise_acknowledge',
       value: JSON.stringify({ artifactId: '00000000-0000-0000-0000-000000000000' }), triggerId: 'T5',
     });
     expect(r.success).toBe(false);
@@ -411,7 +411,7 @@ describe.skipIf(!CAN_RUN)('Remediation: Authorization, Routing, Delivery', () =>
   // R6 — Review request is durable
   it('R6: authorized review request is durable', async () => {
     const r = await handleRequestReview(supabase, {
-      userId: 'U_AUTH', channelId: 'C123', actionId: 'denise_request_review',
+      userId: 'U_AUTH', channelId: process.env.SLACK_CHANNEL_ID || 'C123', teamId: 'T_FFTC', actionId: 'denise_request_review',
       value: JSON.stringify({ artifactId: analysisId, opportunityId: `opp-rem-${testRunId}` }), triggerId: 'T6',
     });
     expect(r.success).toBe(true);
@@ -546,5 +546,152 @@ describe.skipIf(!CAN_RUN)('Remediation: Authorization, Routing, Delivery', () =>
       throw new Error('Should not be called');
     }, 'C12345');
     expect(result.status).toBe('DISABLED');
+  });
+});
+
+// ============================================================
+// TEAM MEMBERSHIP AUTHORIZATION — 11 focused tests
+// ============================================================
+
+import { verifyTeamMembership } from '../slack-adapter.js';
+
+describe.skipIf(!CAN_RUN)('Team Membership Authorization', () => {
+  let memberAnalysisId: string;
+  const approvedChannel = process.env.SLACK_CHANNEL_ID || 'C_BD_TEAM';
+
+  beforeAll(async () => {
+    supabase = supabase || createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!);
+    testRunId = testRunId || `slack-${Math.random().toString(36).slice(2, 8)}`;
+    memberAnalysisId = randomUUID();
+    await supabase.from('acquisition_analyses').insert({
+      id: memberAnalysisId, opportunity_id: `opp-member-${testRunId}`,
+      solicitation_version: 'SOL-1', amendment_version: 0, version: 1,
+      source_refs: [], interpretation: {}, unresolved_issues: [],
+      created_by: 'denise', idempotency_key: `member-analysis-${testRunId}`,
+    });
+  });
+
+  afterAll(async () => {
+    if (!supabase) return;
+    await supabase.from('acquisition_analyses').delete().like('idempotency_key', `member-%${testRunId}%`);
+    await supabase.from('denise_task_claims').delete().like('idempotency_key', `%member%${testRunId}%`);
+  });
+
+  const ctx = (overrides?: Partial<SlackActionContext>): SlackActionContext => ({
+    userId: 'U_MEMBER', channelId: approvedChannel, teamId: 'T_FFTC',
+    actionId: 'denise_acknowledge', triggerId: 'T1',
+    value: JSON.stringify({ artifactId: memberAnalysisId }),
+    ...overrides,
+  });
+
+  // M1 — Authenticated BD team member accepted
+  it('M1: authenticated BD team member accepted', async () => {
+    const r = await handleAcknowledge(supabase, ctx({ userId: 'U_MEMBER_M1' }),
+      async () => true // Member
+    );
+    expect(r.success).toBe(true);
+  });
+
+  // M2 — Authenticated nonmember rejected
+  it('M2: authenticated nonmember rejected', async () => {
+    const r = await handleAcknowledge(supabase, ctx({ userId: 'U_OUTSIDER' }),
+      async () => false // Not a member
+    );
+    expect(r.success).toBe(false);
+    expect(r.message).toContain('not a member');
+  });
+
+  // M3 — Unknown user (empty) rejected
+  it('M3: unknown Slack user rejected', async () => {
+    const r = await handleAcknowledge(supabase, ctx({ userId: '' }),
+      async () => true
+    );
+    expect(r.success).toBe(false);
+    expect(r.message).toContain('Missing authenticated');
+  });
+
+  // M4 — Wrong workspace rejected
+  it('M4: wrong workspace rejected', async () => {
+    process.env.SLACK_TEAM_ID = 'T_FFTC_REAL';
+    const r = await handleAcknowledge(supabase, ctx({ teamId: 'T_WRONG_WORKSPACE' }),
+      async () => true
+    );
+    expect(r.success).toBe(false);
+    expect(r.message).toContain('Wrong workspace');
+    delete process.env.SLACK_TEAM_ID;
+  });
+
+  // M5 — Action from unauthorized channel
+  it('M5: action from unauthorized channel rejected', async () => {
+    const r = await verifyTeamMembership(
+      ctx({ channelId: 'C_RANDOM_CHANNEL' }),
+      async () => true
+    );
+    // If SLACK_CHANNEL_ID is set and doesn't match, rejected
+    if (process.env.SLACK_CHANNEL_ID) {
+      expect(r.authorized).toBe(false);
+      expect(r.reason).toContain('unauthorized channel');
+    }
+  });
+
+  // M6 — Membership lookup failure fails closed
+  it('M6: membership lookup failure fails closed', async () => {
+    const r = await handleAcknowledge(supabase, ctx(),
+      async () => { throw new Error('Slack API timeout'); }
+    );
+    expect(r.success).toBe(false);
+    expect(r.message).toContain('Membership verification failed');
+  });
+
+  // M7 — Forged artifact rejected
+  it('M7: forged artifact ID rejected', async () => {
+    const r = await handleAcknowledge(supabase,
+      ctx({ value: JSON.stringify({ artifactId: '00000000-0000-0000-0000-000000000000' }) }),
+      async () => true
+    );
+    expect(r.success).toBe(false);
+    expect(r.message).toContain('not found');
+  });
+
+  // M8 — Cross-opportunity rejected
+  it('M8: cross-opportunity artifact rejected', async () => {
+    const r = await handleAcknowledge(supabase,
+      ctx({ value: JSON.stringify({ artifactId: memberAnalysisId, opportunityId: 'wrong-opp' }) }),
+      async () => true
+    );
+    expect(r.success).toBe(false);
+    expect(r.message).toContain('different opportunity');
+  });
+
+  // M9 — Duplicate ack idempotent
+  it('M9: duplicate acknowledgment remains idempotent', async () => {
+    const r1 = await handleAcknowledge(supabase,
+      ctx({ userId: 'U_DUP_M9', value: JSON.stringify({ artifactId: memberAnalysisId, idempotencyKey: `m9-${testRunId}` }) }),
+      async () => true
+    );
+    expect(r1.success).toBe(true);
+    const r2 = await handleAcknowledge(supabase,
+      ctx({ userId: 'U_DUP_M9', value: JSON.stringify({ artifactId: memberAnalysisId, idempotencyKey: `m9-${testRunId}` }) }),
+      async () => true
+    );
+    expect(r2.success).toBe(true);
+    expect(r2.message).toContain('Already');
+  });
+
+  // M10 — Review request durable
+  it('M10: authorized review request remains durable', async () => {
+    const r = await handleRequestReview(supabase,
+      ctx({ userId: 'U_REVIEW_M10', actionId: 'denise_request_review',
+        value: JSON.stringify({ artifactId: memberAnalysisId, opportunityId: `opp-member-${testRunId}` }) }),
+      async () => true
+    );
+    expect(r.success).toBe(true);
+    expect(r.message).toContain('Review requested');
+  });
+
+  // M11 — Disabled flag blocks
+  it('M11: disabled feature flag blocks (structural)', () => {
+    delete process.env.DENISE_SLACK_ENABLED;
+    expect(isDeniseSlackEnabled()).toBe(false);
   });
 });

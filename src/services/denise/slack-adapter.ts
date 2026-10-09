@@ -253,12 +253,90 @@ export async function recordDeliveryAttempt(
 // ACTION AUTHORIZATION
 // ============================================================
 
+/**
+ * Authenticated Slack action context.
+ *
+ * IMPORTANT: These fields must be populated from Bolt's authenticated
+ * request body (body.user.id, body.team.id, body.channel.id), NOT from
+ * user-controlled payload fields. The action handler entry point is
+ * responsible for extracting these from the verified Bolt context.
+ */
 export interface SlackActionContext {
+  /** Slack user ID from Bolt body.user.id — authenticated by Bolt signature */
   userId: string;
+  /** Slack channel ID where the action originated */
   channelId: string;
+  /** Slack team/workspace ID from Bolt body.team.id */
+  teamId: string;
+  /** Action identifier */
   actionId: string;
+  /** Action value payload */
   value: string;
+  /** Trigger ID for modal responses */
   triggerId: string;
+}
+
+/**
+ * Membership lookup function type.
+ * In production: calls Slack conversations.members API via authenticated client.
+ * In commissioning: mocked.
+ */
+export type MembershipLookupFn = (channelId: string, userId: string) => Promise<boolean>;
+
+/** Configured FFTC workspace ID — from environment */
+function getApprovedWorkspaceId(): string | null {
+  return process.env.SLACK_TEAM_ID || null;
+}
+
+/** Configured BD team channel ID — from environment */
+function getApprovedChannelId(): string | null {
+  try { return getMainChannelId(); } catch { return null; }
+}
+
+/**
+ * Verify the Slack user is an authenticated member of the BD team.
+ *
+ * Checks:
+ * 1. Bolt-authenticated userId (non-empty)
+ * 2. Workspace matches approved FFTC workspace
+ * 3. Action originated from approved channel
+ * 4. User is a member of the approved BD team channel
+ * 5. Fail closed on any verification failure
+ */
+export async function verifyTeamMembership(
+  context: SlackActionContext,
+  membershipLookup: MembershipLookupFn
+): Promise<{ authorized: boolean; reason: string }> {
+  // 1. Authenticated principal
+  if (!context.userId || context.userId.trim() === '') {
+    return { authorized: false, reason: 'Missing authenticated Slack userId' };
+  }
+
+  // 2. Workspace verification
+  const approvedWorkspace = getApprovedWorkspaceId();
+  if (approvedWorkspace && context.teamId !== approvedWorkspace) {
+    return { authorized: false, reason: `Wrong workspace: ${context.teamId} is not the approved FFTC workspace` };
+  }
+
+  // 3. Channel verification
+  const approvedChannel = getApprovedChannelId();
+  if (approvedChannel && context.channelId !== approvedChannel) {
+    return { authorized: false, reason: `Action from unauthorized channel ${context.channelId}` };
+  }
+
+  // 4. Membership lookup
+  const targetChannel = approvedChannel || context.channelId;
+  try {
+    const isMember = await membershipLookup(targetChannel, context.userId);
+    if (!isMember) {
+      return { authorized: false, reason: `User ${context.userId} is not a member of the BD team channel` };
+    }
+  } catch (err) {
+    // Fail closed on lookup failure
+    return { authorized: false, reason: `Membership verification failed: ${err instanceof Error ? err.message : 'unknown error'}` };
+  }
+
+  return { authorized: true, reason: 'Authenticated BD team member' };
 }
 
 /**
@@ -321,18 +399,24 @@ async function authorizeAction(
 
 /**
  * Handle an acknowledgment action from a verified Slack user.
+ * Requires both team membership AND artifact authorization.
  */
 export async function handleAcknowledge(
   supabase: SupabaseClient,
-  context: SlackActionContext
+  context: SlackActionContext,
+  membershipLookup: MembershipLookupFn = async () => true // Default for backward compat; production must supply real lookup
 ): Promise<{ success: boolean; message: string }> {
+  // 1. Team membership check
+  const membership = await verifyTeamMembership(context, membershipLookup);
+  if (!membership.authorized) return { success: false, message: membership.reason };
+
   let parsed: { artifactId?: string; idempotencyKey?: string; opportunityId?: string };
   try { parsed = JSON.parse(context.value); } catch {
     return { success: false, message: 'Invalid action payload' };
   }
   if (!parsed.artifactId) return { success: false, message: 'Missing artifact ID' };
 
-  // Authorize the action
+  // 2. Artifact authorization
   const auth = await authorizeAction(supabase, context, parsed.artifactId, parsed.opportunityId);
   if (!auth.authorized) return { success: false, message: auth.reason };
 
@@ -356,11 +440,16 @@ export async function handleAcknowledge(
 
 /**
  * Handle a "Request Review" action from a verified Slack user.
+ * Requires both team membership AND artifact authorization.
  */
 export async function handleRequestReview(
   supabase: SupabaseClient,
-  context: SlackActionContext
+  context: SlackActionContext,
+  membershipLookup: MembershipLookupFn = async () => true
 ): Promise<{ success: boolean; message: string }> {
+  const membership = await verifyTeamMembership(context, membershipLookup);
+  if (!membership.authorized) return { success: false, message: membership.reason };
+
   let parsed: { artifactId?: string; opportunityId?: string };
   try { parsed = JSON.parse(context.value); } catch {
     return { success: false, message: 'Invalid action payload' };
