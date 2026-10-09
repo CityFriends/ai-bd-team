@@ -139,20 +139,18 @@ async function validateAuthorization(
     return { authorized: false, reason: `Unknown specialist role: ${request.requestingSpecialist}` };
   }
 
-  // 2. Trusted caller identity must match requested specialist
-  if (request.trustedCallerIdentity) {
-    const expectedRole = AGENT_TO_SPECIALIST[request.trustedCallerIdentity.toLowerCase()];
-    if (!expectedRole) {
-      return { authorized: false, reason: `Unknown trusted identity: ${request.trustedCallerIdentity}` };
-    }
-    if (expectedRole !== request.requestingSpecialist) {
-      return { authorized: false, reason: `Identity mismatch: trusted identity '${request.trustedCallerIdentity}' maps to ${expectedRole}, not ${request.requestingSpecialist}` };
-    }
+  // 2. Trusted caller identity is REQUIRED on all paths.
+  //    A valid capture UUID or event reference alone does not authorize.
+  if (!request.trustedCallerIdentity) {
+    return { authorized: false, reason: 'Missing trustedCallerIdentity — all specialist requests require verified caller identity' };
   }
-  // If trustedCallerIdentity is not provided, the entry point is not yet wired
-  // to authenticated infrastructure. Fail closed for sourceEventId path
-  // (which could be called externally). parentWorkflowId/humanAuthorizationId
-  // paths are internal-only (require valid capture UUID).
+  const expectedRole = AGENT_TO_SPECIALIST[request.trustedCallerIdentity.toLowerCase()];
+  if (!expectedRole) {
+    return { authorized: false, reason: `Unknown trusted identity: ${request.trustedCallerIdentity}` };
+  }
+  if (expectedRole !== request.requestingSpecialist) {
+    return { authorized: false, reason: `Identity mismatch: trusted identity '${request.trustedCallerIdentity}' maps to ${expectedRole}, not ${request.requestingSpecialist}` };
+  }
 
   // 3. Must have at least one authorization source
   if (!request.sourceEventId && !request.humanAuthorizationId && !request.parentWorkflowId) {

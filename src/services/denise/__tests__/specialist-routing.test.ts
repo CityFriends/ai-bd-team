@@ -101,13 +101,19 @@ afterAll(async () => {
   await supabase.from('captures').delete().like('idempotency_key', `cap-sr-${testRunId}`);
 });
 
+/** Map specialist name to trusted agent identity */
+const SPECIALIST_IDENTITY: Record<string, string> = {
+  JAMES: 'james', PATRICIA: 'patricia', JODIE: 'jodie', MARCUS: 'marcus', ROSA: 'rosa',
+};
+
 function req(specialist: string, key: string, overrides?: Partial<DeniseRoutingRequest>): DeniseRoutingRequest {
   return {
     opportunityId: oppId,
     requestingSpecialist: specialist as any,
     workflowPhase: 'PURSUIT',
     requestType: 'ACQUISITION_INTELLIGENCE',
-    parentWorkflowId: captureId, // Actual capture UUID — validated against captures table
+    parentWorkflowId: captureId,
+    trustedCallerIdentity: SPECIALIST_IDENTITY[specialist] || specialist.toLowerCase(),
     idempotencyKey: `${key}-${testRunId}`,
     ...overrides,
   };
@@ -168,8 +174,9 @@ describe.skipIf(!CAN_RUN)('Specialist Workflow Routing — 20 Cases', () => {
       requestingSpecialist: 'JAMES',
       workflowPhase: 'CAPTURE',
       requestType: 'test',
+      trustedCallerIdentity: 'james',
       idempotencyKey: `c7-${testRunId}`,
-      // No sourceEventId, humanAuthorizationId, or parentWorkflowId
+      // Has identity but no sourceEventId, humanAuthorizationId, or parentWorkflowId
     });
     expect(r.disposition).toBe('UNAUTHORIZED');
     expect(r.failureCode).toBe('UNAUTHORIZED');
@@ -578,51 +585,85 @@ describe.skipIf(!CAN_RUN)('Trust Boundary Hardening', () => {
     }
   });
 
-  // TB 6 — Valid trusted specialist identity
-  it('TB 6: valid trusted identity matches specialist', async () => {
-    const r = await dispatchDeniseRequest(supabase, req('JAMES', 'tb6', {
-      trustedCallerIdentity: 'james',
-    }));
+  // TB 6 — Valid trusted identity with capture auth
+  it('TB 6: valid identity + capture authorization succeeds', async () => {
+    const r = await dispatchDeniseRequest(supabase, req('JAMES', 'tb6'));
     expect(r.disposition).not.toBe('UNAUTHORIZED');
   });
 
-  // TB 7 — Specialist impersonation attempt
+  // TB 7 — Impersonation attempt
   it('TB 7: impersonation attempt rejected', async () => {
     const r = await dispatchDeniseRequest(supabase, req('JAMES', 'tb7', {
-      trustedCallerIdentity: 'rosa', // Rosa trying to act as James
+      trustedCallerIdentity: 'rosa',
     }));
     expect(r.disposition).toBe('UNAUTHORIZED');
     expect(r.failureReason).toContain('Identity mismatch');
   });
 
-  // TB 8 — Missing trusted identity on event path
-  it('TB 8: missing trusted identity on event path fails closed', async () => {
+  // TB 8 — Missing identity on capture path
+  it('TB 8: missing identity on capture path fails closed', async () => {
+    const r = await dispatchDeniseRequest(supabase, req('JAMES', 'tb8', {
+      trustedCallerIdentity: undefined,
+    }));
+    expect(r.disposition).toBe('UNAUTHORIZED');
+    expect(r.failureReason).toContain('trustedCallerIdentity');
+  });
+
+  // TB 9 — Missing identity on human-auth path
+  it('TB 9: missing identity on humanAuthorization path fails closed', async () => {
+    const r = await dispatchDeniseRequest(supabase, {
+      opportunityId: oppId,
+      requestingSpecialist: 'PATRICIA',
+      workflowPhase: 'PURSUIT',
+      requestType: 'test',
+      humanAuthorizationId: captureId,
+      // trustedCallerIdentity intentionally omitted
+      idempotencyKey: `tb9-${testRunId}`,
+    });
+    expect(r.disposition).toBe('UNAUTHORIZED');
+    expect(r.failureReason).toContain('trustedCallerIdentity');
+  });
+
+  // TB 10 — Missing identity on event path
+  it('TB 10: missing identity on event path fails closed', async () => {
     const { data: ev } = await supabase.rpc('publish_event', {
       p_event_type: 'PURSUIT_SCHEDULED',
       p_source_agent: 'james',
       p_payload: { opportunityId: oppId },
     });
-
     if (ev) {
-      const r = await dispatchDeniseRequest(supabase, req('JAMES', 'tb8', {
-        parentWorkflowId: undefined,
+      const r = await dispatchDeniseRequest(supabase, {
+        opportunityId: oppId,
+        requestingSpecialist: 'JAMES',
+        workflowPhase: 'PURSUIT',
+        requestType: 'test',
         sourceEventId: ev,
-        // No trustedCallerIdentity
-      }));
+        // trustedCallerIdentity intentionally omitted
+        idempotencyKey: `tb10-${testRunId}`,
+      });
       expect(r.disposition).toBe('UNAUTHORIZED');
       expect(r.failureReason).toContain('trustedCallerIdentity');
     }
   });
 
-  // TB 9 — Valid capture-backed authorization (regression)
-  it('TB 9: valid capture-backed authorization still works', async () => {
-    const r = await dispatchDeniseRequest(supabase, req('PATRICIA', 'tb9'));
+  // TB 11 — Fabricated identity string
+  it('TB 11: fabricated identity string rejected', async () => {
+    const r = await dispatchDeniseRequest(supabase, req('JAMES', 'tb11', {
+      trustedCallerIdentity: 'fake-agent-xyz',
+    }));
+    expect(r.disposition).toBe('UNAUTHORIZED');
+    expect(r.failureReason).toContain('Unknown trusted identity');
+  });
+
+  // TB 12 — Valid identity + capture regression
+  it('TB 12: valid identity + capture still works (regression)', async () => {
+    const r = await dispatchDeniseRequest(supabase, req('PATRICIA', 'tb12'));
     expect(r.disposition).not.toBe('UNAUTHORIZED');
   });
 
-  // TB 10 — Duplicate still idempotent
-  it('TB 10: duplicate authorized routing remains idempotent', async () => {
-    const r = await dispatchDeniseRequest(supabase, req('JAMES', 'tb6')); // Same as TB 6
+  // TB 13 — Duplicate remains idempotent
+  it('TB 13: duplicate authorized routing remains idempotent', async () => {
+    const r = await dispatchDeniseRequest(supabase, req('JAMES', 'tb6'));
     expect(r.disposition).toBe('DUPLICATE');
   });
 });
