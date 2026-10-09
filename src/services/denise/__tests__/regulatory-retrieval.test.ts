@@ -288,6 +288,13 @@ describe.skipIf(!CAN_RUN_DB)('Evidence Persistence and Cache', () => {
 
   // Case 15 — Verified immutable evidence persistence
   it('Case 15: persists evidence with hash', async () => {
+    // Clear stale cache to force a fresh fetch-and-persist cycle.
+    // Without this, a cache hit returns a hash from a prior run while
+    // the evidence table may have a different latest row, causing a
+    // cross-table hash mismatch when the live page content has changed.
+    await supabase.from('regulatory_source_cache')
+      .delete().eq('authority', 'FAR').eq('citation', '52.219-14');
+
     const result = await retrieveRegulatoryProvision({
       regulation: 'FAR', provisionId: '52.219-14',
       versionSelector: 'CURRENT',
@@ -295,11 +302,14 @@ describe.skipIf(!CAN_RUN_DB)('Evidence Persistence and Cache', () => {
     }, supabase);
 
     if (result.success) {
-      // Check evidence was persisted
+      // Check evidence was persisted — query by the idempotency key pattern
+      // used by persistEvidence: reg-retrieve-FAR-52.219-14-<hash prefix>
+      const hashPrefix = result.contentHash!.slice(0, 16);
       const { data } = await supabase.from('regulatory_evidence')
         .select('content_hash, authority, citation')
         .eq('authority', 'FAR').eq('citation', '52.219-14')
-        .order('created_at', { ascending: false }).limit(1).single();
+        .eq('idempotency_key', `reg-retrieve-FAR-52.219-14-${hashPrefix}`)
+        .single();
       expect(data).toBeTruthy();
       expect(data.content_hash).toBe(result.contentHash);
     }

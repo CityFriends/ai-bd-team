@@ -6,3 +6,4 @@ dist/
 data/
 coverage/
 supabase/.temp/
+.env.commissioning*

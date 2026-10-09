@@ -61,6 +61,8 @@ describe('env validation', () => {
     process.env.SUPABASE_URL = 'https://test.supabase.co';
     process.env.ANTHROPIC_API_KEY = 'sk-ant-test';
     // Don't set any Supabase key
+    delete process.env.SUPABASE_SERVICE_KEY;
+    delete process.env.SUPABASE_ANON_KEY;
 
     const { validateEnv } = await import('../env.js');
 

@@ -201,7 +201,7 @@ import { getEnvironmentRole } from '../../../config/environment.js';
 
 const HAS_DB = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY);
 const IS_PRODUCTION = getEnvironmentRole() === 'production';
-const HAS_ANTHROPIC = Boolean(process.env.ANTHROPIC_API_KEY);
+const HAS_ANTHROPIC = process.env.AI_SYSTEM_ENABLED === 'true' && Boolean(process.env.ANTHROPIC_API_KEY);
 const CAN_RUN_DB = HAS_DB && !IS_PRODUCTION;
 const CAN_RUN_INFERENCE = CAN_RUN_DB && HAS_ANTHROPIC;
 

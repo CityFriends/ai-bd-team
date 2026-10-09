@@ -407,11 +407,20 @@ describe.skipIf(!CAN_RUN_DB_TESTS)('James Capture Integration', () => {
       .eq('scope_id', scopeId)
       .single();
 
-    // Also need a global scope
+    // Create a dedicated global scope for this test to avoid shared-state interference
+    const testGlobalScopeId = `test-global-${testRunId}-race`;
+    await supabase.from('ai_budget_scopes').insert({
+      scope_id: testGlobalScopeId,
+      scope_type: 'global_daily',
+      limit_usd: 2.00,
+      spent_usd: 0,
+      reserved_usd: 0,
+      period_hours: 24,
+    });
     const { data: globalScope } = await supabase
       .from('ai_budget_scopes')
       .select('id')
-      .eq('scope_id', 'default')
+      .eq('scope_id', testGlobalScopeId)
       .single();
 
     // Two concurrent reservations each requesting $0.04
@@ -455,6 +464,7 @@ describe.skipIf(!CAN_RUN_DB_TESTS)('James Capture Integration', () => {
       await supabase.from('ai_inference_ledger').delete().eq('id', successes[0].ledger_id);
     }
     await supabase.from('ai_budget_scopes').delete().eq('scope_id', scopeId);
+    await supabase.from('ai_budget_scopes').delete().eq('scope_id', testGlobalScopeId);
     await supabase
       .from('ai_inference_ledger')
       .delete()
