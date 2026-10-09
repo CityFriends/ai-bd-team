@@ -176,6 +176,73 @@ function validateExcerpts(
 }
 
 // ============================================================
+// POST-MODEL LEGAL ASSERTION VALIDATOR
+// ============================================================
+
+/** Patterns that indicate unsupported definitive legal conclusions */
+const UNSAFE_LEGAL_PATTERNS = [
+  /\b(?:is|are)\s+(?:legally\s+)?(?:compliant|eligible|qualified)\b/i,
+  /\b(?:definitively|conclusively|certainly)\s+(?:eligible|compliant|qualified)\b/i,
+  /\b(?:enforceable\s+against)\b/i,
+  /\bno\s+(?:legal\s+)?review\s+(?:is\s+)?(?:necessary|needed|required)\b/i,
+  /\blegally\s+(?:binding|enforceable|valid)\b/i,
+  /\bdoes\s+not\s+(?:require|need)\s+(?:legal|counsel)\s+review\b/i,
+  /\bFTTC\s+(?:is|are)\s+(?:in\s+)?compliance\b/i,
+];
+
+/**
+ * Post-model safety gate: detect and downgrade unsupported definitive
+ * legal assertions. Does NOT rely solely on the model's legalReviewRequired flag.
+ *
+ * Mutates the output in place:
+ * - Reclassifies definitive legal statements as UNCERTAINTY
+ * - Forces legalReviewRequired=true when legal determination is necessary
+ * - Prevents unsupported assertions from being persisted as SOURCE_FACT
+ */
+export function enforceNoUnsupportedLegalConclusions(output: InterpretationOutput): {
+  modified: boolean;
+  downgrades: string[];
+} {
+  const downgrades: string[] = [];
+
+  // Check all findings across all categories
+  for (const arr of [output.sourceFacts, output.interpretations, output.operationalImplications]) {
+    for (const finding of arr) {
+      for (const pattern of UNSAFE_LEGAL_PATTERNS) {
+        if (pattern.test(finding.statement)) {
+          // Downgrade: move to uncertainty, set legal review
+          downgrades.push(`Downgraded: "${finding.statement.slice(0, 60)}..." — unsupported definitive legal assertion`);
+          finding.category = 'UNCERTAINTY';
+          finding.statement = `[DOWNGRADED — requires legal review] ${finding.statement}`;
+          output.legalReviewRequired = true;
+          if (!output.legalReviewReason) {
+            output.legalReviewReason = 'Post-model safety gate: unsupported definitive legal assertion detected';
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  // If model claims no legal review but any interpretation touches legal matters, override
+  if (!output.legalReviewRequired) {
+    const legalKeywords = /\blegal|enforce|protest|rights|liability|counsel|complian/i;
+    const allStatements = [
+      ...output.sourceFacts.map(f => f.statement),
+      ...output.interpretations.map(f => f.statement),
+      ...output.operationalImplications.map(f => f.statement),
+    ].join(' ');
+    if (legalKeywords.test(allStatements)) {
+      output.legalReviewRequired = true;
+      output.legalReviewReason = output.legalReviewReason || 'Legal-adjacent content detected — human review recommended';
+      downgrades.push('Forced legalReviewRequired=true: legal-adjacent content');
+    }
+  }
+
+  return { modified: downgrades.length > 0, downgrades };
+}
+
+// ============================================================
 // MAIN EXECUTION
 // ============================================================
 
@@ -336,7 +403,13 @@ Return your analysis as a single JSON object.`;
     return { ...fail('Excerpt validation failed — fabricated or altered quotations'), ledgerId, costUsd, validationErrors: excerptCheck.errors };
   }
 
-  // 9. Persist immutable interpretation
+  // 9. Post-model legal assertion safety gate
+  const legalGate = enforceNoUnsupportedLegalConclusions(output);
+  if (legalGate.modified) {
+    console.log('[Denise:RegInterp] Legal safety gate:', legalGate.downgrades.join('; '));
+  }
+
+  // 10. Persist immutable interpretation
   const { data: interpData, error: interpErr } = await supabase
     .from('regulatory_interpretations')
     .insert({
@@ -363,7 +436,8 @@ Return your analysis as a single JSON object.`;
       legal_review_reason: output.legalReviewReason,
       confidence: output.confidence,
       // Coverage: PARTIAL when bounded output (max 3) may not cover longer provisions
-      coverage_status: output.sourceFacts.length >= 3 || output.interpretations.length >= 3 ? 'PARTIAL' : 'COMPLETE',
+      // Compact bounded schema cannot prove completeness — always PARTIAL
+      coverage_status: 'PARTIAL',
       model_id: 'claude-haiku-4-5-20251001',
       prompt_version: PROMPT_VERSION,
       gateway_ledger_id: ledgerId,
