@@ -61,7 +61,13 @@ export interface DeniseIntelligenceBundle {
   regulatoryInterpretations: Array<Record<string, unknown> & { _provenance: ArtifactProvenance }>;
 
   // Metadata
-  versionInfo: { latestVersion: number; requestedVersion: number | null };
+  versionInfo: {
+    latestVersion: number;
+    requestedVersion: number | null;
+    /** Version numbers are local to each artifact stream (per-opportunity analyses).
+     *  asOfVersion does NOT represent a globally consistent historical snapshot. */
+    versionScope: 'PER_ARTIFACT_STREAM';
+  };
   missingArtifacts: ArtifactType[];
   staleIndicators: string[];
   legalReviewRequired: boolean;
@@ -72,7 +78,7 @@ export interface DeniseIntelligenceBundle {
 // SPECIALIST PROJECTION RULES
 // ============================================================
 
-const SPECIALIST_ARTIFACT_MAP: Record<SpecialistRole, ArtifactType[]> = {
+export const SPECIALIST_ARTIFACT_MAP: Record<SpecialistRole, ArtifactType[]> = {
   JAMES: ['ACQUISITION_ANALYSIS', 'EVALUATION_MODEL', 'ACQUISITION_RISK', 'ACQUISITION_CONFLICT', 'AMENDMENT_IMPACT'],
   PATRICIA: ['ACQUISITION_ANALYSIS', 'CLAUSE_REGISTER', 'CLARIFICATION_QUESTION', 'AMENDMENT_IMPACT'],
   JODIE: ['EVALUATION_MODEL', 'CLAUSE_REGISTER', 'AMENDMENT_IMPACT', 'REGULATORY_INTERPRETATION'],
@@ -128,9 +134,18 @@ export async function getDeniseIntelligenceForSpecialist(
   request: IntegrationRequest
 ): Promise<DeniseIntelligenceBundle> {
   const now = new Date().toISOString();
+  // Validate specialist role
+  const roleMap = SPECIALIST_ARTIFACT_MAP[request.specialistRole];
+  if (!roleMap) {
+    throw new Error(`Invalid specialist role: ${request.specialistRole}`);
+  }
+
+  // requestedArtifactTypes is an INTERSECTION filter, not an override.
+  // It can narrow the role's allowed types but cannot expand beyond them.
+  const roleAllowed = new Set(roleMap);
   const allowedTypes = request.requestedArtifactTypes
-    || SPECIALIST_ARTIFACT_MAP[request.specialistRole]
-    || [];
+    ? request.requestedArtifactTypes.filter(t => roleAllowed.has(t))
+    : roleMap;
 
   const bundle: DeniseIntelligenceBundle = {
     opportunityId: request.opportunityId,
@@ -145,7 +160,7 @@ export async function getDeniseIntelligenceForSpecialist(
     acquisitionConflicts: [],
     amendmentImpacts: [],
     regulatoryInterpretations: [],
-    versionInfo: { latestVersion: 0, requestedVersion: request.asOfVersion || null },
+    versionInfo: { latestVersion: 0, requestedVersion: request.asOfVersion || null, versionScope: 'PER_ARTIFACT_STREAM' },
     missingArtifacts: [],
     staleIndicators: [],
     legalReviewRequired: false,
