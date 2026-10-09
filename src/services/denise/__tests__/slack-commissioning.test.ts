@@ -945,7 +945,7 @@ describe('F-02: slack-surface action ID containment', () => {
 // ============================================================
 
 describe('F-16: regulatory interpretation route default', () => {
-  it('denise_regulatory_interpretation is in DEFAULT_ROUTES with maxInputTokens 8000', async () => {
+  it('denise_regulatory_interpretation route has correct ceilings', async () => {
     const fs = await import('fs');
     const source = fs.readFileSync(
       new URL('../../../services/llm-gateway/routing.ts', import.meta.url).pathname,
@@ -961,5 +961,119 @@ describe('F-16: regulatory interpretation route default', () => {
     expect(routeBlock).toContain('maxOutputTokens: 2048');
     expect(routeBlock).toContain('maxCostUsd: 0.05');
     expect(routeBlock).toContain('enabled: false');
+  });
+});
+
+// ============================================================
+// Kill-switch independence: Slack path works without AI enabled
+// ============================================================
+
+describe('Kill-switch independence', () => {
+  it('slack-adapter.ts has no AI kill-switch dependency', async () => {
+    const fs = await import('fs');
+    const source = fs.readFileSync(
+      new URL('../slack-adapter.ts', import.meta.url).pathname,
+      'utf-8'
+    );
+    expect(source).not.toContain('isAIEnabled');
+    expect(source).not.toContain('AI_SYSTEM_ENABLED');
+    expect(source).not.toContain('AIDisabledError');
+  });
+
+  it('executeDelivery gates only on DENISE_SLACK_ENABLED', async () => {
+    const fs = await import('fs');
+    const source = fs.readFileSync(
+      new URL('../slack-adapter.ts', import.meta.url).pathname,
+      'utf-8'
+    );
+    // executeDelivery checks isDeniseSlackEnabled but not isAIEnabled
+    const fnBody = source.slice(
+      source.indexOf('export async function executeDelivery'),
+      source.indexOf('\n}\n', source.indexOf('export async function executeDelivery')) + 3
+    );
+    expect(fnBody).toContain('isDeniseSlackEnabled');
+    expect(fnBody).not.toContain('isAIEnabled');
+  });
+
+  it('handleAcknowledge has no AI dependency', async () => {
+    const fs = await import('fs');
+    const source = fs.readFileSync(
+      new URL('../slack-adapter.ts', import.meta.url).pathname,
+      'utf-8'
+    );
+    const fnBody = source.slice(
+      source.indexOf('export async function handleAcknowledge'),
+      source.indexOf('\n}\n', source.indexOf('export async function handleAcknowledge')) + 3
+    );
+    expect(fnBody).not.toContain('isAIEnabled');
+    expect(fnBody).not.toContain('complete(');
+  });
+
+  it('notification posting does not require AI_SYSTEM_ENABLED', () => {
+    // Notification posting uses: isDeniseSlackEnabled → claim RPC → slackPostFn → complete RPC
+    // None of these call the Gateway's complete() or check isAIEnabled()
+    // The smoke test can post notifications with AI_SYSTEM_ENABLED=undefined
+    delete process.env.AI_SYSTEM_ENABLED;
+    process.env.DENISE_SLACK_ENABLED = 'true';
+    expect(isDeniseSlackEnabled()).toBe(true);
+    delete process.env.DENISE_SLACK_ENABLED;
+  });
+});
+
+// ============================================================
+// Smoke-test script structural verification
+// ============================================================
+
+describe('Smoke-test script safety', () => {
+  it('script enforces commissioning project ID', async () => {
+    const fs = await import('fs');
+    const source = fs.readFileSync(
+      new URL('../../../commissioning/denise-slack-smoke-test.ts', import.meta.url).pathname,
+      'utf-8'
+    );
+    expect(source).toContain("const COMMISSIONING_PROJECT = 'nnwddilewgbsmyouatzu'");
+    expect(source).toContain("projectId !== COMMISSIONING_PROJECT");
+  });
+
+  it('script blocks production channel', async () => {
+    const fs = await import('fs');
+    const source = fs.readFileSync(
+      new URL('../../../commissioning/denise-slack-smoke-test.ts', import.meta.url).pathname,
+      'utf-8'
+    );
+    expect(source).toContain("const PRODUCTION_CHANNEL = 'C0ACKL26KCH'");
+    expect(source).toContain('PRODUCTION_CHANNEL');
+  });
+
+  it('script blocks AI_SYSTEM_ENABLED=true', async () => {
+    const fs = await import('fs');
+    const source = fs.readFileSync(
+      new URL('../../../commissioning/denise-slack-smoke-test.ts', import.meta.url).pathname,
+      'utf-8'
+    );
+    expect(source).toContain("AI_SYSTEM_ENABLED");
+    expect(source).toContain("must NOT be true during smoke test");
+  });
+
+  it('script posts at most one root notification', async () => {
+    const fs = await import('fs');
+    const source = fs.readFileSync(
+      new URL('../../../commissioning/denise-slack-smoke-test.ts', import.meta.url).pathname,
+      'utf-8'
+    );
+    // Only one chat.postMessage call for the notification (not in a loop)
+    const postCalls = source.match(/chat\.postMessage/g) || [];
+    expect(postCalls.length).toBe(1);
+  });
+
+  it('script has no LLM imports', async () => {
+    const fs = await import('fs');
+    const source = fs.readFileSync(
+      new URL('../../../commissioning/denise-slack-smoke-test.ts', import.meta.url).pathname,
+      'utf-8'
+    );
+    expect(source).not.toContain("from '../services/llm-gateway");
+    expect(source).not.toContain('complete(');
+    expect(source).not.toContain('Anthropic');
   });
 });
