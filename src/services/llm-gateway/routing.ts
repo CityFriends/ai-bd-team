@@ -132,6 +132,15 @@ const DEFAULT_ROUTES: ModelRoute[] = [
     maxCostUsd: 0.05,
     enabled: false,
   },
+  {
+    taskType: 'denise_regulatory_interpretation' as TaskType,
+    provider: 'anthropic',
+    model: 'claude-haiku-4-5-20251001',
+    maxOutputTokens: 2048,
+    maxInputTokens: 8000,
+    maxCostUsd: 0.05,
+    enabled: false,
+  },
 ];
 
 let routeCache: Map<TaskType, ModelRoute> = new Map();

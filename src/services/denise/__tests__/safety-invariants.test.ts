@@ -525,3 +525,55 @@ describe('Research adapter boundary', () => {
     expect(isAuthorityClassApproved('COMMERCIAL_LEGAL_SUMMARY')).toBe(false);
   });
 });
+
+// ============================================================
+// Milestone D WS4: Legacy dependency containment
+// ============================================================
+describe('WS4: Legacy dependency containment', () => {
+  const deniseDir = path.join(import.meta.dirname, '..');
+
+  it('no Denise file imports from coordination/', () => {
+    const files = fs.readdirSync(deniseDir)
+      .filter((f) => f.endsWith('.ts') && !f.includes('test'));
+    for (const file of files) {
+      const content = fs.readFileSync(path.join(deniseDir, file), 'utf-8');
+      expect(content).not.toMatch(/from\s+['"].*coordination/);
+    }
+  });
+
+  it('no Denise file imports queue.ts or workflow-processor.ts', () => {
+    const files = fs.readdirSync(deniseDir)
+      .filter((f) => f.endsWith('.ts') && !f.includes('test'));
+    for (const file of files) {
+      const content = fs.readFileSync(path.join(deniseDir, file), 'utf-8');
+      expect(content).not.toMatch(/from\s+['"].*queue/);
+      expect(content).not.toMatch(/from\s+['"].*workflow-processor/);
+    }
+  });
+
+  it('slack-adapter.ts makes zero LLM calls', () => {
+    const content = fs.readFileSync(path.join(deniseDir, 'slack-adapter.ts'), 'utf-8');
+    expect(content).not.toContain("from '../llm-gateway/gateway.js'");
+    expect(content).not.toContain("from '../../services/llm-gateway/gateway.js'");
+    expect(content).not.toContain('complete(');
+  });
+
+  it('slack-surface.ts makes zero LLM calls', () => {
+    const content = fs.readFileSync(path.join(deniseDir, 'slack-surface.ts'), 'utf-8');
+    expect(content).not.toContain("gateway");
+    expect(content).not.toContain('complete(');
+  });
+
+  it('only run-team.ts imports from denise/ in live/', () => {
+    const liveDir = path.join(import.meta.dirname, '..', '..', '..', 'live');
+    const files = fs.readdirSync(liveDir).filter((f) => f.endsWith('.ts'));
+    for (const file of files) {
+      const content = fs.readFileSync(path.join(liveDir, file), 'utf-8');
+      if (file === 'run-team.ts') {
+        expect(content).toContain('registerDeniseActions');
+      } else {
+        expect(content).not.toMatch(/from\s+['"].*denise/);
+      }
+    }
+  });
+});

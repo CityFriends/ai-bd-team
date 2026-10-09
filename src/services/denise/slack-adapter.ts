@@ -283,6 +283,76 @@ export interface SlackActionContext {
  */
 export type MembershipLookupFn = (channelId: string, userId: string) => Promise<boolean>;
 
+/**
+ * Create a production membership verifier that calls Slack conversations.members
+ * with cursor-based pagination and short-lived caching.
+ *
+ * Fail closed: any API error, missing client, or pagination failure returns false.
+ */
+export function createSlackMembershipLookup(
+  slackClient: { conversations: { members: (params: { channel: string; cursor?: string; limit?: number }) => Promise<{ ok: boolean; members?: string[]; response_metadata?: { next_cursor?: string }; error?: string }> } }
+): MembershipLookupFn {
+  // Short-lived cache: channel -> { members, expiresAt }
+  const cache = new Map<string, { members: Set<string>; expiresAt: number }>();
+  const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+  const PAGE_LIMIT = 200;
+  const MAX_PAGES = 50; // Safety bound: 50 pages * 200 = 10,000 members max
+
+  return async (channelId: string, userId: string): Promise<boolean> => {
+    // Check cache first
+    const cached = cache.get(channelId);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.members.has(userId);
+    }
+
+    // Fetch all members with cursor-based pagination
+    const allMembers = new Set<string>();
+    let cursor: string | undefined;
+    let pages = 0;
+
+    try {
+      do {
+        const response = await slackClient.conversations.members({
+          channel: channelId,
+          cursor,
+          limit: PAGE_LIMIT,
+        });
+
+        if (!response.ok) {
+          // API error — fail closed
+          return false;
+        }
+
+        if (response.members) {
+          for (const member of response.members) {
+            allMembers.add(member);
+          }
+        }
+
+        cursor = response.response_metadata?.next_cursor || undefined;
+        if (cursor === '') cursor = undefined;
+        pages++;
+
+        if (pages >= MAX_PAGES) {
+          // Safety bound — channel has more than 10,000 members, fail closed
+          return false;
+        }
+      } while (cursor);
+    } catch {
+      // Network error, rate limit, or other failure — fail closed
+      return false;
+    }
+
+    // Cache the result
+    cache.set(channelId, {
+      members: allMembers,
+      expiresAt: Date.now() + CACHE_TTL_MS,
+    });
+
+    return allMembers.has(userId);
+  };
+}
+
 /** Configured FFTC workspace ID — from environment */
 function getApprovedWorkspaceId(): string | null {
   return process.env.SLACK_TEAM_ID || null;
@@ -410,7 +480,7 @@ async function authorizeAction(
 export async function handleAcknowledge(
   supabase: SupabaseClient,
   context: SlackActionContext,
-  membershipLookup: MembershipLookupFn = async () => true // Default for backward compat; production must supply real lookup
+  membershipLookup: MembershipLookupFn
 ): Promise<{ success: boolean; message: string }> {
   // 1. Team membership check
   const membership = await verifyTeamMembership(context, membershipLookup);
@@ -451,7 +521,7 @@ export async function handleAcknowledge(
 export async function handleRequestReview(
   supabase: SupabaseClient,
   context: SlackActionContext,
-  membershipLookup: MembershipLookupFn = async () => true
+  membershipLookup: MembershipLookupFn
 ): Promise<{ success: boolean; message: string }> {
   const membership = await verifyTeamMembership(context, membershipLookup);
   if (!membership.authorized) return { success: false, message: membership.reason };
@@ -555,6 +625,96 @@ export function buildTrustedRoutingRequest(
       idempotencyKey: params.idempotencyKey,
     },
   };
+}
+
+// ============================================================
+// BOLT ACTION REGISTRATION
+// ============================================================
+
+/**
+ * Register Denise action handlers with a Bolt app instance.
+ *
+ * Only registers handlers for implemented actions:
+ * - denise_acknowledge
+ * - denise_request_review
+ *
+ * Gated on DENISE_SLACK_ENABLED — listeners are registered but check
+ * the flag at invocation time so disabling the flag stops processing
+ * without requiring a restart.
+ *
+ * Requires an authenticated Slack client for conversations.members lookup.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function registerDeniseActions(app: any): void {
+  app.action(
+    'denise_acknowledge',
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async ({ ack, body, client }: { ack: () => Promise<void>; body: any; client: any }) => {
+      await ack();
+
+      if (!isDeniseSlackEnabled()) return;
+
+      const context: SlackActionContext = {
+        userId: body.user?.id || '',
+        channelId: body.channel?.id || '',
+        teamId: body.team?.id || '',
+        actionId: 'denise_acknowledge',
+        value: body.actions?.[0]?.value || '{}',
+        triggerId: body.trigger_id || '',
+      };
+
+      const membershipLookup = createSlackMembershipLookup(client);
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabase = createClient(
+        process.env.SUPABASE_URL || '',
+        process.env.SUPABASE_SERVICE_KEY || ''
+      );
+
+      const result = await handleAcknowledge(supabase, context, membershipLookup);
+      const messageTs = body.message?.ts || '';
+
+      await client.chat.postMessage({
+        channel: context.channelId,
+        thread_ts: messageTs,
+        text: result.success ? result.message : `Action denied: ${result.message}`,
+      });
+    }
+  );
+
+  app.action(
+    'denise_request_review',
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async ({ ack, body, client }: { ack: () => Promise<void>; body: any; client: any }) => {
+      await ack();
+
+      if (!isDeniseSlackEnabled()) return;
+
+      const context: SlackActionContext = {
+        userId: body.user?.id || '',
+        channelId: body.channel?.id || '',
+        teamId: body.team?.id || '',
+        actionId: 'denise_request_review',
+        value: body.actions?.[0]?.value || '{}',
+        triggerId: body.trigger_id || '',
+      };
+
+      const membershipLookup = createSlackMembershipLookup(client);
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabase = createClient(
+        process.env.SUPABASE_URL || '',
+        process.env.SUPABASE_SERVICE_KEY || ''
+      );
+
+      const result = await handleRequestReview(supabase, context, membershipLookup);
+      const messageTs = body.message?.ts || '';
+
+      await client.chat.postMessage({
+        channel: context.channelId,
+        thread_ts: messageTs,
+        text: result.success ? result.message : `Action denied: ${result.message}`,
+      });
+    }
+  );
 }
 
 // ============================================================

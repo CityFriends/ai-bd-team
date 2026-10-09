@@ -90,21 +90,16 @@ export function generateRiskPayload(
       elements: [
         {
           type: 'button',
-          text: { type: 'plain_text', text: 'View Analysis' },
-          action_id: 'denise_view_analysis',
-          value: analysisId,
+          text: { type: 'plain_text', text: 'Acknowledge' },
+          action_id: 'denise_acknowledge',
+          value: JSON.stringify({ artifactId: analysisId, idempotencyKey: `risk-${risk.id}` }),
         },
-        ...(risk.legal_review_required
-          ? [
-              {
-                type: 'button',
-                text: { type: 'plain_text', text: 'Legal Review Required' },
-                action_id: 'denise_legal_review',
-                value: risk.id,
-                style: 'danger',
-              },
-            ]
-          : []),
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: 'Request Review' },
+          action_id: 'denise_request_review',
+          value: JSON.stringify({ artifactId: analysisId, opportunityId: opportunityId }),
+        },
       ],
     },
   ];
@@ -147,15 +142,15 @@ export function generateReassessmentPayload(
       elements: [
         {
           type: 'button',
-          text: { type: 'plain_text', text: 'View Analysis' },
-          action_id: 'denise_view_analysis',
-          value: analysisId,
+          text: { type: 'plain_text', text: 'Acknowledge' },
+          action_id: 'denise_acknowledge',
+          value: JSON.stringify({ artifactId: analysisId, idempotencyKey: `reassess-${analysisId}` }),
         },
         {
           type: 'button',
-          text: { type: 'plain_text', text: 'Draft Question' },
-          action_id: 'denise_draft_question',
-          value: analysisId,
+          text: { type: 'plain_text', text: 'Request Review' },
+          action_id: 'denise_request_review',
+          value: JSON.stringify({ artifactId: analysisId, opportunityId: opportunityId }),
         },
       ],
     },
@@ -221,15 +216,15 @@ export function generateClarificationPayload(
       elements: [
         {
           type: 'button',
-          text: { type: 'plain_text', text: 'View Analysis' },
-          action_id: 'denise_view_analysis',
-          value: analysisId,
+          text: { type: 'plain_text', text: 'Acknowledge' },
+          action_id: 'denise_acknowledge',
+          value: JSON.stringify({ artifactId: analysisId, idempotencyKey: `clarification-${question.id}` }),
         },
         {
           type: 'button',
-          text: { type: 'plain_text', text: 'Draft Question' },
-          action_id: 'denise_draft_question',
-          value: question.id,
+          text: { type: 'plain_text', text: 'Request Review' },
+          action_id: 'denise_request_review',
+          value: JSON.stringify({ artifactId: analysisId, opportunityId: opportunityId }),
         },
       ],
     },

@@ -27,6 +27,8 @@ import {
   handleRequestReview,
   buildTrustedRoutingRequest,
   executeDelivery,
+  createSlackMembershipLookup,
+  registerDeniseActions,
 } from '../slack-adapter.js';
 import type { NotificationCandidate, SlackActionContext, TrustedExecutionContext } from '../slack-adapter.js';
 
@@ -247,11 +249,12 @@ describe.skipIf(!CAN_RUN)('Delivery and Actions', () => {
       triggerId: 'T12345',
     };
 
-    const r1 = await handleAcknowledge(supabase, ctx);
+    const alwaysMember: () => Promise<boolean> = async () => true;
+    const r1 = await handleAcknowledge(supabase, ctx, alwaysMember);
     expect(r1.success).toBe(true);
     expect(r1.message).toContain('Acknowledged');
 
-    const r2 = await handleAcknowledge(supabase, ctx);
+    const r2 = await handleAcknowledge(supabase, ctx, alwaysMember);
     expect(r2.success).toBe(true);
     expect(r2.message).toContain('Already acknowledged');
 
@@ -264,7 +267,7 @@ describe.skipIf(!CAN_RUN)('Delivery and Actions', () => {
       userId: 'U12345', channelId: process.env.SLACK_CHANNEL_ID || 'C12345', teamId: 'T_FFTC', actionId: 'denise_acknowledge',
       value: 'NOT_JSON', triggerId: 'T12345',
     };
-    const r = await handleAcknowledge(supabase, ctx);
+    const r = await handleAcknowledge(supabase, ctx, async () => true);
     expect(r.success).toBe(false);
     expect(r.message).toContain('Invalid');
   });
@@ -286,7 +289,7 @@ describe.skipIf(!CAN_RUN)('Delivery and Actions', () => {
       triggerId: 'T12345',
     };
 
-    const r = await handleRequestReview(supabase, ctx);
+    const r = await handleRequestReview(supabase, ctx, async () => true);
     expect(r.success).toBe(true);
     expect(r.message).toContain('Review requested');
 
@@ -382,7 +385,7 @@ describe.skipIf(!CAN_RUN)('Remediation: Authorization, Routing, Delivery', () =>
     const r = await handleAcknowledge(supabase, {
       userId: 'U_AUTH', channelId: process.env.SLACK_CHANNEL_ID || 'C123', teamId: 'T_FFTC', actionId: 'denise_acknowledge',
       value: JSON.stringify({ artifactId: analysisId }), triggerId: 'T1',
-    });
+    }, async () => true);
     expect(r.success).toBe(true);
   });
 
@@ -391,7 +394,7 @@ describe.skipIf(!CAN_RUN)('Remediation: Authorization, Routing, Delivery', () =>
     const r = await handleAcknowledge(supabase, {
       userId: '', channelId: 'C123', teamId: 'T_FFTC', actionId: 'denise_acknowledge',
       value: JSON.stringify({ artifactId: analysisId }), triggerId: 'T2',
-    });
+    }, async () => true);
     expect(r.success).toBe(false);
     expect(r.message).toContain('Missing authenticated');
   });
@@ -404,7 +407,7 @@ describe.skipIf(!CAN_RUN)('Remediation: Authorization, Routing, Delivery', () =>
     const r = await handleAcknowledge(supabase, {
       userId: 'U_AUTH', channelId: process.env.SLACK_CHANNEL_ID || 'C123', teamId: 'T_FFTC', actionId: 'denise_acknowledge',
       value: JSON.stringify({ artifactId: analysisId, opportunityId: 'wrong-opp' }), triggerId: 'T4',
-    });
+    }, async () => true);
     expect(r.success).toBe(false);
     expect(r.message).toContain('different opportunity');
   });
@@ -414,7 +417,7 @@ describe.skipIf(!CAN_RUN)('Remediation: Authorization, Routing, Delivery', () =>
     const r = await handleAcknowledge(supabase, {
       userId: 'U_AUTH', channelId: process.env.SLACK_CHANNEL_ID || 'C123', teamId: 'T_FFTC', actionId: 'denise_acknowledge',
       value: JSON.stringify({ artifactId: '00000000-0000-0000-0000-000000000000' }), triggerId: 'T5',
-    });
+    }, async () => true);
     expect(r.success).toBe(false);
     expect(r.message).toContain('not found');
   });
@@ -424,7 +427,7 @@ describe.skipIf(!CAN_RUN)('Remediation: Authorization, Routing, Delivery', () =>
     const r = await handleRequestReview(supabase, {
       userId: 'U_AUTH', channelId: process.env.SLACK_CHANNEL_ID || 'C123', teamId: 'T_FFTC', actionId: 'denise_request_review',
       value: JSON.stringify({ artifactId: analysisId, opportunityId: `opp-rem-${testRunId}` }), triggerId: 'T6',
-    });
+    }, async () => true);
     expect(r.success).toBe(true);
     expect(r.message).toContain('Review requested');
   });
@@ -775,5 +778,188 @@ describe('Configuration Hardening', () => {
 
     if (savedTeam) process.env.SLACK_TEAM_ID = savedTeam; else delete process.env.SLACK_TEAM_ID;
     if (savedCh) process.env.SLACK_CHANNEL_ID = savedCh; else delete process.env.SLACK_CHANNEL_ID;
+  });
+});
+
+// ============================================================
+// F-01: createSlackMembershipLookup tests
+// ============================================================
+
+describe('createSlackMembershipLookup', () => {
+  it('returns true for a member in a single-page response', async () => {
+    const mockClient = {
+      conversations: {
+        members: vi.fn().mockResolvedValue({
+          ok: true,
+          members: ['U_ALICE', 'U_BOB', 'U_CAROL'],
+          response_metadata: { next_cursor: '' },
+        }),
+      },
+    };
+    const lookup = createSlackMembershipLookup(mockClient);
+    expect(await lookup('C1', 'U_BOB')).toBe(true);
+  });
+
+  it('returns false for a non-member', async () => {
+    const mockClient = {
+      conversations: {
+        members: vi.fn().mockResolvedValue({
+          ok: true,
+          members: ['U_ALICE', 'U_BOB'],
+          response_metadata: { next_cursor: '' },
+        }),
+      },
+    };
+    const lookup = createSlackMembershipLookup(mockClient);
+    expect(await lookup('C1', 'U_INTRUDER')).toBe(false);
+  });
+
+  it('paginates through multiple pages', async () => {
+    const mockClient = {
+      conversations: {
+        members: vi.fn()
+          .mockResolvedValueOnce({
+            ok: true,
+            members: ['U_A', 'U_B'],
+            response_metadata: { next_cursor: 'page2' },
+          })
+          .mockResolvedValueOnce({
+            ok: true,
+            members: ['U_C', 'U_TARGET'],
+            response_metadata: { next_cursor: '' },
+          }),
+      },
+    };
+    const lookup = createSlackMembershipLookup(mockClient);
+    expect(await lookup('C1', 'U_TARGET')).toBe(true);
+    expect(mockClient.conversations.members).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails closed on API error', async () => {
+    const mockClient = {
+      conversations: {
+        members: vi.fn().mockResolvedValue({ ok: false, error: 'channel_not_found' }),
+      },
+    };
+    const lookup = createSlackMembershipLookup(mockClient);
+    expect(await lookup('C1', 'U_BOB')).toBe(false);
+  });
+
+  it('fails closed on network error', async () => {
+    const mockClient = {
+      conversations: {
+        members: vi.fn().mockRejectedValue(new Error('network timeout')),
+      },
+    };
+    const lookup = createSlackMembershipLookup(mockClient);
+    expect(await lookup('C1', 'U_BOB')).toBe(false);
+  });
+
+  it('caches results and reuses on second call', async () => {
+    const mockClient = {
+      conversations: {
+        members: vi.fn().mockResolvedValue({
+          ok: true,
+          members: ['U_ALICE'],
+          response_metadata: { next_cursor: '' },
+        }),
+      },
+    };
+    const lookup = createSlackMembershipLookup(mockClient);
+    await lookup('C1', 'U_ALICE');
+    await lookup('C1', 'U_ALICE');
+    // Second call should use cache — only 1 API call
+    expect(mockClient.conversations.members).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ============================================================
+// F-01: membershipLookup is now required (no default)
+// ============================================================
+
+describe('F-01: membershipLookup required parameter', () => {
+  it('handleAcknowledge requires explicit membershipLookup', () => {
+    // TypeScript enforces this at compile time. Verify the function signature
+    // does not accept 2 arguments (would need 3).
+    expect(handleAcknowledge.length).toBe(3);
+  });
+
+  it('handleRequestReview requires explicit membershipLookup', () => {
+    expect(handleRequestReview.length).toBe(3);
+  });
+});
+
+// ============================================================
+// F-02: registerDeniseActions wiring
+// ============================================================
+
+describe('F-02: registerDeniseActions', () => {
+  it('registers exactly 2 action handlers', () => {
+    const registeredActions: string[] = [];
+    const mockApp = {
+      action: (actionId: string, _handler: unknown) => {
+        registeredActions.push(actionId);
+      },
+    };
+    registerDeniseActions(mockApp);
+    expect(registeredActions).toContain('denise_acknowledge');
+    expect(registeredActions).toContain('denise_request_review');
+    expect(registeredActions).toHaveLength(2);
+  });
+
+  it('does not register unimplemented actions', () => {
+    const registeredActions: string[] = [];
+    const mockApp = {
+      action: (actionId: string, _handler: unknown) => {
+        registeredActions.push(actionId);
+      },
+    };
+    registerDeniseActions(mockApp);
+    expect(registeredActions).not.toContain('denise_view_analysis');
+    expect(registeredActions).not.toContain('denise_legal_review');
+    expect(registeredActions).not.toContain('denise_draft_question');
+  });
+});
+
+// ============================================================
+// F-02: slack-surface only uses implemented action IDs
+// ============================================================
+
+describe('F-02: slack-surface action ID containment', () => {
+  it('slack-surface.ts only references implemented action IDs', async () => {
+    const fs = await import('fs');
+    const source = fs.readFileSync(
+      new URL('../slack-surface.ts', import.meta.url).pathname,
+      'utf-8'
+    );
+    const actionIds = [...source.matchAll(/action_id:\s*'([^']+)'/g)].map(m => m[1]);
+    const implementedActions = new Set(['denise_acknowledge', 'denise_request_review']);
+    for (const id of actionIds) {
+      expect(implementedActions.has(id)).toBe(true);
+    }
+  });
+});
+
+// ============================================================
+// F-16: denise_regulatory_interpretation route default
+// ============================================================
+
+describe('F-16: regulatory interpretation route default', () => {
+  it('denise_regulatory_interpretation is in DEFAULT_ROUTES with maxInputTokens 8000', async () => {
+    const fs = await import('fs');
+    const source = fs.readFileSync(
+      new URL('../../../services/llm-gateway/routing.ts', import.meta.url).pathname,
+      'utf-8'
+    );
+    expect(source).toContain("'denise_regulatory_interpretation'");
+    expect(source).toContain('maxInputTokens: 8000');
+    // Verify output and cost ceilings
+    const routeBlock = source.slice(
+      source.indexOf("'denise_regulatory_interpretation'"),
+      source.indexOf('},', source.indexOf("'denise_regulatory_interpretation'")) + 2
+    );
+    expect(routeBlock).toContain('maxOutputTokens: 2048');
+    expect(routeBlock).toContain('maxCostUsd: 0.05');
+    expect(routeBlock).toContain('enabled: false');
   });
 });
