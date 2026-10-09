@@ -295,4 +295,188 @@ describe.skipIf(!CAN_RUN_DB_TESTS)('Reservation Lifecycle', () => {
     const res = await reserve(key, 0.10, [scopePeriodic]);
     expect(res.data?.is_new).toBe(true);
   });
+
+  // ============================================================
+  // Ambiguous-spend enforcement (periodic scopes)
+  // ============================================================
+  it('ambiguous reservation reduces available periodic budget', async () => {
+    // Create a tight periodic scope: $0.20 limit
+    const tightScope = await createScope('task', `lc-tight-${testRunId}`, 0.20, 24);
+
+    // Reserve $0.15, mark in_progress, then ambiguous
+    const key1 = `lc:${testRunId}:amb-tight:1`;
+    const res1 = await reserve(key1, 0.15, [tightScope]);
+    expect(res1.data?.is_new).toBe(true);
+    await supabase.rpc('mark_inference_in_progress', { p_ledger_id: res1.data.ledger_id });
+    await supabase.rpc('mark_inference_ambiguous', {
+      p_ledger_id: res1.data.ledger_id,
+      p_error_code: 'test', p_error_message: 'test',
+    });
+
+    // Now try to reserve $0.10 — should be denied ($0.15 ambiguous + $0.10 = $0.25 > $0.20)
+    const key2 = `lc:${testRunId}:amb-tight:2`;
+    const res2 = await reserve(key2, 0.10, [tightScope]);
+    expect(res2.data?.ledger_id).toBeNull(); // budget exceeded
+
+    // But $0.05 should fit ($0.15 + $0.05 = $0.20 = limit)
+    const key3 = `lc:${testRunId}:amb-tight:3`;
+    const res3 = await reserve(key3, 0.05, [tightScope]);
+    expect(res3.data?.is_new).toBe(true);
+
+    // Cleanup
+    const { data: entries } = await supabase.from('ai_inference_ledger').select('id')
+      .like('idempotency_key', `lc:${testRunId}:amb-tight:%`);
+    if (entries?.length) {
+      const ids = entries.map((e: { id: string }) => e.id);
+      await supabase.from('ai_ledger_scopes').delete().in('ledger_id', ids);
+      await supabase.from('ai_inference_ledger').delete().in('id', ids);
+    }
+    await supabase.from('ai_budget_scopes').delete().eq('scope_id', `lc-tight-${testRunId}`);
+  });
+
+  it('request denied when settled + active + ambiguous exceeds limit', async () => {
+    // $0.50 periodic scope
+    const medScope = await createScope('task', `lc-med-${testRunId}`, 0.50, 24);
+
+    // Settle $0.20 (actual)
+    const k1 = `lc:${testRunId}:deny-mix:1`;
+    const r1 = await reserve(k1, 0.25, [medScope]);
+    await supabase.rpc('mark_inference_in_progress', { p_ledger_id: r1.data.ledger_id });
+    await supabase.rpc('settle_inference', {
+      p_ledger_id: r1.data.ledger_id,
+      p_actual_input_tokens: 50, p_actual_output_tokens: 20, p_actual_cost_usd: 0.20,
+    });
+
+    // Ambiguous $0.15
+    const k2 = `lc:${testRunId}:deny-mix:2`;
+    const r2 = await reserve(k2, 0.15, [medScope]);
+    await supabase.rpc('mark_inference_in_progress', { p_ledger_id: r2.data.ledger_id });
+    await supabase.rpc('mark_inference_ambiguous', {
+      p_ledger_id: r2.data.ledger_id,
+      p_error_code: 'test', p_error_message: 'test',
+    });
+
+    // Active reserved $0.10
+    const k3 = `lc:${testRunId}:deny-mix:3`;
+    const r3 = await reserve(k3, 0.10, [medScope]);
+    expect(r3.data?.is_new).toBe(true);
+
+    // Total committed: $0.20 (settled actual) + $0.15 (ambiguous) + $0.10 (reserved) = $0.45
+    // $0.10 more should be denied ($0.45 + $0.10 = $0.55 > $0.50)
+    const k4 = `lc:${testRunId}:deny-mix:4`;
+    const r4 = await reserve(k4, 0.10, [medScope]);
+    expect(r4.data?.ledger_id).toBeNull();
+
+    // But $0.05 should fit ($0.45 + $0.05 = $0.50 = limit)
+    const k5 = `lc:${testRunId}:deny-mix:5`;
+    const r5 = await reserve(k5, 0.05, [medScope]);
+    expect(r5.data?.is_new).toBe(true);
+
+    // Cleanup
+    const { data: entries } = await supabase.from('ai_inference_ledger').select('id')
+      .like('idempotency_key', `lc:${testRunId}:deny-mix:%`);
+    if (entries?.length) {
+      const ids = entries.map((e: { id: string }) => e.id);
+      await supabase.from('ai_ledger_scopes').delete().in('ledger_id', ids);
+      await supabase.from('ai_inference_ledger').delete().in('id', ids);
+    }
+    await supabase.from('ai_budget_scopes').delete().eq('scope_id', `lc-med-${testRunId}`);
+  });
+
+  it('ambiguous entries outside rolling window do not consume current capacity', async () => {
+    // 24h periodic scope, $0.30 limit
+    const winScope = await createScope('task', `lc-win-${testRunId}`, 0.30, 24);
+
+    // Create an ambiguous entry and backdate it outside the window
+    const k1 = `lc:${testRunId}:win-old:1`;
+    const r1 = await reserve(k1, 0.25, [winScope]);
+    await supabase.rpc('mark_inference_in_progress', { p_ledger_id: r1.data.ledger_id });
+    await supabase.rpc('mark_inference_ambiguous', {
+      p_ledger_id: r1.data.ledger_id,
+      p_error_code: 'test', p_error_message: 'test',
+    });
+    // Backdate to 48h ago — outside the 24h window
+    await supabase.from('ai_inference_ledger')
+      .update({ created_at: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString() })
+      .eq('id', r1.data.ledger_id);
+
+    // A new $0.25 reservation should succeed — the old ambiguous entry is outside the window
+    const k2 = `lc:${testRunId}:win-old:2`;
+    const r2 = await reserve(k2, 0.25, [winScope]);
+    expect(r2.data?.is_new).toBe(true);
+
+    // Cleanup
+    const { data: entries } = await supabase.from('ai_inference_ledger').select('id')
+      .like('idempotency_key', `lc:${testRunId}:win-old:%`);
+    if (entries?.length) {
+      const ids = entries.map((e: { id: string }) => e.id);
+      await supabase.from('ai_ledger_scopes').delete().in('ledger_id', ids);
+      await supabase.from('ai_inference_ledger').delete().in('id', ids);
+    }
+    await supabase.from('ai_budget_scopes').delete().eq('scope_id', `lc-win-${testRunId}`);
+  });
+
+  it('non-periodic scope behavior unchanged by ambiguous fix', async () => {
+    // Non-periodic scope uses accounting columns, not junction recalculation
+    const k1 = `lc:${testRunId}:np-unch:1`;
+    const r1 = await reserve(k1, 0.30, [scopeNonPeriodic]);
+    expect(r1.data?.is_new).toBe(true);
+
+    // Mark ambiguous
+    await supabase.rpc('mark_inference_in_progress', { p_ledger_id: r1.data.ledger_id });
+    await supabase.rpc('mark_inference_ambiguous', {
+      p_ledger_id: r1.data.ledger_id,
+      p_error_code: 'test', p_error_message: 'test',
+    });
+
+    // Non-periodic: uses columns. reserved_usd should still hold $0.30
+    const scope = await getScope(scopeNonPeriodic);
+    expect(Number(scope.reserved_usd)).toBeCloseTo(0.30, 4);
+
+    // $0.80 should be denied ($0.30 reserved + $0.80 = $1.10 > $1.00)
+    const k2 = `lc:${testRunId}:np-unch:2`;
+    const r2 = await reserve(k2, 0.80, [scopeNonPeriodic]);
+    expect(r2.data?.ledger_id).toBeNull();
+
+    // $0.70 should succeed ($0.30 + $0.70 = $1.00)
+    const k3 = `lc:${testRunId}:np-unch:3`;
+    const r3 = await reserve(k3, 0.70, [scopeNonPeriodic]);
+    expect(r3.data?.is_new).toBe(true);
+  });
+
+  it('hierarchical scope enforcement with ambiguous entries', async () => {
+    // Non-periodic parent ($0.50) + periodic child ($0.30)
+    const hierParent = await createScope('workflow', `lc-hier-p-${testRunId}`, 0.50);
+    const hierChild = await createScope('task', `lc-hier-c-${testRunId}`, 0.30, 24);
+
+    // Create ambiguous entry against both scopes
+    const k1 = `lc:${testRunId}:hier:1`;
+    const r1 = await reserve(k1, 0.20, [hierParent, hierChild]);
+    await supabase.rpc('mark_inference_in_progress', { p_ledger_id: r1.data.ledger_id });
+    await supabase.rpc('mark_inference_ambiguous', {
+      p_ledger_id: r1.data.ledger_id,
+      p_error_code: 'test', p_error_message: 'test',
+    });
+
+    // $0.15 should succeed (parent: $0.20+$0.15=$0.35<$0.50, child: $0.20+$0.15=$0.35>$0.30 — DENIED)
+    const k2 = `lc:${testRunId}:hier:2`;
+    const r2 = await reserve(k2, 0.15, [hierParent, hierChild]);
+    expect(r2.data?.ledger_id).toBeNull(); // Child scope blocks it
+
+    // $0.10 should succeed (parent: $0.30<$0.50, child: $0.30=$0.30)
+    const k3 = `lc:${testRunId}:hier:3`;
+    const r3 = await reserve(k3, 0.10, [hierParent, hierChild]);
+    expect(r3.data?.is_new).toBe(true);
+
+    // Cleanup
+    const { data: entries } = await supabase.from('ai_inference_ledger').select('id')
+      .like('idempotency_key', `lc:${testRunId}:hier:%`);
+    if (entries?.length) {
+      const ids = entries.map((e: { id: string }) => e.id);
+      await supabase.from('ai_ledger_scopes').delete().in('ledger_id', ids);
+      await supabase.from('ai_inference_ledger').delete().in('id', ids);
+    }
+    await supabase.from('ai_budget_scopes').delete().eq('scope_id', `lc-hier-p-${testRunId}`);
+    await supabase.from('ai_budget_scopes').delete().eq('scope_id', `lc-hier-c-${testRunId}`);
+  });
 });
