@@ -24,12 +24,13 @@ import { createHash } from 'crypto';
 // ============================================================
 const COMMISSIONING_PROJECT = 'nnwddilewgbsmyouatzu';
 const PRODUCTION_PROJECT = 'bvgtfadggtgnakrxvuim';
-const OBSERVATION_WINDOW_ID = 'a0a0a0a0-d000-4000-b000-000000000004';
 const EVIDENCE_ID = 'a0a0a0a0-d000-4000-b000-000000000003';
-const IDEMPOTENCY_KEY = 'preflight-far52219-20261011-r2';
 const EXPECTED_EVIDENCE_HASH = '1274c4d2f2abaf6fe8604c82d46a4a0b1931e33b6259666a5f22375526fcfc18';
 const MAX_COST_USD = 0.05;
-const WORKFLOW_ID = 'denise-preflight-far52219-r2';
+const IDEMPOTENCY_KEY = 'preflight-far52219-20261011-r3';
+const WORKFLOW_ID = 'denise-preflight-far52219-r3';
+// r3 observation window — created at runtime, not hardcoded
+let OBSERVATION_WINDOW_ID = '';
 
 const INTERPRETATION_QUESTION =
   'Under FAR 52.219-14, what limitations on subcontracting could apply to a small-business federal services contractor, and which contract-specific facts must be verified before determining applicability?';
@@ -85,15 +86,49 @@ async function main() {
 
   const supabase = createClient(supabaseUrl, process.env.SUPABASE_SERVICE_KEY || '');
 
-  // 6. Verify credential identity — confirm DB has commissioning-specific marker
-  const { data: credCheck, error: credErr } = await supabase
-    .from('denise_observation_windows')
-    .select('id')
-    .eq('id', OBSERVATION_WINDOW_ID)
-    .single();
-  if (credErr || !credCheck) {
-    abort(`Credential identity check failed — observation window ${OBSERVATION_WINDOW_ID} not found. Wrong database?`);
+  // 6. Verify credential identity — confirm DB has commissioning-specific data
+  //    and that the service key JWT references the correct project
+  const serviceKey = process.env.SUPABASE_SERVICE_KEY || '';
+  try {
+    const payload = JSON.parse(atob(serviceKey.split('.')[1]));
+    if (payload.ref && payload.ref !== COMMISSIONING_PROJECT) {
+      abort(`Service key JWT ref=${payload.ref}, expected ${COMMISSIONING_PROJECT}`);
+    }
+  } catch { /* JWT parsing optional — continue with DB verification */ }
+
+  // Verify DB identity by checking for commissioning-specific captures table entry
+  const { data: captureCheck } = await supabase
+    .from('captures').select('id').eq('id', 'a0a0a0a0-d000-4000-b000-000000000002').single();
+  if (!captureCheck) {
+    abort('Credential identity check failed — commissioning capture fixture not found. Wrong database?');
   }
+
+  // 6b. Verify historical observation windows preserved
+  const { data: histWindows } = await supabase
+    .from('denise_observation_windows')
+    .select('id, status')
+    .in('id', ['a0a0a0a0-d000-4000-b000-000000000001', 'a0a0a0a0-d000-4000-b000-000000000004']);
+  for (const hw of histWindows || []) {
+    if (hw.status !== 'STOPPED') abort(`Historical window ${hw.id} is ${hw.status}, expected STOPPED`);
+  }
+
+  // 6c. Create fresh r3 observation window
+  const { data: newWindow, error: newWinErr } = await supabase
+    .from('denise_observation_windows')
+    .insert({
+      observation_type: 'CAPTURE',
+      status: 'INACTIVE',
+      max_calls: 1,
+      max_cumulative_spend_usd: 0.05,
+      completed_calls: 0,
+      cumulative_actual_spend_usd: 0,
+      cumulative_reserved_spend_usd: 0,
+    })
+    .select('id')
+    .single();
+  if (newWinErr || !newWindow) abort(`Failed to create r3 observation window: ${newWinErr?.message}`);
+  OBSERVATION_WINDOW_ID = newWindow.id;
+  console.log(`  r3 observation window: ${OBSERVATION_WINDOW_ID}`);
 
   // 7. Verify DB kill switch
   const { data: aiControl } = await supabase
