@@ -82,7 +82,7 @@ function getAnthropicClient(): Anthropic {
     if (process.env.ANTHROPIC_WORKSPACE_ID) {
       defaultHeaders['anthropic-workspace-id'] = process.env.ANTHROPIC_WORKSPACE_ID;
     }
-    anthropicClient = new Anthropic({ apiKey, defaultHeaders });
+    anthropicClient = new Anthropic({ apiKey, defaultHeaders, maxRetries: 0 });
   }
   return anthropicClient;
 }

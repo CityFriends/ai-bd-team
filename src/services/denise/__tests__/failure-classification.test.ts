@@ -80,7 +80,13 @@ describe('Provider failure classification — code verification', () => {
 
   it('Gateway has no automatic retries', () => {
     const content = fs.readFileSync(gatewayPath, 'utf-8');
-    expect(content).not.toMatch(/retry|MAX_RETRIES|retryCount|attempt.*\+\+/i);
+    // No application-level retry logic
+    expect(content).not.toMatch(/retryCount|attempt.*\+\+|MAX_RETRIES/i);
+  });
+
+  it('Anthropic SDK retries explicitly disabled (maxRetries: 0)', () => {
+    const content = fs.readFileSync(gatewayPath, 'utf-8');
+    expect(content).toContain('maxRetries: 0');
   });
 
   it('Gateway has no model fallback', () => {
@@ -109,6 +115,13 @@ describe('Provider failure classification — code verification', () => {
     const content = fs.readFileSync(regInterpPath, 'utf-8');
     // Error code should include status code
     expect(content).toContain('err.statusCode');
+  });
+
+  it('Gateway attaches anthropic-workspace-id header when ANTHROPIC_WORKSPACE_ID is set', () => {
+    const content = fs.readFileSync(gatewayPath, 'utf-8');
+    expect(content).toContain("process.env.ANTHROPIC_WORKSPACE_ID");
+    expect(content).toContain("'anthropic-workspace-id'");
+    expect(content).toContain('defaultHeaders');
   });
 });
 
