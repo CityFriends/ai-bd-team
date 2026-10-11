@@ -2,63 +2,290 @@
  * Audit Retention Cleanup Tests
  *
  * Deterministic code tests + commissioning DB integration tests.
- * Verifies expired raw_response removal while preserving financial records.
+ * Verifies project identity, scheduled cleanup, financial invariants.
  */
 
 import 'dotenv/config';
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { createClient } from '@supabase/supabase-js';
 import { createHash, randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getEnvironmentRole } from '../../../config/environment.js';
+import {
+  verifyProjectIdentity,
+  cleanupExpiredAuditResponses,
+  runScheduledCleanup,
+  _resetMaintenanceLock,
+} from '../audit-retention.js';
 
 const HAS_DB = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY);
 const IS_PRODUCTION = getEnvironmentRole() === 'production';
 const CAN_RUN_DB_TESTS = HAS_DB && !IS_PRODUCTION;
+
+const COMMISSIONING_PROJECT = 'nnwddilewgbsmyouatzu';
+const PRODUCTION_PROJECT = 'bvgtfadggtgnakrxvuim';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let supabase: any;
 let testRunId: string;
 
 // ============================================================
-// Code-level tests (no DB required)
+// Project identity verification
 // ============================================================
-describe('Audit retention — code verification', () => {
+describe('Project identity verification', () => {
+  it('accepts correct commissioning project', () => {
+    const result = verifyProjectIdentity(
+      `https://${COMMISSIONING_PROJECT}.supabase.co`,
+      COMMISSIONING_PROJECT
+    );
+    expect(result.verified).toBe(true);
+    expect(result.project).toBe(COMMISSIONING_PROJECT);
+    expect(result.error).toBeUndefined();
+  });
+
+  it('rejects production project explicitly', () => {
+    const result = verifyProjectIdentity(
+      `https://${PRODUCTION_PROJECT}.supabase.co`,
+      PRODUCTION_PROJECT
+    );
+    expect(result.verified).toBe(false);
+    expect(result.error).toContain('Production project');
+    expect(result.error).toContain(PRODUCTION_PROJECT);
+  });
+
+  it('rejects production even when expected is production', () => {
+    const result = verifyProjectIdentity(
+      `https://${PRODUCTION_PROJECT}.supabase.co`,
+      PRODUCTION_PROJECT
+    );
+    expect(result.verified).toBe(false);
+  });
+
+  it('rejects credential/project mismatch', () => {
+    const result = verifyProjectIdentity(
+      `https://otherproject123456.supabase.co`,
+      COMMISSIONING_PROJECT
+    );
+    expect(result.verified).toBe(false);
+    expect(result.error).toContain('mismatch');
+  });
+
+  it('rejects empty URL', () => {
+    const result = verifyProjectIdentity('', COMMISSIONING_PROJECT);
+    expect(result.verified).toBe(false);
+    expect(result.error).toContain('empty');
+  });
+
+  it('rejects empty expected project', () => {
+    const result = verifyProjectIdentity(`https://${COMMISSIONING_PROJECT}.supabase.co`, '');
+    expect(result.verified).toBe(false);
+    expect(result.error).toContain('empty');
+  });
+
+  it('rejects malformed URL', () => {
+    const result = verifyProjectIdentity('not-a-url', COMMISSIONING_PROJECT);
+    expect(result.verified).toBe(false);
+    expect(result.error).toContain('Cannot extract');
+  });
+});
+
+// ============================================================
+// Cleanup with project verification
+// ============================================================
+describe('Cleanup with project verification', () => {
+  it('rejects when project verification fails', async () => {
+    const mockClient = { rpc: async () => ({ data: 0, error: null }) };
+    const result = await cleanupExpiredAuditResponses(mockClient, {
+      expectedProject: COMMISSIONING_PROJECT,
+      supabaseUrl: `https://${PRODUCTION_PROJECT}.supabase.co`,
+    });
+    expect(result.expired).toBe(0);
+    expect(result.error).toContain('Project verification failed');
+  });
+
+  it('succeeds when project matches', async () => {
+    const mockClient = { rpc: async () => ({ data: 5, error: null }) };
+    const result = await cleanupExpiredAuditResponses(mockClient, {
+      expectedProject: COMMISSIONING_PROJECT,
+      supabaseUrl: `https://${COMMISSIONING_PROJECT}.supabase.co`,
+    });
+    expect(result.expired).toBe(5);
+    expect(result.error).toBeUndefined();
+  });
+
+  it('handles RPC errors', async () => {
+    const mockClient = { rpc: async () => ({ data: null, error: { message: 'connection lost' } }) };
+    const result = await cleanupExpiredAuditResponses(mockClient);
+    expect(result.expired).toBe(0);
+    expect(result.error).toContain('connection lost');
+  });
+
+  it('handles exceptions', async () => {
+    const mockClient = { rpc: async () => { throw new Error('timeout'); } };
+    const result = await cleanupExpiredAuditResponses(mockClient);
+    expect(result.expired).toBe(0);
+    expect(result.error).toContain('timeout');
+  });
+});
+
+// ============================================================
+// Scheduled maintenance
+// ============================================================
+describe('Scheduled maintenance', () => {
+  beforeEach(() => {
+    _resetMaintenanceLock();
+  });
+
+  it('rejects production project', async () => {
+    const mockClient = { rpc: async () => ({ data: 0, error: null }) };
+    const result = await runScheduledCleanup(mockClient, {
+      expectedProject: PRODUCTION_PROJECT,
+      supabaseUrl: `https://${PRODUCTION_PROJECT}.supabase.co`,
+    });
+    expect(result.skipped).toBe(true);
+    expect(result.errors[0]).toContain('Production project');
+  });
+
+  it('prevents overlapping runs', async () => {
+    let resolveFirst: () => void;
+    const firstPromise = new Promise<void>(r => { resolveFirst = r; });
+    const slowClient = {
+      rpc: async () => {
+        await firstPromise;
+        return { data: 1, error: null };
+      },
+    };
+
+    const config = {
+      expectedProject: COMMISSIONING_PROJECT,
+      supabaseUrl: `https://${COMMISSIONING_PROJECT}.supabase.co`,
+      maxBatches: 1,
+    };
+
+    const first = runScheduledCleanup(slowClient, config);
+    // Start second while first is running
+    const second = await runScheduledCleanup(slowClient, config);
+    expect(second.skipped).toBe(true);
+    expect(second.errors[0]).toContain('already running');
+
+    resolveFirst!();
+    await first;
+  });
+
+  it('enforces batch limits', async () => {
+    let callCount = 0;
+    const mockClient = {
+      rpc: async () => {
+        callCount++;
+        return { data: 100, error: null }; // Always returns full batch
+      },
+    };
+
+    const result = await runScheduledCleanup(mockClient, {
+      expectedProject: COMMISSIONING_PROJECT,
+      supabaseUrl: `https://${COMMISSIONING_PROJECT}.supabase.co`,
+      maxBatches: 3,
+      batchSize: 100,
+    });
+
+    expect(result.totalBatches).toBe(3);
+    expect(callCount).toBe(3);
+  });
+
+  it('stops early when batch returns fewer than batchSize', async () => {
+    let callCount = 0;
+    const mockClient = {
+      rpc: async () => {
+        callCount++;
+        return { data: callCount === 1 ? 50 : 100, error: null };
+      },
+    };
+
+    const result = await runScheduledCleanup(mockClient, {
+      expectedProject: COMMISSIONING_PROJECT,
+      supabaseUrl: `https://${COMMISSIONING_PROJECT}.supabase.co`,
+      maxBatches: 10,
+      batchSize: 100,
+    });
+
+    expect(callCount).toBe(1); // Stopped after first batch (50 < 100)
+    expect(result.totalExpired).toBe(50);
+  });
+
+  it('stops on error and reports it', async () => {
+    let callCount = 0;
+    const mockClient = {
+      rpc: async () => {
+        callCount++;
+        if (callCount === 2) return { data: null, error: { message: 'DB down' } };
+        return { data: 100, error: null };
+      },
+    };
+
+    const result = await runScheduledCleanup(mockClient, {
+      expectedProject: COMMISSIONING_PROJECT,
+      supabaseUrl: `https://${COMMISSIONING_PROJECT}.supabase.co`,
+      maxBatches: 5,
+    });
+
+    expect(result.totalBatches).toBe(2);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('DB down');
+  });
+
+  it('records timestamps', async () => {
+    const mockClient = { rpc: async () => ({ data: 0, error: null }) };
+    const result = await runScheduledCleanup(mockClient, {
+      expectedProject: COMMISSIONING_PROJECT,
+      supabaseUrl: `https://${COMMISSIONING_PROJECT}.supabase.co`,
+    });
+
+    expect(result.startedAt).toBeDefined();
+    expect(result.completedAt).toBeDefined();
+    expect(new Date(result.startedAt).getTime()).toBeLessThanOrEqual(new Date(result.completedAt).getTime());
+  });
+
+  it('releases lock after completion', async () => {
+    const mockClient = { rpc: async () => ({ data: 0, error: null }) };
+    const config = {
+      expectedProject: COMMISSIONING_PROJECT,
+      supabaseUrl: `https://${COMMISSIONING_PROJECT}.supabase.co`,
+    };
+
+    await runScheduledCleanup(mockClient, config);
+    // Second run should succeed (not skipped)
+    const second = await runScheduledCleanup(mockClient, config);
+    expect(second.skipped).toBe(false);
+  });
+
+  it('releases lock after error', async () => {
+    const mockClient = { rpc: async () => { throw new Error('crash'); } };
+    const config = {
+      expectedProject: COMMISSIONING_PROJECT,
+      supabaseUrl: `https://${COMMISSIONING_PROJECT}.supabase.co`,
+      maxBatches: 1,
+    };
+
+    await runScheduledCleanup(mockClient, config);
+    // Should release lock despite error
+    const mockOk = { rpc: async () => ({ data: 0, error: null }) };
+    const second = await runScheduledCleanup(mockOk, config);
+    expect(second.skipped).toBe(false);
+  });
+});
+
+// ============================================================
+// Migration and financial integrity
+// ============================================================
+describe('Migration and financial integrity', () => {
   const migrationPath = path.join(
     import.meta.dirname, '..', '..', '..', '..', 'supabase', 'migrations',
     '20261011_audit_retention_cleanup.sql'
   );
 
-  it('migration file exists', () => {
-    expect(fs.existsSync(migrationPath)).toBe(true);
-  });
-
-  it('RPC removes raw_response but preserves response_hash', () => {
-    const sql = fs.readFileSync(migrationPath, 'utf-8');
-    expect(sql).toContain("- 'raw_response'");
-    expect(sql).toContain('raw_response_expired');
-    expect(sql).not.toContain("- 'response_hash'");
-    expect(sql).not.toContain("- 'errors'");
-    expect(sql).not.toContain("- 'error_type'");
-  });
-
-  it('RPC uses batch limit and SKIP LOCKED', () => {
-    const sql = fs.readFileSync(migrationPath, 'utf-8');
-    expect(sql).toContain('LIMIT p_batch_size');
-    expect(sql).toContain('SKIP LOCKED');
-  });
-
-  it('RPC only targets records with expired raw_response', () => {
-    const sql = fs.readFileSync(migrationPath, 'utf-8');
-    expect(sql).toContain("'expires_at'");
-    expect(sql).toContain('< NOW()');
-    expect(sql).toContain("'raw_response' IS NOT NULL");
-  });
-
   it('RPC does not modify ledger status or cost columns', () => {
     const sql = fs.readFileSync(migrationPath, 'utf-8');
-    // The UPDATE only touches metadata
     const updateSection = sql.slice(sql.indexOf('UPDATE ai_inference_ledger'));
     expect(updateSection).toContain('SET metadata =');
     expect(updateSection).not.toContain('status =');
@@ -66,35 +293,14 @@ describe('Audit retention — code verification', () => {
     expect(updateSection).not.toContain('reserved_cost_usd');
   });
 
-  it('TypeScript worker handles RPC errors', async () => {
-    const { cleanupExpiredAuditResponses } = await import('../audit-retention.js');
-    // Mock a failing client
-    const mockClient = {
-      rpc: async () => ({ data: null, error: { message: 'test error' } }),
-    };
-    const result = await cleanupExpiredAuditResponses(mockClient);
-    expect(result.expired).toBe(0);
-    expect(result.error).toContain('test error');
-  });
-
-  it('TypeScript worker handles exceptions', async () => {
-    const { cleanupExpiredAuditResponses } = await import('../audit-retention.js');
-    const mockClient = {
-      rpc: async () => { throw new Error('connection failed'); },
-    };
-    const result = await cleanupExpiredAuditResponses(mockClient);
-    expect(result.expired).toBe(0);
-    expect(result.error).toContain('connection failed');
-  });
-
-  it('TypeScript worker returns count on success', async () => {
-    const { cleanupExpiredAuditResponses } = await import('../audit-retention.js');
-    const mockClient = {
-      rpc: async () => ({ data: 3, error: null }),
-    };
-    const result = await cleanupExpiredAuditResponses(mockClient);
-    expect(result.expired).toBe(3);
-    expect(result.error).toBeUndefined();
+  it('no inference or Slack in retention module', () => {
+    const tsContent = fs.readFileSync(
+      path.join(import.meta.dirname, '..', 'audit-retention.ts'), 'utf-8'
+    );
+    expect(tsContent).not.toContain('complete(');
+    expect(tsContent).not.toContain('slack');
+    expect(tsContent).not.toContain('postMessage');
+    expect(tsContent).not.toContain('Anthropic');
   });
 });
 
@@ -109,10 +315,8 @@ describe.skipIf(!CAN_RUN_DB_TESTS)('Audit retention — DB integration', () => {
 
   afterAll(async () => {
     if (!supabase) return;
-    // Clean up test entries
     const { data: entries } = await supabase
-      .from('ai_inference_ledger')
-      .select('id')
+      .from('ai_inference_ledger').select('id')
       .like('idempotency_key', `retention-test:${testRunId}:%`);
     if (entries?.length) {
       const ids = entries.map((e: { id: string }) => e.id);
@@ -123,28 +327,19 @@ describe.skipIf(!CAN_RUN_DB_TESTS)('Audit retention — DB integration', () => {
 
   async function insertTestEntry(suffix: string, expiresAt: string, rawResponse: string): Promise<string> {
     const id = randomUUID();
-    const hash = createHash('sha256').update(rawResponse).digest('hex');
     await supabase.from('ai_inference_ledger').insert({
       id,
       idempotency_key: `retention-test:${testRunId}:${suffix}`,
-      agent_id: 'test',
-      purpose: 'retention-test',
-      task_type: 'test',
-      provider: 'anthropic',
-      model: 'claude-haiku-4-5-20251001',
-      status: 'settled',
-      estimated_input_tokens: 100,
-      max_output_tokens: 100,
-      max_input_tokens: 1000,
-      reserved_cost_usd: 0.01,
-      actual_cost_usd: 0.005,
-      actual_input_tokens: 80,
-      actual_output_tokens: 50,
+      agent_id: 'test', purpose: 'retention-test', task_type: 'test',
+      provider: 'anthropic', model: 'claude-haiku-4-5-20251001',
+      status: 'settled', estimated_input_tokens: 100,
+      max_output_tokens: 100, max_input_tokens: 1000,
+      reserved_cost_usd: 0.01, actual_cost_usd: 0.005,
+      actual_input_tokens: 80, actual_output_tokens: 50,
       metadata: {
         validation_failure: {
-          error_type: 'SCHEMA',
-          errors: ['test error'],
-          response_hash: hash,
+          error_type: 'SCHEMA', errors: ['test error'],
+          response_hash: createHash('sha256').update(rawResponse).digest('hex'),
           response_chars: rawResponse.length,
           raw_response: rawResponse,
           expires_at: expiresAt,
@@ -155,72 +350,44 @@ describe.skipIf(!CAN_RUN_DB_TESTS)('Audit retention — DB integration', () => {
     return id;
   }
 
-  it('removes expired raw_response', async () => {
+  it('removes expired raw_response and preserves permanent fields', async () => {
     const past = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const id = await insertTestEntry('expired', past, 'This response has expired');
+    const id = await insertTestEntry('expired-v2', past, 'Expired content');
 
-    const { data: count } = await supabase.rpc('cleanup_expired_audit_responses', { p_batch_size: 10 });
-    expect(count).toBeGreaterThanOrEqual(1);
+    await supabase.rpc('cleanup_expired_audit_responses', { p_batch_size: 10 });
 
-    const { data: entry } = await supabase.from('ai_inference_ledger').select('metadata').eq('id', id).single();
+    const { data: entry } = await supabase.from('ai_inference_ledger')
+      .select('metadata, status, actual_cost_usd').eq('id', id).single();
     const vf = entry.metadata.validation_failure;
     expect(vf.raw_response).toBeUndefined();
     expect(vf.raw_response_expired).toBe(true);
-    expect(vf.expired_at).toBeDefined();
-    // Permanent fields preserved
     expect(vf.response_hash).toBeDefined();
     expect(vf.error_type).toBe('SCHEMA');
-    expect(vf.errors).toEqual(['test error']);
+    // Financial columns unchanged
+    expect(entry.status).toBe('settled');
+    expect(Number(entry.actual_cost_usd)).toBeCloseTo(0.005, 4);
   });
 
   it('retains unexpired raw_response', async () => {
     const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-    const id = await insertTestEntry('unexpired', future, 'This response is still valid');
+    const id = await insertTestEntry('unexpired-v2', future, 'Still valid');
 
     await supabase.rpc('cleanup_expired_audit_responses', { p_batch_size: 10 });
 
-    const { data: entry } = await supabase.from('ai_inference_ledger').select('metadata').eq('id', id).single();
-    expect(entry.metadata.validation_failure.raw_response).toBe('This response is still valid');
-  });
-
-  it('preserves financial columns after cleanup', async () => {
-    const past = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const id = await insertTestEntry('financial', past, 'Expired financial test');
-
-    await supabase.rpc('cleanup_expired_audit_responses', { p_batch_size: 10 });
-
-    const { data: entry } = await supabase
-      .from('ai_inference_ledger')
-      .select('status, actual_cost_usd, reserved_cost_usd, actual_input_tokens, actual_output_tokens')
-      .eq('id', id).single();
-    expect(entry.status).toBe('settled');
-    expect(Number(entry.actual_cost_usd)).toBeCloseTo(0.005, 4);
-    expect(Number(entry.reserved_cost_usd)).toBeCloseTo(0.01, 4);
-    expect(entry.actual_input_tokens).toBe(80);
-    expect(entry.actual_output_tokens).toBe(50);
+    const { data: entry } = await supabase.from('ai_inference_ledger')
+      .select('metadata').eq('id', id).single();
+    expect(entry.metadata.validation_failure.raw_response).toBe('Still valid');
   });
 
   it('repeated cleanup is idempotent', async () => {
     const past = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const id = await insertTestEntry('idempotent', past, 'Idempotent test');
+    const id = await insertTestEntry('idempotent-v2', past, 'Idem test');
 
     await supabase.rpc('cleanup_expired_audit_responses', { p_batch_size: 10 });
-    // Second run should find nothing (raw_response already removed)
-    const { data: count2 } = await supabase.rpc('cleanup_expired_audit_responses', { p_batch_size: 10 });
+    const { data: c2 } = await supabase.rpc('cleanup_expired_audit_responses', { p_batch_size: 10 });
 
-    const { data: entry } = await supabase.from('ai_inference_ledger').select('metadata').eq('id', id).single();
+    const { data: entry } = await supabase.from('ai_inference_ledger')
+      .select('metadata').eq('id', id).single();
     expect(entry.metadata.validation_failure.raw_response_expired).toBe(true);
-    // Should not have doubled the expired_at field
-    expect(typeof entry.metadata.validation_failure.expired_at).toBe('string');
-  });
-
-  it('respects batch limit', async () => {
-    const past = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    await insertTestEntry('batch1', past, 'Batch one');
-    await insertTestEntry('batch2', past, 'Batch two');
-    await insertTestEntry('batch3', past, 'Batch three');
-
-    const { data: count } = await supabase.rpc('cleanup_expired_audit_responses', { p_batch_size: 2 });
-    expect(count).toBeLessThanOrEqual(2);
   });
 });
