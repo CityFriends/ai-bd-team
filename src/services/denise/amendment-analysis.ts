@@ -13,6 +13,7 @@
 import { z } from 'zod';
 import { complete } from '../llm-gateway/gateway.js';
 import { ensureWorkflowBudget, ensureTaskBudget } from '../llm-gateway/budget.js';
+import { ProviderError } from '../llm-gateway/errors.js';
 import { DENISE_CAPTURE_TASK_CEILING_USD, AMENDMENT_IMPACT_CLASSES } from './types.js';
 import type { AmendmentImpactClass, SupabaseClient } from './types.js';
 import { createAcquisitionAnalysis, getLatestAnalysis } from './storage.js';
@@ -401,10 +402,12 @@ Return your impact analysis as a single JSON object.`;
         validationErrors: [], error: 'Idempotent replay' };
     }
     if (claimId) {
-      const isDefinite = msg.includes('BudgetExceeded') || msg.includes('AIDisabled');
+      const isDefinite = msg.includes('BudgetExceeded') || msg.includes('AIDisabled') ||
+        (err instanceof ProviderError && !err.retryable);
       const rpc = isDefinite ? 'fail_denise_eval_claim' : 'mark_denise_eval_ambiguous';
+      const errorCode = err instanceof ProviderError ? `PROVIDER_${err.statusCode || 'UNKNOWN'}` : (isDefinite ? 'GATEWAY_REJECTED' : 'PROVIDER_ERROR');
       await supabase.rpc(rpc, { p_claim_id: claimId,
-        p_error_code: isDefinite ? 'GATEWAY_REJECTED' : 'PROVIDER_ERROR',
+        p_error_code: errorCode,
         p_error_message: msg.slice(0, 500) }).then(() => {}, () => {});
     }
     return emptyResult(`Gateway error: ${msg}`);

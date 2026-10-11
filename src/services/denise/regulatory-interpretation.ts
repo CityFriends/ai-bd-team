@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { createHash } from 'crypto';
 import { complete } from '../llm-gateway/gateway.js';
 import { ensureWorkflowBudget, ensureTaskBudget } from '../llm-gateway/budget.js';
+import { ProviderError } from '../llm-gateway/errors.js';
 import { DENISE_CAPTURE_TASK_CEILING_USD } from './types.js';
 import type { SupabaseClient } from './types.js';
 
@@ -374,8 +375,16 @@ Return your analysis as a single JSON object.`;
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes('IDEMPOTENT')) return { success: true, interpretationId: null, ledgerId: null, costUsd: 0, validationErrors: [], error: 'Idempotent replay' };
     if (claimId) {
-      const rpc = msg.includes('BudgetExceeded') || msg.includes('AIDisabled') ? 'fail_denise_eval_claim' : 'mark_denise_eval_ambiguous';
-      await supabase.rpc(rpc, { p_claim_id: claimId, p_error_code: 'GATEWAY_ERROR', p_error_message: msg.slice(0, 500) }).then(() => {}, () => {});
+      // Definitive failures: budget errors, AI disabled, or non-retryable provider rejections (400/401/403/404)
+      // These are safe to mark FAILED — the Gateway already released the budget.
+      // Ambiguous: timeouts, 5xx, 429, network errors — outcome unknown, budget stays reserved.
+      const isDefinitiveFailure =
+        msg.includes('BudgetExceeded') ||
+        msg.includes('AIDisabled') ||
+        (err instanceof ProviderError && !err.retryable);
+      const rpc = isDefinitiveFailure ? 'fail_denise_eval_claim' : 'mark_denise_eval_ambiguous';
+      const errorCode = err instanceof ProviderError ? `PROVIDER_${err.statusCode || 'UNKNOWN'}` : 'GATEWAY_ERROR';
+      await supabase.rpc(rpc, { p_claim_id: claimId, p_error_code: errorCode, p_error_message: msg.slice(0, 500) }).then(() => {}, () => {});
     }
     return fail(`Gateway error: ${msg}`);
   }

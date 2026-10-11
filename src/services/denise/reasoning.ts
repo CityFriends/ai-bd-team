@@ -19,6 +19,7 @@
 import { z } from 'zod';
 import { complete } from '../llm-gateway/gateway.js';
 import { ensureWorkflowBudget, ensureTaskBudget } from '../llm-gateway/budget.js';
+import { ProviderError } from '../llm-gateway/errors.js';
 import {
   DENISE_CAPTURE_TASK_CEILING_USD,
   EVALUATION_METHODS,
@@ -864,16 +865,18 @@ Return your analysis as a single JSON object.`;
     // Mark claim as ambiguous (uncertain provider outcome — no auto-retry)
     if (claimId) {
       const isDefiniteFailure = msg.includes('BudgetExceeded') || msg.includes('AIDisabled') ||
-        msg.includes('MissingAttribution') || msg.includes('RouteNotFound');
+        msg.includes('MissingAttribution') || msg.includes('RouteNotFound') ||
+        (err instanceof ProviderError && !err.retryable);
+      const errorCode = err instanceof ProviderError ? `PROVIDER_${err.statusCode || 'UNKNOWN'}` : (isDefiniteFailure ? 'GATEWAY_REJECTED' : 'PROVIDER_ERROR');
       if (isDefiniteFailure) {
         await supabase.rpc('fail_denise_eval_claim', {
-          p_claim_id: claimId, p_error_code: 'GATEWAY_REJECTED',
+          p_claim_id: claimId, p_error_code: errorCode,
           p_error_message: msg.slice(0, 500),
         }).then(() => {}, () => {});
       } else {
         // Provider error, timeout, etc. — AMBIGUOUS, do NOT auto-retry
         await supabase.rpc('mark_denise_eval_ambiguous', {
-          p_claim_id: claimId, p_error_code: 'PROVIDER_ERROR',
+          p_claim_id: claimId, p_error_code: errorCode,
           p_error_message: msg.slice(0, 500),
         }).then(() => {}, () => {});
       }
