@@ -56,7 +56,7 @@ export const InterpretationOutputSchema = z.object({
   sourceFacts: z.array(FindingSchema).max(3),
   interpretations: z.array(FindingSchema).max(3),
   operationalImplications: z.array(FindingSchema).max(3),
-  uncertainties: z.array(FindingSchema).max(2).optional().default([]),
+  uncertainties: z.array(FindingSchema).max(3).optional().default([]),
   suggestedOwner: z.string().optional(),
   legalReviewRequired: z.boolean().default(false),
   legalReviewReason: z.string().optional(),
@@ -392,14 +392,25 @@ Return your analysis as a single JSON object.`;
   // 7. Parse + validate
   const parsed = parseJsonStrict(rawText);
   if (!parsed) {
-    if (claimId) await supabase.rpc('fail_denise_eval_claim', { p_claim_id: claimId, p_error_code: 'JSON_PARSE', p_error_message: 'Invalid JSON' }).then(() => {}, () => {});
+    if (claimId) {
+      await supabase.rpc('fail_denise_eval_claim', { p_claim_id: claimId, p_error_code: 'JSON_PARSE', p_error_message: 'Invalid JSON' }).then(() => {}, () => {});
+      if (ledgerId) {
+        await supabase.from('denise_task_claims').update({ ledger_id: ledgerId, cost_usd: costUsd }).eq('id', claimId).then(() => {}, () => {});
+      }
+    }
     return { ...fail('Invalid JSON output'), ledgerId, costUsd };
   }
 
   const schemaResult = InterpretationOutputSchema.safeParse(parsed);
   if (!schemaResult.success) {
     const errs = schemaResult.error.issues.map(i => `${i.path.join('.')}: ${i.message}`);
-    if (claimId) await supabase.rpc('fail_denise_eval_claim', { p_claim_id: claimId, p_error_code: 'SCHEMA', p_error_message: errs.join('; ').slice(0, 500) }).then(() => {}, () => {});
+    if (claimId) {
+      await supabase.rpc('fail_denise_eval_claim', { p_claim_id: claimId, p_error_code: 'SCHEMA', p_error_message: errs.join('; ').slice(0, 500) }).then(() => {}, () => {});
+      // Associate actual provider cost with the failed claim for audit trail
+      if (ledgerId) {
+        await supabase.from('denise_task_claims').update({ ledger_id: ledgerId, cost_usd: costUsd }).eq('id', claimId).then(() => {}, () => {});
+      }
+    }
     return { ...fail('Schema validation failed'), ledgerId, costUsd, validationErrors: errs };
   }
 
