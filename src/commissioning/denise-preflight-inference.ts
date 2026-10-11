@@ -12,6 +12,7 @@
  *   SUPABASE_URL=https://nnwddilewgbsmyouatzu.supabase.co \
  *   SUPABASE_SERVICE_KEY=<commissioning-key> \
  *   ANTHROPIC_API_KEY=<key> \
+ *   ANTHROPIC_WORKSPACE_ID=<workspace-id> \
  *   npx tsx src/commissioning/denise-preflight-inference.ts
  */
 
@@ -23,12 +24,12 @@ import { createHash } from 'crypto';
 // ============================================================
 const COMMISSIONING_PROJECT = 'nnwddilewgbsmyouatzu';
 const PRODUCTION_PROJECT = 'bvgtfadggtgnakrxvuim';
-const OBSERVATION_WINDOW_ID = 'a0a0a0a0-d000-4000-b000-000000000001';
+const OBSERVATION_WINDOW_ID = 'a0a0a0a0-d000-4000-b000-000000000004';
 const EVIDENCE_ID = 'a0a0a0a0-d000-4000-b000-000000000003';
-const IDEMPOTENCY_KEY = 'preflight-far52219-20261011';
+const IDEMPOTENCY_KEY = 'preflight-far52219-20261011-r2';
 const EXPECTED_EVIDENCE_HASH = '1274c4d2f2abaf6fe8604c82d46a4a0b1931e33b6259666a5f22375526fcfc18';
 const MAX_COST_USD = 0.05;
-const WORKFLOW_ID = 'denise-preflight-far52219';
+const WORKFLOW_ID = 'denise-preflight-far52219-r2';
 
 const INTERPRETATION_QUESTION =
   'Under FAR 52.219-14, what limitations on subcontracting could apply to a small-business federal services contractor, and which contract-specific facts must be verified before determining applicability?';
@@ -67,7 +68,12 @@ async function main() {
     abort('ANTHROPIC_API_KEY required');
   }
 
-  // 4. Reject Slack enablement
+  // 4. Require ANTHROPIC_WORKSPACE_ID
+  if (!process.env.ANTHROPIC_WORKSPACE_ID) {
+    abort('ANTHROPIC_WORKSPACE_ID required for admin API keys');
+  }
+
+  // 5. Reject Slack enablement
   if (process.env.DENISE_SLACK_ENABLED === 'true') {
     abort('DENISE_SLACK_ENABLED must not be true during preflight');
   }
@@ -79,7 +85,17 @@ async function main() {
 
   const supabase = createClient(supabaseUrl, process.env.SUPABASE_SERVICE_KEY || '');
 
-  // 6. Verify DB kill switch
+  // 6. Verify credential identity — confirm DB has commissioning-specific marker
+  const { data: credCheck, error: credErr } = await supabase
+    .from('denise_observation_windows')
+    .select('id')
+    .eq('id', OBSERVATION_WINDOW_ID)
+    .single();
+  if (credErr || !credCheck) {
+    abort(`Credential identity check failed — observation window ${OBSERVATION_WINDOW_ID} not found. Wrong database?`);
+  }
+
+  // 7. Verify DB kill switch
   const { data: aiControl } = await supabase
     .from('system_controls').select('value').eq('key', 'ai_enabled').single();
   if (!aiControl || aiControl.value !== true) {
