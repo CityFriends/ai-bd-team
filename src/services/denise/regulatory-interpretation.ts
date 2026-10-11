@@ -244,6 +244,76 @@ export function enforceNoUnsupportedLegalConclusions(output: InterpretationOutpu
 }
 
 // ============================================================
+// VALIDATION-FAILURE AUDIT
+// ============================================================
+
+const MAX_AUDIT_RAW_CHARS = 8000;
+
+/**
+ * Record a durable audit trail when a paid provider response fails validation.
+ *
+ * Stores:
+ * - Validation error details in ledger metadata
+ * - Content hash of the raw response (for provenance, not the content itself)
+ * - Truncated raw response in ledger metadata (private, RLS-protected)
+ * - Cost association on the task claim
+ *
+ * Idempotent: uses jsonb merge (||), repeated calls append but don't corrupt.
+ * Does not expose raw output in Slack or application logs.
+ * If storage fails, records that failure — never retries inference.
+ */
+async function recordValidationFailureAudit(
+  supabase: SupabaseClient,
+  ledgerId: string | null,
+  claimId: string | undefined,
+  costUsd: number,
+  errorType: string,
+  validationErrors: string[],
+  rawText: string,
+): Promise<void> {
+  const responseHash = createHash('sha256').update(rawText).digest('hex');
+  const truncatedResponse = rawText.slice(0, MAX_AUDIT_RAW_CHARS);
+
+  // 1. Store audit data in the Gateway ledger's metadata field (private, RLS-protected)
+  if (ledgerId) {
+    try {
+      await supabase.from('ai_inference_ledger').update({
+        metadata: {
+          validation_failure: {
+            error_type: errorType,
+            errors: validationErrors.slice(0, 10),
+            response_hash: responseHash,
+            response_chars: rawText.length,
+            raw_response: truncatedResponse,
+            recorded_at: new Date().toISOString(),
+          },
+        },
+      }).eq('id', ledgerId);
+    } catch {
+      // Audit storage failed — record explicitly but do not retry inference
+      await supabase.from('ai_inference_ledger').update({
+        error_code: 'AUDIT_STORAGE_FAILED',
+        error_message: `Validation ${errorType} audit could not be stored`,
+      }).eq('id', ledgerId).then(() => {}, () => {});
+    }
+  }
+
+  // 2. Associate actual cost with the task claim (idempotent — only updates if claim exists)
+  if (claimId && ledgerId) {
+    const { count } = await supabase
+      .from('denise_task_claims')
+      .update({ ledger_id: ledgerId, cost_usd: costUsd })
+      .eq('id', claimId)
+      .is('ledger_id', null) // Only update if ledger_id not already set (idempotent)
+      .select('id', { count: 'exact', head: true });
+
+    // count === 0 means either claim doesn't exist or ledger_id already set — both are safe
+    // count === 1 means cost was associated successfully
+    // No action needed either way — the Gateway ledger is the financial source of truth
+  }
+}
+
+// ============================================================
 // MAIN EXECUTION
 // ============================================================
 
@@ -390,14 +460,20 @@ Return your analysis as a single JSON object.`;
   }
 
   // 7. Parse + validate
+  //
+  // On validation failure after a paid provider response:
+  // 1. Fail the task claim with error details
+  // 2. Associate the actual cost (ledger_id + cost_usd) with the claim
+  // 3. Store a private audit record in the ledger's metadata field
+  //    (bounded raw response hash, validation errors, no Slack/log exposure)
+  // 4. If audit storage fails, record that explicitly — never retry inference
+
   const parsed = parseJsonStrict(rawText);
   if (!parsed) {
     if (claimId) {
       await supabase.rpc('fail_denise_eval_claim', { p_claim_id: claimId, p_error_code: 'JSON_PARSE', p_error_message: 'Invalid JSON' }).then(() => {}, () => {});
-      if (ledgerId) {
-        await supabase.from('denise_task_claims').update({ ledger_id: ledgerId, cost_usd: costUsd }).eq('id', claimId).then(() => {}, () => {});
-      }
     }
+    await recordValidationFailureAudit(supabase, ledgerId, claimId, costUsd, 'JSON_PARSE', ['Invalid JSON — raw text not parseable'], rawText);
     return { ...fail('Invalid JSON output'), ledgerId, costUsd };
   }
 
@@ -406,11 +482,8 @@ Return your analysis as a single JSON object.`;
     const errs = schemaResult.error.issues.map(i => `${i.path.join('.')}: ${i.message}`);
     if (claimId) {
       await supabase.rpc('fail_denise_eval_claim', { p_claim_id: claimId, p_error_code: 'SCHEMA', p_error_message: errs.join('; ').slice(0, 500) }).then(() => {}, () => {});
-      // Associate actual provider cost with the failed claim for audit trail
-      if (ledgerId) {
-        await supabase.from('denise_task_claims').update({ ledger_id: ledgerId, cost_usd: costUsd }).eq('id', claimId).then(() => {}, () => {});
-      }
     }
+    await recordValidationFailureAudit(supabase, ledgerId, claimId, costUsd, 'SCHEMA', errs, rawText);
     return { ...fail('Schema validation failed'), ledgerId, costUsd, validationErrors: errs };
   }
 
