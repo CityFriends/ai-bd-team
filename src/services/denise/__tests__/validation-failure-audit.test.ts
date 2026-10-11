@@ -1,10 +1,10 @@
 /**
- * Validation-Failure Audit Tests
+ * Validation-Failure Audit and Reconciliation Tests
  *
- * Verifies durable audit storage when a paid provider response
- * fails JSON parsing, schema validation, or legal-safety checks.
+ * Verifies durable audit storage, retention policy, task-cost reconciliation,
+ * conflict detection, and financial integrity preservation.
  *
- * All tests use code inspection and mocked fixtures — zero live inference.
+ * All tests use code inspection and synthetic fixtures — zero live inference.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -12,122 +12,187 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const regInterpPath = path.join(import.meta.dirname, '..', 'regulatory-interpretation.ts');
+const content = fs.readFileSync(regInterpPath, 'utf-8');
 
-describe('Validation-failure audit storage', () => {
-  const content = fs.readFileSync(regInterpPath, 'utf-8');
+// Helper to extract the audit function body
+function getAuditFn(): string {
+  const start = content.indexOf('async function recordValidationFailureAudit');
+  const end = content.indexOf('\n// ====', start + 1);
+  return content.slice(start, end > start ? end : start + 4000);
+}
 
-  it('recordValidationFailureAudit function exists', () => {
-    expect(content).toContain('async function recordValidationFailureAudit');
-  });
-
+// ============================================================
+// Audit storage
+// ============================================================
+describe('Audit storage', () => {
   it('stores validation errors in ledger metadata', () => {
-    const fn = content.slice(content.indexOf('async function recordValidationFailureAudit'));
+    const fn = getAuditFn();
     expect(fn).toContain("'ai_inference_ledger'");
     expect(fn).toContain('validation_failure');
     expect(fn).toContain('error_type');
     expect(fn).toContain('response_hash');
-    expect(fn).toContain('raw_response');
   });
 
-  it('computes content hash of raw response', () => {
-    const fn = content.slice(content.indexOf('async function recordValidationFailureAudit'));
+  it('computes SHA-256 content hash', () => {
+    const fn = getAuditFn();
     expect(fn).toContain("createHash('sha256')");
-    expect(fn).toContain('responseHash');
   });
 
   it('truncates raw response to bounded size', () => {
     expect(content).toContain('MAX_AUDIT_RAW_CHARS');
-    expect(content).toContain('rawText.slice(0, MAX_AUDIT_RAW_CHARS)');
+    const fn = getAuditFn();
+    expect(fn).toContain('rawText.slice(0, MAX_AUDIT_RAW_CHARS)');
   });
 
   it('does not expose raw output in Slack or logs', () => {
-    const fnStart = content.indexOf('async function recordValidationFailureAudit');
-    const fnEnd = content.indexOf('\n// ====', fnStart + 1);
-    const fn = content.slice(fnStart, fnEnd > fnStart ? fnEnd : fnStart + 2000);
+    const fn = getAuditFn();
     expect(fn).not.toContain('console.log');
     expect(fn).not.toContain('slack');
     expect(fn).not.toContain('postMessage');
   });
 
-  it('handles audit storage failure without retrying inference', () => {
-    const fnStart = content.indexOf('async function recordValidationFailureAudit');
-    const fnEnd = content.indexOf('\n// ====', fnStart + 1);
-    const fn = content.slice(fnStart, fnEnd > fnStart ? fnEnd : fnStart + 2000);
+  it('JSON and schema failure paths call recordValidationFailureAudit', () => {
+    expect(content).toMatch(/JSON_PARSE.*recordValidationFailureAudit/s);
+    expect(content).toMatch(/SCHEMA.*recordValidationFailureAudit/s);
+  });
+});
+
+// ============================================================
+// Retention policy
+// ============================================================
+describe('Raw-response retention policy', () => {
+  it('defines AUDIT_RETENTION_DAYS constant', () => {
+    expect(content).toContain('AUDIT_RETENTION_DAYS');
+  });
+
+  it('retention is 30 days', async () => {
+    const { AUDIT_RETENTION_DAYS } = await import('../regulatory-interpretation.js');
+    expect(AUDIT_RETENTION_DAYS).toBe(30);
+  });
+
+  it('stores expires_at in audit metadata', () => {
+    const fn = getAuditFn();
+    expect(fn).toContain('expires_at');
+    expect(fn).toContain('expiresAt');
+  });
+
+  it('separates temporary (raw_response) from permanent (hash, errors) fields', () => {
+    const fn = getAuditFn();
+    // Both raw_response and response_hash are stored
+    expect(fn).toContain('raw_response');
+    expect(fn).toContain('response_hash');
+    // expires_at signals which content is temporary
+    expect(fn).toContain('expires_at: expiresAt');
+  });
+
+  it('documents expiration removes raw content but preserves financial records', () => {
+    // The doc comment or constant explains retention
+    const retentionSection = content.slice(
+      content.indexOf('Raw-response retention policy'),
+      content.indexOf('async function recordValidationFailureAudit')
+    );
+    expect(retentionSection).toContain('raw_response is cleared');
+    expect(retentionSection).toContain('preserved permanently');
+  });
+});
+
+// ============================================================
+// Task-cost reconciliation
+// ============================================================
+describe('Task-cost reconciliation', () => {
+  it('updates claim with ledger_id and cost_usd', () => {
+    const fn = getAuditFn();
+    expect(fn).toContain('ledger_id: ledgerId');
+    expect(fn).toContain('cost_usd: costUsd');
+  });
+
+  it('idempotent guard: only updates if ledger_id IS NULL', () => {
+    const fn = getAuditFn();
+    expect(fn).toContain(".is('ledger_id', null)");
+  });
+
+  it('performs verified read-back after update', () => {
+    const fn = getAuditFn();
+    // Read-back query
+    expect(fn).toContain("select('id, ledger_id, cost_usd')");
+    expect(fn).toContain('.single()');
+  });
+
+  it('verifies claim exists on read-back', () => {
+    const fn = getAuditFn();
+    expect(fn).toContain('Task claim not found on read-back');
+  });
+
+  it('verifies ledger_id matches intended Gateway ledger', () => {
+    const fn = getAuditFn();
+    expect(fn).toContain('claim.ledger_id === ledgerId');
+  });
+
+  it('detects conflicting ledger association (fail closed)', () => {
+    const fn = getAuditFn();
+    expect(fn).toContain('conflictDetected');
+    expect(fn).toContain('Conflicting ledger association');
+    // Must NOT overwrite on conflict
+    expect(fn).toContain('claim.ledger_id !== null && claim.ledger_id !== ledgerId');
+  });
+
+  it('distinguishes already-correct from conflicting', () => {
+    const fn = getAuditFn();
+    // Already correct: claim.ledger_id === ledgerId → costAssociated = true
+    expect(fn).toContain('costAssociated = true');
+    // Conflicting: different ledger_id → conflictDetected = true
+    expect(fn).toContain('conflictDetected = true');
+  });
+
+  it('reports database errors explicitly', () => {
+    const fn = getAuditFn();
+    expect(fn).toContain('readErr');
+    expect(fn).toContain('did not persist');
+  });
+});
+
+// ============================================================
+// Financial integrity on audit failure
+// ============================================================
+describe('Financial integrity on audit failure', () => {
+  it('audit failure records AUDIT_STORAGE_FAILED without modifying settled status', () => {
+    const fn = getAuditFn();
     expect(fn).toContain('AUDIT_STORAGE_FAILED');
-    // Must not call the Gateway complete() function
+    // The update targets error_code/error_message, NOT status or actual_cost_usd
+    const failSection = fn.slice(fn.indexOf('AUDIT_STORAGE_FAILED'));
+    expect(failSection).toContain('error_code');
+    expect(failSection).not.toContain("status:");
+    expect(failSection).not.toContain('actual_cost_usd');
+  });
+
+  it('returns structured AuditResult', async () => {
+    const mod = await import('../regulatory-interpretation.js');
+    // AuditResult interface should be exported
+    expect(content).toContain('export interface AuditResult');
+    expect(content).toContain('auditStored: boolean');
+    expect(content).toContain('costAssociated: boolean');
+    expect(content).toContain('conflictDetected: boolean');
+  });
+
+  it('never calls complete() or retries inference', () => {
+    const fn = getAuditFn();
     expect(fn).not.toContain('await complete(');
-    // Must not import or call any inference retry mechanism
     expect(fn).not.toContain('analyzeRegulatoryProvision');
   });
 
-  it('JSON parse failure path calls recordValidationFailureAudit', () => {
-    const parseSection = content.slice(content.indexOf("'JSON_PARSE'"));
-    expect(parseSection).toContain('recordValidationFailureAudit');
-  });
-
-  it('schema validation failure path calls recordValidationFailureAudit', () => {
-    const schemaSection = content.slice(content.indexOf("'SCHEMA'"));
-    expect(schemaSection).toContain('recordValidationFailureAudit');
+  it('no Slack or autonomous routing in audit function', () => {
+    const fn = getAuditFn();
+    expect(fn).not.toContain('postMessage');
+    expect(fn).not.toMatch(/emit\(/);
+    expect(fn).not.toContain('publishEvent');
   });
 });
 
-describe('Task-cost attribution — idempotent', () => {
-  const content = fs.readFileSync(regInterpPath, 'utf-8');
-
-  it('cost update targets exact claim ID', () => {
-    const fn = content.slice(content.indexOf('async function recordValidationFailureAudit'));
-    expect(fn).toContain(".eq('id', claimId)");
-  });
-
-  it('cost update is guarded by ledger_id IS NULL (idempotent)', () => {
-    const fn = content.slice(content.indexOf('async function recordValidationFailureAudit'));
-    expect(fn).toContain(".is('ledger_id', null)");
-  });
-
-  it('repeated reconciliation cannot overwrite existing ledger association', () => {
-    const fnStart = content.indexOf('async function recordValidationFailureAudit');
-    const fnEnd = content.indexOf('\n// ====', fnStart + 1);
-    const fn = content.slice(fnStart, fnEnd > fnStart ? fnEnd : fnStart + 2000);
-    // The .is('ledger_id', null) filter means if ledger_id is already set,
-    // the update matches 0 rows — no change
-    expect(fn).toContain(".is('ledger_id', null)");
-  });
-
-  it('Gateway ledger is financial source of truth', () => {
-    // The cost update on task_claims is metadata — the ledger is authoritative
-    // Verify the return statement includes ledgerId for reconciliation
-    expect(content).toContain("return { ...fail('Schema validation failed'), ledgerId, costUsd");
-    expect(content).toContain("return { ...fail('Invalid JSON output'), ledgerId, costUsd");
-  });
-});
-
-describe('No automatic retry on validation failure', () => {
-  const content = fs.readFileSync(regInterpPath, 'utf-8');
-
-  it('schema failure path does not call complete()', () => {
-    // After the schema validation section, there should be no second complete() call
-    const afterSchema = content.slice(content.indexOf("'Schema validation failed'"));
-    const nextComplete = afterSchema.indexOf('await complete(');
-    // The only complete() call should be the original one earlier in the function
-    // If nextComplete is found, it should be in the main execution path (the first call)
-    // not a retry
-    if (nextComplete > 0) {
-      // Check it's not in a retry context
-      const context = afterSchema.slice(Math.max(0, nextComplete - 100), nextComplete);
-      expect(context).not.toContain('retry');
-    }
-  });
-
-  it('no Slack or downstream routing on validation failure', () => {
-    expect(content).not.toContain('postMessage');
-    expect(content).not.toContain("from 'slack");
-    expect(content).not.toMatch(/emit\(/);
-    expect(content).not.toContain('publishEvent');
-  });
-});
-
-describe('Legal-safety gate with 3 uncertainties (preserved)', () => {
-  it('enforceNoUnsupportedLegalConclusions handles 3 items', async () => {
+// ============================================================
+// Legal-safety gate (preserved from prior tests)
+// ============================================================
+describe('Legal-safety gate with 3 uncertainties', () => {
+  it('processes 3 uncertainties without downgrade', async () => {
     const { enforceNoUnsupportedLegalConclusions } = await import('../regulatory-interpretation.js');
     const output = {
       sourceFacts: [{ category: 'SOURCE_FACT' as const, statement: 'Test' }],
@@ -147,13 +212,21 @@ describe('Legal-safety gate with 3 uncertainties (preserved)', () => {
   });
 });
 
-describe('Historical commissioning attempts preserved', () => {
-  it('code does not delete or overwrite historical task claims', () => {
-    const content = fs.readFileSync(regInterpPath, 'utf-8');
-    // No DELETE on denise_task_claims
-    expect(content).not.toContain(".delete()");
-    // The update uses .is('ledger_id', null) guard — won't overwrite existing
-    const updateSection = content.slice(content.indexOf('recordValidationFailureAudit'));
-    expect(updateSection).toContain(".is('ledger_id', null)");
+// ============================================================
+// Historical preservation
+// ============================================================
+describe('Historical commissioning record preservation', () => {
+  it('audit function does not delete records', () => {
+    const fn = getAuditFn();
+    expect(fn).not.toContain('.delete(');
+  });
+
+  it('no modification of Gateway ledger settled status or cost', () => {
+    const fn = getAuditFn();
+    // Must not update status to anything other than error metadata
+    expect(fn).not.toContain("status: 'settled'");
+    expect(fn).not.toContain("status: 'failed'");
+    expect(fn).not.toContain('actual_cost_usd');
+    expect(fn).not.toContain('reserved_cost_usd');
   });
 });

@@ -250,17 +250,39 @@ export function enforceNoUnsupportedLegalConclusions(output: InterpretationOutpu
 const MAX_AUDIT_RAW_CHARS = 8000;
 
 /**
+ * Raw-response retention policy:
+ * - Duration: 30 days from recording
+ * - After expiry: raw_response is cleared, but response_hash, error_type,
+ *   errors, and financial metadata (cost, tokens, ledger_id) are preserved permanently
+ * - Expiration is enforced by a separate cleanup process (not inline)
+ * - Content is stored in ledger metadata (RLS service_role only)
+ * - Never exposed in Slack, logs, or specialist projections
+ */
+export const AUDIT_RETENTION_DAYS = 30;
+
+export interface AuditResult {
+  auditStored: boolean;
+  costAssociated: boolean;
+  conflictDetected: boolean;
+  error?: string;
+}
+
+/**
  * Record a durable audit trail when a paid provider response fails validation.
  *
- * Stores:
- * - Validation error details in ledger metadata
- * - Content hash of the raw response (for provenance, not the content itself)
- * - Truncated raw response in ledger metadata (private, RLS-protected)
- * - Cost association on the task claim
+ * Separation of concerns:
+ * - Permanent: response_hash, error_type, errors, response_chars, expires_at
+ * - Temporary: raw_response (removed after AUDIT_RETENTION_DAYS)
  *
- * Idempotent: uses jsonb merge (||), repeated calls append but don't corrupt.
- * Does not expose raw output in Slack or application logs.
- * If storage fails, records that failure — never retries inference.
+ * Task-cost reconciliation:
+ * - Updates claim with ledger_id and cost_usd
+ * - Read-back verification: confirms the association is correct
+ * - Conflicting association: fails closed (does not overwrite)
+ *
+ * Financial integrity:
+ * - Gateway ledger status and settled cost are NEVER modified
+ * - Audit storage failure does not change financial status
+ * - No provider retry under any circumstance
  */
 async function recordValidationFailureAudit(
   supabase: SupabaseClient,
@@ -270,14 +292,17 @@ async function recordValidationFailureAudit(
   errorType: string,
   validationErrors: string[],
   rawText: string,
-): Promise<void> {
+): Promise<AuditResult> {
+  const result: AuditResult = { auditStored: false, costAssociated: false, conflictDetected: false };
   const responseHash = createHash('sha256').update(rawText).digest('hex');
   const truncatedResponse = rawText.slice(0, MAX_AUDIT_RAW_CHARS);
+  const expiresAt = new Date(Date.now() + AUDIT_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
-  // 1. Store audit data in the Gateway ledger's metadata field (private, RLS-protected)
+  // 1. Store audit data in ledger metadata (private, RLS service_role only)
+  //    raw_response is temporary (expires_at); all other fields are permanent.
   if (ledgerId) {
     try {
-      await supabase.from('ai_inference_ledger').update({
+      const { error: auditErr } = await supabase.from('ai_inference_ledger').update({
         metadata: {
           validation_failure: {
             error_type: errorType,
@@ -285,32 +310,66 @@ async function recordValidationFailureAudit(
             response_hash: responseHash,
             response_chars: rawText.length,
             raw_response: truncatedResponse,
+            expires_at: expiresAt,
             recorded_at: new Date().toISOString(),
           },
         },
       }).eq('id', ledgerId);
-    } catch {
-      // Audit storage failed — record explicitly but do not retry inference
+
+      result.auditStored = !auditErr;
+      if (auditErr) {
+        result.error = `Audit storage failed: ${auditErr.message}`;
+        // Record failure separately — do NOT modify settled status or cost
+        await supabase.from('ai_inference_ledger').update({
+          error_code: 'AUDIT_STORAGE_FAILED',
+          error_message: `Validation ${errorType} audit could not be stored: ${auditErr.message}`.slice(0, 500),
+        }).eq('id', ledgerId).then(() => {}, () => {});
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      result.error = `Audit storage exception: ${msg}`;
       await supabase.from('ai_inference_ledger').update({
         error_code: 'AUDIT_STORAGE_FAILED',
-        error_message: `Validation ${errorType} audit could not be stored`,
+        error_message: `Validation ${errorType} audit exception: ${msg}`.slice(0, 500),
       }).eq('id', ledgerId).then(() => {}, () => {});
     }
   }
 
-  // 2. Associate actual cost with the task claim (idempotent — only updates if claim exists)
+  // 2. Associate actual cost with task claim — verified read-back
   if (claimId && ledgerId) {
-    const { count } = await supabase
+    // Attempt idempotent update (only if ledger_id not yet set)
+    await supabase
       .from('denise_task_claims')
       .update({ ledger_id: ledgerId, cost_usd: costUsd })
       .eq('id', claimId)
-      .is('ledger_id', null) // Only update if ledger_id not already set (idempotent)
-      .select('id', { count: 'exact', head: true });
+      .is('ledger_id', null)
+      .then(() => {}, () => {});
 
-    // count === 0 means either claim doesn't exist or ledger_id already set — both are safe
-    // count === 1 means cost was associated successfully
-    // No action needed either way — the Gateway ledger is the financial source of truth
+    // Read-back verification
+    const { data: claim, error: readErr } = await supabase
+      .from('denise_task_claims')
+      .select('id, ledger_id, cost_usd')
+      .eq('id', claimId)
+      .single();
+
+    if (readErr || !claim) {
+      result.error = (result.error ? result.error + '; ' : '') + 'Task claim not found on read-back';
+    } else if (claim.ledger_id === ledgerId) {
+      // Correct association — either we just set it or it was already correct
+      result.costAssociated = true;
+    } else if (claim.ledger_id !== null && claim.ledger_id !== ledgerId) {
+      // Conflicting association — fail closed, do not overwrite
+      result.conflictDetected = true;
+      result.error = (result.error ? result.error + '; ' : '') +
+        `Conflicting ledger association: claim ${claimId} linked to ${claim.ledger_id}, expected ${ledgerId}`;
+    } else {
+      // ledger_id is null but update didn't take — concurrent modification or DB issue
+      result.error = (result.error ? result.error + '; ' : '') +
+        'Cost association update did not persist';
+    }
   }
+
+  return result;
 }
 
 // ============================================================
