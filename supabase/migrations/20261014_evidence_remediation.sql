@@ -240,27 +240,80 @@ COMMIT;
 -- DO NOT run this as part of the migration. This is a separate
 -- recovery script to execute only if rollback is needed.
 --
+-- Conflict guard: compares the exact current value of each row
+-- against the expected post-remediation value derived from the
+-- rollback artifact. If any row has been legitimately edited
+-- since remediation, the rollback aborts to avoid overwriting.
+--
 -- BEGIN;
 --
--- -- Assert current values match post-remediation state before restoring
 -- DO $$
+-- DECLARE
+--   expected_outcomes jsonb;
+--   actual_outcomes jsonb;
+--   expected_ps1 text;
+--   actual_ps1 text;
+--   expected_ps2 text;
+--   actual_ps2 text;
 -- BEGIN
---   IF NOT EXISTS (
---     SELECT 1 FROM case_studies
---     WHERE id = 'd9a7ca5d-cd41-4f81-ae21-b8355525eb4c'
---       AND jsonb_array_length(outcomes) = 1
---       AND outcomes ? 'Veterans resolve debt in minutes instead of weeks'
---   ) THEN
---     RAISE EXCEPTION 'ROLLBACK ABORT: case_studies row has been modified since remediation.';
+--   -- Derive expected post-remediation outcomes: the original array
+--   -- minus the 3 removed claims.
+--   SELECT jsonb_agg(elem) INTO expected_outcomes
+--   FROM jsonb_array_elements_text(
+--     (SELECT original_value::jsonb FROM _evidence_remediation_rollback_20261014
+--      WHERE table_name = 'case_studies'
+--        AND row_id = 'd9a7ca5d-cd41-4f81-ae21-b8355525eb4c'
+--        AND column_name = 'outcomes')
+--   ) AS elem
+--   WHERE elem NOT IN (
+--     '88% increase in waiver submissions',
+--     '95% instant approval rate for Streamlined Waiver',
+--     '30K+ veterans helped'
+--   );
+--
+--   SELECT outcomes INTO actual_outcomes
+--   FROM case_studies WHERE id = 'd9a7ca5d-cd41-4f81-ae21-b8355525eb4c';
+--
+--   IF actual_outcomes IS DISTINCT FROM expected_outcomes THEN
+--     RAISE EXCEPTION 'ROLLBACK ABORT: case_studies outcomes have been modified since remediation. Expected: %, Actual: %',
+--       expected_outcomes, actual_outcomes;
 --   END IF;
 --
---   IF EXISTS (
---     SELECT 1 FROM proposal_snippets
---     WHERE id IN ('23618839-647b-4d14-a681-681499f2045b', '2dd5af3b-c2e2-4d20-8884-73b85371825a')
---       AND content ILIKE '%88%'
---   ) THEN
---     RAISE EXCEPTION 'ROLLBACK ABORT: proposal_snippets rows have been modified since remediation.';
+--   -- Derive expected post-remediation snippet 23618839
+--   SELECT regexp_replace(
+--     original_value,
+--     E' Waiver submissions increased 88%. The Streamlined Waiver, a Presidential Initiative, now delivers 95% instant approval\\.',
+--     '', 'g'
+--   ) INTO expected_ps1
+--   FROM _evidence_remediation_rollback_20261014
+--   WHERE table_name = 'proposal_snippets'
+--     AND row_id = '23618839-647b-4d14-a681-681499f2045b';
+--
+--   SELECT content INTO actual_ps1
+--   FROM proposal_snippets WHERE id = '23618839-647b-4d14-a681-681499f2045b';
+--
+--   IF actual_ps1 IS DISTINCT FROM expected_ps1 THEN
+--     RAISE EXCEPTION 'ROLLBACK ABORT: proposal_snippets 23618839 has been modified since remediation.';
 --   END IF;
+--
+--   -- Derive expected post-remediation snippet 2dd5af3b
+--   SELECT regexp_replace(
+--     original_value,
+--     E'\n\nThe Streamlined Waiver, a Presidential Initiative, offers fast-track debt forgiveness\\. Waiver submissions increased 88%\\. Ninety-five percent of qualifying Veterans now receive instant approval\\.',
+--     '', 'g'
+--   ) INTO expected_ps2
+--   FROM _evidence_remediation_rollback_20261014
+--   WHERE table_name = 'proposal_snippets'
+--     AND row_id = '2dd5af3b-c2e2-4d20-8884-73b85371825a';
+--
+--   SELECT content INTO actual_ps2
+--   FROM proposal_snippets WHERE id = '2dd5af3b-c2e2-4d20-8884-73b85371825a';
+--
+--   IF actual_ps2 IS DISTINCT FROM expected_ps2 THEN
+--     RAISE EXCEPTION 'ROLLBACK ABORT: proposal_snippets 2dd5af3b has been modified since remediation.';
+--   END IF;
+--
+--   RAISE NOTICE 'ROLLBACK CONFLICT CHECK PASSED: all 3 rows match post-remediation state.';
 -- END $$;
 --
 -- -- Restore case_studies.outcomes

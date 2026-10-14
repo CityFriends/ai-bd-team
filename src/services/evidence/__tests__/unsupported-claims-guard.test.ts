@@ -117,9 +117,13 @@ describe('Unsupported Claims Guard', () => {
       expect(uncommented).not.toMatch(/supabase db push/i);
     });
 
-    it('includes a commented rollback script with conflict guards', () => {
+    it('includes a commented rollback script with exact-value conflict guards', () => {
       expect(migrationContent).toMatch(/ROLLBACK SCRIPT/);
       expect(migrationContent).toMatch(/ROLLBACK ABORT.*modified since remediation/);
+      // Must compare exact values, not just claim absence or array length
+      expect(migrationContent).toMatch(/IS DISTINCT FROM expected_outcomes/);
+      expect(migrationContent).toMatch(/IS DISTINCT FROM expected_ps1/);
+      expect(migrationContent).toMatch(/IS DISTINCT FROM expected_ps2/);
     });
 
     it('is idempotent-safe: reruns abort on changed source values', () => {
