@@ -411,10 +411,7 @@ async function updateCompanyData() {
         'Accessibility',
       ],
       outcomes: [
-        '88% increase in waiver submissions',
-        '95% instant approval rate for Streamlined Waiver',
         'Veterans resolve debt in minutes instead of weeks',
-        '30K+ veterans helped',
       ],
       team_composition: ['2 Product Designers', '3 UX Researchers', '1 Frontend Developer'],
       duration: '3 years',
