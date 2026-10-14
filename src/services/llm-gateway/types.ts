@@ -106,6 +106,8 @@ export interface InferenceResponse {
   provider: Provider;
   /** Provider-assigned request ID if available */
   providerRequestId?: string;
+  /** True if model hit max_tokens before producing text (e.g., thinking consumed budget) */
+  incomplete?: boolean;
 }
 
 /** Successful embedding response */

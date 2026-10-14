@@ -28,8 +28,16 @@ export const MODEL_LIFECYCLE: ModelLifecycleEntry[] = [
     modelId: 'claude-haiku-4-5-20251001',
     provider: 'anthropic',
     lifecycleState: 'active',
-    retirementBoundary: '2026-10-15', // Review/commitment boundary — NOT verified retirement. Provider may extend.
-    lastVerified: '2026-10-01',
+    retirementBoundary: '2026-10-15', // Review/commitment boundary — still active as of 2026-10-14. Provider commits to not retiring before this date.
+    lastVerified: '2026-10-14',
+    recommendedReplacement: 'claude-haiku-5-5',
+  },
+  {
+    modelId: 'claude-haiku-5-5',
+    provider: 'anthropic',
+    lifecycleState: 'active',
+    retirementBoundary: '2027-10-07', // Review/commitment boundary — provider commits to availability through this date
+    lastVerified: '2026-10-14',
     recommendedReplacement: null,
   },
   {

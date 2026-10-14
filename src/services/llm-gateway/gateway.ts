@@ -397,9 +397,26 @@ export async function complete(request: InferenceRequest): Promise<InferenceResp
     }
 
     const textBlock = response.content.find((b) => b.type === 'text');
+    const outputText = textBlock?.type === 'text' ? textBlock.text : '';
+
+    // Detect incomplete output: model hit max_tokens before producing text
+    // (e.g., adaptive thinking consumed the entire output budget)
+    if (!outputText && response.stop_reason === 'max_tokens') {
+      return {
+        ledgerId,
+        text: '',
+        usage: { inputTokens: actualIn, outputTokens: actualOut },
+        costUsd: actualCost,
+        model: response.model,
+        provider: 'anthropic',
+        providerRequestId: response.id,
+        incomplete: true,
+      };
+    }
+
     return {
       ledgerId,
-      text: textBlock?.type === 'text' ? textBlock.text : '',
+      text: outputText,
       usage: { inputTokens: actualIn, outputTokens: actualOut },
       costUsd: actualCost,
       model: response.model,

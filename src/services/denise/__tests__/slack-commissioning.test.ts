@@ -958,7 +958,7 @@ describe('F-16: regulatory interpretation route default', () => {
       source.indexOf("'denise_regulatory_interpretation'"),
       source.indexOf('},', source.indexOf("'denise_regulatory_interpretation'")) + 2
     );
-    expect(routeBlock).toContain('maxOutputTokens: 2048');
+    expect(routeBlock).toContain('maxOutputTokens: 4096'); // Increased for Haiku 5.5 adaptive thinking
     expect(routeBlock).toContain('maxCostUsd: 0.05');
     expect(routeBlock).toContain('enabled: false');
   });

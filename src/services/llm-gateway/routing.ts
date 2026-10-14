@@ -87,11 +87,14 @@ const DEFAULT_ROUTES: ModelRoute[] = [
     enabled: false, // No commissioned production consumer
   },
   // Denise routes — DISABLED until commissioning
+  // Haiku routes migrated to claude-haiku-5-5 (Oct 2026)
+  // Token limits account for new tokenizer (~30% more tokens for same text)
+  // maxOutputTokens increased to 4096 to accommodate adaptive thinking tokens
   {
     taskType: 'denise_capture_acquisition' as TaskType,
     provider: 'anthropic',
-    model: 'claude-haiku-4-5-20251001',
-    maxOutputTokens: 2048,
+    model: 'claude-haiku-5-5',
+    maxOutputTokens: 4096,
     maxInputTokens: 16000,
     maxCostUsd: 0.05,
     enabled: false,
@@ -99,8 +102,8 @@ const DEFAULT_ROUTES: ModelRoute[] = [
   {
     taskType: 'denise_clause_analysis' as TaskType,
     provider: 'anthropic',
-    model: 'claude-haiku-4-5-20251001',
-    maxOutputTokens: 2048,
+    model: 'claude-haiku-5-5',
+    maxOutputTokens: 4096,
     maxInputTokens: 16000,
     maxCostUsd: 0.05,
     enabled: false,
@@ -117,8 +120,8 @@ const DEFAULT_ROUTES: ModelRoute[] = [
   {
     taskType: 'denise_clarification_draft' as TaskType,
     provider: 'anthropic',
-    model: 'claude-haiku-4-5-20251001',
-    maxOutputTokens: 1024,
+    model: 'claude-haiku-5-5',
+    maxOutputTokens: 2048,
     maxInputTokens: 8000,
     maxCostUsd: 0.03,
     enabled: false,
@@ -135,8 +138,8 @@ const DEFAULT_ROUTES: ModelRoute[] = [
   {
     taskType: 'denise_regulatory_interpretation' as TaskType,
     provider: 'anthropic',
-    model: 'claude-haiku-4-5-20251001',
-    maxOutputTokens: 2048,
+    model: 'claude-haiku-5-5',
+    maxOutputTokens: 4096,
     maxInputTokens: 8000,
     maxCostUsd: 0.05,
     enabled: false,
