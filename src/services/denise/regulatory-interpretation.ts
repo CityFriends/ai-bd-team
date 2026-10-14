@@ -6,7 +6,7 @@
  * are always distinguished.
  *
  * Commissioned route: denise_regulatory_interpretation
- * Model: claude-haiku-4-5-20251001
+ * Model: configured via ai_model_routing (currently claude-haiku-5-5)
  * Per-task: $0.05
  *
  * Denise is not an attorney and does not provide legal advice.
