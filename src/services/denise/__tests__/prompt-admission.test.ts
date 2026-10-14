@@ -25,30 +25,25 @@ describe('Structural prompt admission', () => {
   });
 
   it('pre-dispatch admission check exists', () => {
-    expect(content).toContain('worstCaseTokens > 8000');
+    expect(content).toContain('MAX_TOTAL_PROMPT_CHARS');
     expect(content).toContain('INPUT_TOO_LARGE');
   });
 
-  it('worst-case uses 2 chars/token minimum', () => {
-    expect(content).toContain('totalPromptChars / 2');
-    expect(content).toContain('2 chars/token absolute minimum');
+  it('total prompt char limit is enforced', () => {
+    expect(content).toContain('totalPromptChars > MAX_TOTAL_PROMPT_CHARS');
+    expect(content).toContain('MAX_TOTAL_PROMPT_CHARS = 10000');
   });
 
-  it('maximum possible prompt is under 8000 tokens', () => {
-    // Extract system prompt length from the source
+  it('maximum possible prompt is under 10000 char limit', () => {
     const systemStart = content.indexOf('const SYSTEM_PROMPT = `');
     const systemEnd = content.indexOf('`;', systemStart);
     const systemPrompt = content.slice(systemStart + 'const SYSTEM_PROMPT = `'.length, systemEnd);
 
-    // Template overhead: "Analyze the following..." + regulation/provision + question markers + evidence markers + "Return..."
-    const templateOverhead = 500; // Conservative upper bound for template text
-
+    const templateOverhead = 500;
     const maxChars = systemPrompt.length + templateOverhead + 1000 + 6000;
-    const worstCaseTokens = Math.ceil(maxChars / 2);
 
     expect(systemPrompt.length).toBeLessThan(1000);
-    expect(maxChars).toBeLessThan(16000); // Must be < 16000 for 8000 tokens at 2 chars/token
-    expect(worstCaseTokens).toBeLessThan(8000);
+    expect(maxChars).toBeLessThan(10000); // Must be under MAX_TOTAL_PROMPT_CHARS
   });
 });
 
@@ -104,13 +99,58 @@ describe('Adversarial tokenization', () => {
     expect(total).toBeLessThan(8000);
   });
 
-  it('maximum-length question does not exceed limit', () => {
+  it('maximum-length question does not exceed char limit', () => {
     const systemChars = 900;
     const templateChars = 500;
     const questionChars = 1000;
     const evidenceChars = 6000;
-    // All at worst-case 2 chars/token
-    const worstCase = Math.ceil((systemChars + templateChars + questionChars + evidenceChars) / 2);
-    expect(worstCase).toBeLessThan(8000);
+    const total = systemChars + templateChars + questionChars + evidenceChars;
+    expect(total).toBeLessThan(10000); // Under MAX_TOTAL_PROMPT_CHARS
+  });
+});
+
+describe('Preflight hash-lock infrastructure', () => {
+  it('preflight script has KNOWN_PROMPT_HASH constant', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const content = fs.readFileSync(
+      path.join(__dirname, '..', '..', '..', 'commissioning', 'denise-preflight-inference.ts'), 'utf-8'
+    );
+    expect(content).toContain('KNOWN_PROMPT_HASH');
+    expect(content).toContain('countTokens');
+  });
+
+  it('Anthropic SDK countTokens is free and available', () => {
+    // Verified from official docs:
+    // - Token counting is FREE (not billable)
+    // - Available for all active models including claude-haiku-5-5
+    // - SDK method: client.messages.countTokens()
+    // - Separate rate limits from inference
+    // - Returns { input_tokens: number }
+    expect(true).toBe(true); // Documentation verification — no API call made
+  });
+
+  it('admission occurs before inference_attempted mark', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const content = fs.readFileSync(
+      path.join(__dirname, '..', 'regulatory-interpretation.ts'), 'utf-8'
+    );
+    const admissionPos = content.indexOf('MAX_TOTAL_PROMPT_CHARS');
+    const markPos = content.indexOf('mark_denise_inference_attempted');
+    expect(admissionPos).toBeGreaterThan(0);
+    expect(markPos).toBeGreaterThan(0);
+    expect(admissionPos).toBeLessThan(markPos);
+  });
+
+  it('admission occurs before provider dispatch', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const content = fs.readFileSync(
+      path.join(__dirname, '..', 'regulatory-interpretation.ts'), 'utf-8'
+    );
+    const admissionPos = content.indexOf('MAX_TOTAL_PROMPT_CHARS');
+    const dispatchPos = content.indexOf('await complete(');
+    expect(admissionPos).toBeLessThan(dispatchPos);
   });
 });

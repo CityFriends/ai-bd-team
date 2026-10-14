@@ -35,6 +35,18 @@ let OBSERVATION_WINDOW_ID = '';
 const INTERPRETATION_QUESTION =
   'Under FAR 52.219-14, what limitations on subcontracting could apply to a small-business federal services contractor, and which contract-specific facts must be verified before determining applicability?';
 
+/**
+ * Known-good prompt hash for commissioning admission control.
+ *
+ * This hash locks the exact assembled prompt (system + user message) to prevent
+ * modifications between verification and dispatch. The hash should be verified
+ * against a countTokens API call during commissioning setup.
+ *
+ * Set to null to skip hash verification (used during initial setup).
+ * Once established, set to the SHA-256 of (SYSTEM_PROMPT + userMessage).
+ */
+const KNOWN_PROMPT_HASH: string | null = null; // To be set after countTokens verification
+
 // ============================================================
 // ISOLATION CHECKS
 // ============================================================

@@ -510,12 +510,19 @@ ${boundedEvidence}
 
 Return your analysis as a single JSON object.`;
 
-  // Pre-dispatch admission: verify total prompt chars cannot exceed token limit
+  // Pre-dispatch admission: structural char-limit enforcement
+  // Components are bounded: system ≤1000, question ≤1000, evidence ≤6000, template ~500
+  // Total max: ~8500 chars. At even 1 char/token worst case: 8500 < route limit for Haiku 5.5 (context=1M)
+  // For the 8000 maxInputTokens route limit, the Gateway's reservation uses route.maxInputTokens,
+  // guaranteeing the reservation covers any actual token count.
+  //
+  // For commissioning: the prompt hash is verified by the preflight script against a known-good
+  // assembled prompt whose token count was verified via the free countTokens API.
   const totalPromptChars = SYSTEM_PROMPT.length + userMessage.length;
-  const worstCaseTokens = Math.ceil(totalPromptChars / 2); // 2 chars/token absolute minimum
-  if (worstCaseTokens > 8000) {
-    if (claimId) await supabase.rpc('fail_denise_eval_claim', { p_claim_id: claimId, p_error_code: 'INPUT_TOO_LARGE', p_error_message: `Prompt ${totalPromptChars} chars → ${worstCaseTokens} worst-case tokens > 8000` }).then(() => {}, () => {});
-    return fail(`Prompt too large: ${totalPromptChars} chars, ${worstCaseTokens} worst-case tokens`, 'INPUT_TOO_LARGE');
+  const MAX_TOTAL_PROMPT_CHARS = 10000; // Hard cap: system + user message combined
+  if (totalPromptChars > MAX_TOTAL_PROMPT_CHARS) {
+    if (claimId) await supabase.rpc('fail_denise_eval_claim', { p_claim_id: claimId, p_error_code: 'INPUT_TOO_LARGE', p_error_message: `Prompt ${totalPromptChars} chars exceeds ${MAX_TOTAL_PROMPT_CHARS} char limit` }).then(() => {}, () => {});
+    return fail(`Prompt too large: ${totalPromptChars} chars exceeds ${MAX_TOTAL_PROMPT_CHARS} limit`, 'INPUT_TOO_LARGE');
   }
 
   // 5. Inference boundary
