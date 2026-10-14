@@ -176,6 +176,7 @@ $$ LANGUAGE plpgsql;
 -- RLS + grants
 -- ============================================================
 ALTER TABLE denise_task_claims ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "service_role_denise_claims" ON denise_task_claims;
 CREATE POLICY "service_role_denise_claims" ON denise_task_claims FOR ALL TO service_role USING (true) WITH CHECK (true);
 GRANT ALL ON denise_task_claims TO service_role;
 

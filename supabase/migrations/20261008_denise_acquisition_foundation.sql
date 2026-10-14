@@ -134,10 +134,14 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER trg_acquisition_analysis_immutable
-  BEFORE UPDATE ON acquisition_analyses
-  FOR EACH ROW
-  EXECUTE FUNCTION prevent_acquisition_analysis_mutation();
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_acquisition_analysis_immutable') THEN
+    CREATE TRIGGER trg_acquisition_analysis_immutable
+      BEFORE UPDATE ON acquisition_analyses
+      FOR EACH ROW
+      EXECUTE FUNCTION prevent_acquisition_analysis_mutation();
+  END IF;
+END $$;
 
 -- ============================================================
 -- 3. EVALUATION MODELS — structured evaluation factor analysis
@@ -395,10 +399,14 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER trg_regulatory_evidence_immutable
-  BEFORE UPDATE ON regulatory_evidence
-  FOR EACH ROW
-  EXECUTE FUNCTION prevent_regulatory_evidence_mutation();
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_regulatory_evidence_immutable') THEN
+    CREATE TRIGGER trg_regulatory_evidence_immutable
+      BEFORE UPDATE ON regulatory_evidence
+      FOR EACH ROW
+      EXECUTE FUNCTION prevent_regulatory_evidence_mutation();
+  END IF;
+END $$;
 
 -- ============================================================
 -- 9. REGULATORY SOURCE CACHE — reusable authoritative source cache
@@ -545,42 +553,52 @@ $$ LANGUAGE plpgsql;
 -- ============================================================
 
 ALTER TABLE acquisition_tasks ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "service_role_acq_tasks" ON acquisition_tasks;
 CREATE POLICY "service_role_acq_tasks" ON acquisition_tasks FOR ALL TO service_role USING (true) WITH CHECK (true);
 GRANT ALL ON acquisition_tasks TO service_role;
 
 ALTER TABLE acquisition_analyses ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "service_role_acq_analyses" ON acquisition_analyses;
 CREATE POLICY "service_role_acq_analyses" ON acquisition_analyses FOR ALL TO service_role USING (true) WITH CHECK (true);
 GRANT ALL ON acquisition_analyses TO service_role;
 
 ALTER TABLE acquisition_evaluation_models ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "service_role_acq_eval" ON acquisition_evaluation_models;
 CREATE POLICY "service_role_acq_eval" ON acquisition_evaluation_models FOR ALL TO service_role USING (true) WITH CHECK (true);
 GRANT ALL ON acquisition_evaluation_models TO service_role;
 
 ALTER TABLE acquisition_clause_register ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "service_role_acq_clause" ON acquisition_clause_register;
 CREATE POLICY "service_role_acq_clause" ON acquisition_clause_register FOR ALL TO service_role USING (true) WITH CHECK (true);
 GRANT ALL ON acquisition_clause_register TO service_role;
 
 ALTER TABLE acquisition_risks ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "service_role_acq_risks" ON acquisition_risks;
 CREATE POLICY "service_role_acq_risks" ON acquisition_risks FOR ALL TO service_role USING (true) WITH CHECK (true);
 GRANT ALL ON acquisition_risks TO service_role;
 
 ALTER TABLE acquisition_clarification_questions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "service_role_acq_clarifications" ON acquisition_clarification_questions;
 CREATE POLICY "service_role_acq_clarifications" ON acquisition_clarification_questions FOR ALL TO service_role USING (true) WITH CHECK (true);
 GRANT ALL ON acquisition_clarification_questions TO service_role;
 
 ALTER TABLE acquisition_conflicts ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "service_role_acq_conflicts" ON acquisition_conflicts;
 CREATE POLICY "service_role_acq_conflicts" ON acquisition_conflicts FOR ALL TO service_role USING (true) WITH CHECK (true);
 GRANT ALL ON acquisition_conflicts TO service_role;
 
 ALTER TABLE regulatory_evidence ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "service_role_reg_evidence" ON regulatory_evidence;
 CREATE POLICY "service_role_reg_evidence" ON regulatory_evidence FOR ALL TO service_role USING (true) WITH CHECK (true);
 GRANT ALL ON regulatory_evidence TO service_role;
 
 ALTER TABLE regulatory_source_cache ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "service_role_reg_cache" ON regulatory_source_cache;
 CREATE POLICY "service_role_reg_cache" ON regulatory_source_cache FOR ALL TO service_role USING (true) WITH CHECK (true);
 GRANT ALL ON regulatory_source_cache TO service_role;
 
 ALTER TABLE denise_observation_windows ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "service_role_denise_windows" ON denise_observation_windows;
 CREATE POLICY "service_role_denise_windows" ON denise_observation_windows FOR ALL TO service_role USING (true) WITH CHECK (true);
 GRANT ALL ON denise_observation_windows TO service_role;
 

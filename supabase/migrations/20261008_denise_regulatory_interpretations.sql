@@ -66,13 +66,18 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER trg_regulatory_interpretation_immutable
-  BEFORE UPDATE ON regulatory_interpretations
-  FOR EACH ROW
-  EXECUTE FUNCTION prevent_regulatory_interpretation_mutation();
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_regulatory_interpretation_immutable') THEN
+    CREATE TRIGGER trg_regulatory_interpretation_immutable
+      BEFORE UPDATE ON regulatory_interpretations
+      FOR EACH ROW
+      EXECUTE FUNCTION prevent_regulatory_interpretation_mutation();
+  END IF;
+END $$;
 
 -- RLS
 ALTER TABLE regulatory_interpretations ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "service_role_reg_interp" ON regulatory_interpretations;
 CREATE POLICY "service_role_reg_interp" ON regulatory_interpretations FOR ALL TO service_role USING (true) WITH CHECK (true);
 GRANT ALL ON regulatory_interpretations TO service_role;
 GRANT EXECUTE ON FUNCTION prevent_regulatory_interpretation_mutation TO service_role;
