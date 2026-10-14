@@ -142,7 +142,8 @@ describe('Tokenizer assumptions', () => {
 
   it('regulatory interpretation truncates evidence to 6000 chars', () => {
     const content = fs.readFileSync(regInterpPath, 'utf-8');
-    expect(content).toContain('.slice(0, 6000)');
+    expect(content).toContain('MAX_EVIDENCE_CHARS = 6000');
+    expect(content).toContain('.slice(0, MAX_EVIDENCE_CHARS)');
     // 6000 chars / 3 = 2000 tokens, well under 8000 maxInputTokens
     const maxTokensFromEvidence = Math.ceil(6000 / 3);
     expect(maxTokensFromEvidence).toBeLessThan(8000);

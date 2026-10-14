@@ -20,7 +20,8 @@ const migrationPath = path.join(import.meta.dirname, '..', '..', '..', '..', 'su
 describe('Input-token enforcement proof', () => {
   it('evidence is hard-capped at 6000 chars', () => {
     const content = fs.readFileSync(regInterpPath, 'utf-8');
-    expect(content).toContain('.slice(0, 6000)');
+    expect(content).toContain('MAX_EVIDENCE_CHARS = 6000');
+    expect(content).toContain('.slice(0, MAX_EVIDENCE_CHARS)');
   });
 
   it('system prompt is bounded and deterministic', () => {
@@ -33,14 +34,12 @@ describe('Input-token enforcement proof', () => {
   });
 
   it('user message template is bounded', () => {
-    // Template: "Analyze the following..." + question + "---\n{evidence}\n---\n\nReturn..."
-    // Template overhead (without evidence): ~500 chars max
     const content = fs.readFileSync(regInterpPath, 'utf-8');
-    const templateStart = content.indexOf('const userMessage = `');
-    const templateEnd = content.indexOf('`;', templateStart);
-    const template = content.slice(templateStart, templateEnd);
-    // Template contains the .slice(0, 6000) evidence insertion
-    expect(template).toContain('.slice(0, 6000)');
+    // Question and evidence are bounded before template insertion
+    expect(content).toContain('MAX_QUESTION_CHARS = 1000');
+    expect(content).toContain('MAX_EVIDENCE_CHARS = 6000');
+    expect(content).toContain('boundedQuestion');
+    expect(content).toContain('boundedEvidence');
   });
 
   it('total max chars is under 8000 tokens at worst-case tokenization', () => {

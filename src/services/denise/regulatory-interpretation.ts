@@ -484,18 +484,39 @@ export async function analyzeRegulatoryProvision(
     return fail('Observation window exhausted or inactive', 'OBSERVATION_EXHAUSTED');
   }
 
-  // 4. Build prompt
+  // 4. Build prompt — with structural admission control
+  //
+  // Hard character limits enforce the 8,000-token route limit:
+  //   System prompt:  ≤1,000 chars
+  //   Question:       ≤1,000 chars (truncated)
+  //   Evidence:       ≤6,000 chars (truncated)
+  //   Template:       ~500 chars (fixed)
+  //   Total max:      ≤8,500 chars → ≤4,250 tokens at worst-case 2 chars/token
+  //   Route limit:    8,000 tokens → structurally guaranteed safe
+  const MAX_QUESTION_CHARS = 1000;
+  const MAX_EVIDENCE_CHARS = 6000;
+  const boundedQuestion = request.interpretationQuestion.slice(0, MAX_QUESTION_CHARS);
+  const boundedEvidence = admission.evidenceText!.slice(0, MAX_EVIDENCE_CHARS);
+
   const userMessage = `Analyze the following verified ${request.regulation} provision and explain its potential operational implications for FFTC.
 
 PROVISION: ${request.regulation} ${request.provisionId}
-QUESTION: ${request.interpretationQuestion}
+QUESTION: ${boundedQuestion}
 
 VERIFIED PROVISION TEXT:
 ---
-${admission.evidenceText!.slice(0, 6000)}
+${boundedEvidence}
 ---
 
 Return your analysis as a single JSON object.`;
+
+  // Pre-dispatch admission: verify total prompt chars cannot exceed token limit
+  const totalPromptChars = SYSTEM_PROMPT.length + userMessage.length;
+  const worstCaseTokens = Math.ceil(totalPromptChars / 2); // 2 chars/token absolute minimum
+  if (worstCaseTokens > 8000) {
+    if (claimId) await supabase.rpc('fail_denise_eval_claim', { p_claim_id: claimId, p_error_code: 'INPUT_TOO_LARGE', p_error_message: `Prompt ${totalPromptChars} chars → ${worstCaseTokens} worst-case tokens > 8000` }).then(() => {}, () => {});
+    return fail(`Prompt too large: ${totalPromptChars} chars, ${worstCaseTokens} worst-case tokens`, 'INPUT_TOO_LARGE');
+  }
 
   // 5. Inference boundary
   const gatewayKey = `denise:reginterp:${request.idempotencyKey}`;
