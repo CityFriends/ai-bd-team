@@ -416,6 +416,17 @@ export async function complete(request: InferenceRequest): Promise<InferenceResp
       throw new DatabaseUnavailableError(new Error('Pricing unavailable at settlement'));
     }
 
+    // Post-dispatch ceiling check: log if actual cost exceeds per-call ceiling.
+    // This can happen if actual input tokens exceeded the estimate (tokenizer variance).
+    // The reservation + settlement invariant is the hard financial guarantee;
+    // this check provides observability for ceiling overruns.
+    if (maxCost && actualCost > maxCost) {
+      console.warn(
+        `[GATEWAY CEILING OVERRUN] ${request.purpose}: actual $${actualCost.toFixed(6)} > ceiling $${maxCost} ` +
+        `(input: est=${boundedInput} actual=${actualIn}, output: cap=${effectiveMaxOutput} actual=${actualOut})`
+      );
+    }
+
     const settled = await settleBudget(supabase, {
       ledgerId,
       actualInputTokens: actualIn,
