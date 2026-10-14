@@ -29,13 +29,13 @@ const AGENT_ID = 'denise';
 const PROMPT_VERSION = '1.0';
 const VALID_OWNERS = ['PATRICIA', 'JAMES', 'MARCUS', 'ROSA', 'JODIE', 'DENISE', 'HUMAN'];
 
-const FFTC_PROFILE = `FFTC Profile:
+/* FFTC Profile — preserved for future prompt variants:
 - SDVOSB, WOSB, 8(a) certified
 - GSA MAS contract holder
 - Primary NAICS 541512
 - Services: software engineering, modernization, HCD/UX, product management
 - Prime preferred; strong subcontracting acceptable
-- Public trust acceptable; no facility clearance`;
+- Public trust acceptable; no facility clearance */
 
 // ============================================================
 // ZOD SCHEMA

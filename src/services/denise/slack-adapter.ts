@@ -14,7 +14,7 @@ import { getFeatureFlag, FEATURE_FLAGS } from '../../config/ai-controls.js';
 import { getMainChannelId } from '../../config/channels.js';
 import { getSupabase } from '../../integrations/supabase.js';
 import type { SupabaseClient } from './types.js';
-import type { DeniseSlackPayload } from './slack-surface.js';
+// DeniseSlackPayload available from ./slack-surface.js
 
 // ============================================================
 // FEATURE FLAGS
@@ -280,7 +280,7 @@ export interface DeliveryResult {
 export async function recordDeliveryAttempt(
   supabase: SupabaseClient,
   candidate: NotificationCandidate,
-  slackTs: string | null,
+  _slackTs: string | null,
   status: DeliveryStatus,
   errorMessage?: string
 ): Promise<void> {

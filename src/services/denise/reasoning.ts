@@ -32,13 +32,13 @@ import {
   createAcquisitionRisk,
   getLatestAnalysis,
 } from './storage.js';
-import { verifyCitation } from './citation-verifier.js';
+// verifyCitation available from ./citation-verifier.js when needed
 
 // ============================================================
 // CONSTANTS
 // ============================================================
 
-const DENISE_ROUTE = 'denise_evaluation_analysis';
+const DENISE_ROUTE = 'denise_evaluation_analysis' as any;
 const DENISE_AGENT_ID = 'denise';
 
 // ============================================================
@@ -418,7 +418,6 @@ export function extractRelationships(
 
   // Determine evaluation method
   const hasLpta = relationships.some(r => r.type === 'LPTA');
-  const hasPassFail = relationships.some(r => r.type === 'PASS_FAIL');
   const hasComparative = relationships.some(r => r.type === 'MORE_IMPORTANT' || r.type === 'MOST_IMPORTANT');
   const evaluationMethod = hasLpta ? 'LPTA' as const
     : (hasComparative || relationships.length > 0) ? 'BEST_VALUE' as const

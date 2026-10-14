@@ -21,7 +21,7 @@
 
 import { createHash } from 'crypto';
 import * as cheerio from 'cheerio';
-import type { SupabaseClient, FreshnessStatus } from './types.js';
+import type { SupabaseClient } from './types.js';
 
 // ============================================================
 // CONSTANTS
@@ -31,7 +31,6 @@ const APPROVED_HOSTS = new Set(['www.acquisition.gov']);
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_RESPONSE_BYTES = 5_000_000; // 5MB
 const MAX_REDIRECTS = 3;
-const PARSER_VERSION = '1.0.0';
 
 export type RegulationFamily = 'FAR' | 'DFARS';
 export type VersionSelector = 'CURRENT' | 'AS_OF_DATE' | 'EXACT_PUBLICATION';

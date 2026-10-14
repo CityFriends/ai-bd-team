@@ -10,7 +10,6 @@
 
 import { createHash } from 'crypto';
 import type { AmendmentImpactClass } from './types.js';
-import { AMENDMENT_IMPACT_CLASSES } from './types.js';
 
 // ============================================================
 // TYPES

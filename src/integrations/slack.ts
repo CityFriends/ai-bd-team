@@ -92,6 +92,12 @@ const AGENT_INFO: Record<
     icon_url:
       'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/Jodie.jpeg',
   },
+  acquisition: {
+    username: 'Denise',
+    displayName: 'Acquisition Intelligence',
+    icon_url:
+      'https://bvgtfadggtgnakrxvuim.supabase.co/storage/v1/object/public/agent-avatars/Denise.jpeg',
+  },
 };
 
 // Post a message as an agent with custom username and profile picture

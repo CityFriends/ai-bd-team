@@ -15,10 +15,10 @@ import { complete } from '../llm-gateway/gateway.js';
 import { ensureWorkflowBudget, ensureTaskBudget } from '../llm-gateway/budget.js';
 import { ProviderError } from '../llm-gateway/errors.js';
 import { DENISE_CAPTURE_TASK_CEILING_USD, AMENDMENT_IMPACT_CLASSES } from './types.js';
-import type { AmendmentImpactClass, SupabaseClient } from './types.js';
+import type { SupabaseClient } from './types.js';
 import { createAcquisitionAnalysis, getLatestAnalysis } from './storage.js';
-import { diffEvidence, classifyMateriality } from './amendment-diff.js';
-import type { EvidenceSpan, ChangeRecord, DiffResult } from './amendment-diff.js';
+import { diffEvidence } from './amendment-diff.js';
+import type { EvidenceSpan, DiffResult } from './amendment-diff.js';
 
 // ============================================================
 // CONSTANTS
@@ -348,7 +348,7 @@ export async function executeAmendmentAnalysis(
   let qaBlock = '';
   if (input.qaEvidence?.length) {
     qaBlock = '\n\nOFFICIAL Q&A EVIDENCE:\n' + input.qaEvidence.map(q =>
-      `[Q&A Evidence ID: ${q.id}] Section: ${q.section}\n---\n${q.text}\n---`
+      `[Q&A Evidence ID: ${q.evidenceId}] Section: ${q.section}\n---\n${q.text}\n---`
     ).join('\n\n');
   }
 

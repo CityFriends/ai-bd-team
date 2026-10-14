@@ -22,7 +22,6 @@ import {
 } from './specialist-integration.js';
 import type {
   SpecialistRole,
-  WorkflowPhase,
   ArtifactType,
   DeniseIntelligenceBundle,
 } from './specialist-integration.js';
@@ -258,7 +257,6 @@ export async function dispatchDeniseRequest(
   supabase: SupabaseClient,
   request: DeniseRoutingRequest
 ): Promise<DeniseRoutingResult> {
-  const now = new Date().toISOString();
   const claimKey = `denise-route-${request.idempotencyKey}`;
 
   const emptyResult = (disposition: RoutingDisposition, failureReason?: string, failureCode?: string): DeniseRoutingResult => ({
