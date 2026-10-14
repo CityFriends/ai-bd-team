@@ -25,6 +25,7 @@ const SRC_DIR = path.join(PROJECT_ROOT, 'src');
 const APPROVED_ANTHROPIC_MODULES = [
   'src/integrations/claude.ts',
   'src/services/llm-gateway/gateway.ts',
+  'src/commissioning/count-tokens-preflight.ts', // Commissioning-only token verification
 ];
 
 const APPROVED_OPENAI_MODULES = [

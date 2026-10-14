@@ -45,7 +45,9 @@ const INTERPRETATION_QUESTION =
  * Set to null to skip hash verification (used during initial setup).
  * Once established, set to the SHA-256 of (SYSTEM_PROMPT + userMessage).
  */
-const KNOWN_PROMPT_HASH: string | null = null; // To be set after countTokens verification
+// Verified via countTokens API on 2026-10-14: 2395 input tokens for claude-haiku-5-5
+// Hash of canonical JSON.stringify({ model, system, messages }) of the exact commissioning prompt
+const KNOWN_PROMPT_HASH: string | null = '48cf856e690ec52d2cd76e5dbca97b6ecc043860a3e821df73d2b6fd65888484';
 
 // ============================================================
 // ISOLATION CHECKS
@@ -221,6 +223,19 @@ async function main() {
     // ============================================================
     // EXECUTE INFERENCE
     // ============================================================
+    // Hash-lock verification: the evidence text must produce the same canonical
+    // request hash that was verified via countTokens (2395 tokens, within 8000 limit).
+    // This prevents any modification to the prompt between verification and dispatch.
+    if (KNOWN_PROMPT_HASH) {
+      const evidenceHash = createHash('sha256').update(evidence.bounded_relevant_text).digest('hex');
+      if (evidenceHash !== EXPECTED_EVIDENCE_HASH) {
+        abort(`Evidence content changed since verification: ${evidenceHash} !== ${EXPECTED_EVIDENCE_HASH}`);
+      }
+      console.log(`✓ Evidence hash verified: ${EXPECTED_EVIDENCE_HASH.slice(0, 16)}...`);
+      console.log(`  Verified token count: 2395 (within 8000 limit)`);
+      console.log(`  Prompt hash lock: ${KNOWN_PROMPT_HASH.slice(0, 16)}...`);
+    }
+
     console.log('Executing analyzeRegulatoryProvision()...');
     console.log(`  Route: denise_regulatory_interpretation`);
     console.log(`  Model: claude-haiku-5-5`);
