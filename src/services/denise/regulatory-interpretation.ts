@@ -533,6 +533,7 @@ Return your analysis as a single JSON object.`;
   let ledgerId: string | null = null;
   let costUsd = 0;
   let rawText = '';
+  let providerModel = '';
 
   try {
     const response = await complete({
@@ -545,6 +546,7 @@ Return your analysis as a single JSON object.`;
     ledgerId = response.ledgerId;
     costUsd = response.costUsd;
     rawText = response.text;
+    providerModel = response.model;
     await supabase.rpc('settle_denise_observation_slot', {
       p_task_id: deterministicUUID(taskKey), p_reserved_cost_usd: maxCost,
       p_actual_cost_usd: costUsd, p_ledger_id: ledgerId,
@@ -648,7 +650,7 @@ Return your analysis as a single JSON object.`;
       // Coverage: PARTIAL when bounded output (max 3) may not cover longer provisions
       // Compact bounded schema cannot prove completeness — always PARTIAL
       coverage_status: 'PARTIAL',
-      model_id: 'claude-haiku-4-5-20251001',
+      model_id: providerModel || ROUTE,
       prompt_version: PROMPT_VERSION,
       gateway_ledger_id: ledgerId,
       workflow_phase: request.workflowPhase,

@@ -27,8 +27,8 @@ const PRODUCTION_PROJECT = 'bvgtfadggtgnakrxvuim';
 const EVIDENCE_ID = 'a0a0a0a0-d000-4000-b000-000000000003';
 const EXPECTED_EVIDENCE_HASH = '1274c4d2f2abaf6fe8604c82d46a4a0b1931e33b6259666a5f22375526fcfc18';
 const MAX_COST_USD = 0.05;
-const IDEMPOTENCY_KEY = 'preflight-haiku55-20261014-r1';
-const WORKFLOW_ID = 'denise-preflight-haiku55-r1';
+const IDEMPOTENCY_KEY = 'preflight-haiku55-20261014-r2';
+const WORKFLOW_ID = 'denise-preflight-haiku55-r2';
 // r3 observation window — created at runtime, not hardcoded
 let OBSERVATION_WINDOW_ID = '';
 
