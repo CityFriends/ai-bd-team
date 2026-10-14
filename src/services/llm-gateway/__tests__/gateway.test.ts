@@ -464,9 +464,10 @@ describe('LLM Gateway — Final Corrections', () => {
   });
 
   describe('Conservative Reservation', () => {
-    it('applies 20% safety margin to token estimate', async () => {
+    it('applies 30% safety margin to token estimate', async () => {
       const { estimateInputTokens } = await import('../pricing.js');
-      expect(estimateInputTokens([{ content: 'a'.repeat(400) }])).toBe(120);
+      // 400 chars / 4 * 1.3 = 130 tokens (30% margin for new tokenizer)
+      expect(estimateInputTokens([{ content: 'a'.repeat(400) }])).toBe(130);
     });
 
     it('rejects oversized input', async () => {

@@ -4,7 +4,7 @@
  * Authorization: Owner-authorized, one provider attempt only.
  * Target: Commissioning Supabase nnwddilewgbsmyouatzu
  * Route: denise_regulatory_interpretation
- * Model: claude-haiku-4-5-20251001
+ * Model: claude-haiku-5-5
  * Max cost: $0.05
  *
  * Usage:
@@ -27,8 +27,8 @@ const PRODUCTION_PROJECT = 'bvgtfadggtgnakrxvuim';
 const EVIDENCE_ID = 'a0a0a0a0-d000-4000-b000-000000000003';
 const EXPECTED_EVIDENCE_HASH = '1274c4d2f2abaf6fe8604c82d46a4a0b1931e33b6259666a5f22375526fcfc18';
 const MAX_COST_USD = 0.05;
-const IDEMPOTENCY_KEY = 'preflight-far52219-20261011-r3';
-const WORKFLOW_ID = 'denise-preflight-far52219-r3';
+const IDEMPOTENCY_KEY = 'preflight-haiku55-20261014-r1';
+const WORKFLOW_ID = 'denise-preflight-haiku55-r1';
 // r3 observation window — created at runtime, not hardcoded
 let OBSERVATION_WINDOW_ID = '';
 
@@ -187,7 +187,7 @@ async function main() {
     .eq('task_type', 'denise_regulatory_interpretation')
     .single();
   if (!route) abort('Route not found');
-  if (route.model !== 'claude-haiku-4-5-20251001') abort(`Route model=${route.model}, expected claude-haiku-4-5-20251001`);
+  if (route.model !== 'claude-haiku-5-5') abort(`Route model=${route.model}, expected claude-haiku-5-5`);
   if (!route.enabled) abort('Route not enabled');
 
   console.log('✓ All 11 isolation checks passed');
@@ -211,7 +211,7 @@ async function main() {
     // ============================================================
     console.log('Executing analyzeRegulatoryProvision()...');
     console.log(`  Route: denise_regulatory_interpretation`);
-    console.log(`  Model: claude-haiku-4-5-20251001`);
+    console.log(`  Model: claude-haiku-5-5`);
     console.log(`  Max cost: $${MAX_COST_USD}`);
     console.log(`  Idempotency: ${IDEMPOTENCY_KEY}`);
     console.log('');

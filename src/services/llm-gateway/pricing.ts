@@ -110,8 +110,10 @@ export function estimateMaxCost(
   return calculateCost(provider, model, maxInputTokens, maxOutputTokens);
 }
 
-/** Safety margin multiplier applied to token estimates */
-export const TOKEN_SAFETY_MARGIN = 1.2; // 20% overhead
+/** Safety margin multiplier applied to token estimates.
+ * 1.3 = 30% overhead to accommodate the newer tokenizer (Claude 4.7+)
+ * which produces ~30% more tokens for the same text. */
+export const TOKEN_SAFETY_MARGIN = 1.3;
 
 /**
  * Estimate input tokens from message content with safety margin.

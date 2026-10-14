@@ -120,21 +120,18 @@ describe('Haiku 5.5 pricing and reservation', () => {
 // Token-limit assumptions
 // ============================================================
 describe('Tokenizer assumptions', () => {
-  it('Gateway uses chars/3 conservative estimate', () => {
+  it('Gateway uses chars/2.5 conservative estimate', () => {
     const content = fs.readFileSync(gatewayPath, 'utf-8');
-    expect(content).toContain('totalChars / 3');
+    expect(content).toContain('totalChars / 2.5');
   });
 
-  it('chars/3 is conservative for the new tokenizer', () => {
-    // Haiku 5.5 tokenizer: ~30% more tokens for same text
-    // Old tokenizer: ~4 chars/token → chars/4
-    // New tokenizer: ~3 chars/token → chars/3
-    // Gateway uses max(chars/4 * 1.2, chars/3) = max(chars/3.33, chars/3) = chars/3
-    // chars/3 matches the new tokenizer's average, so it's exactly right
-    // For safety: the Gateway also checks rawInput <= maxInputTokens before dispatch
-    const charsPerToken = 3; // New tokenizer average
-    const safetyBound = 3;   // Gateway divisor
-    expect(safetyBound).toBeLessThanOrEqual(charsPerToken);
+  it('chars/2.5 provides safety margin for the new tokenizer', () => {
+    // Haiku 5.5 tokenizer: ~3 chars/token on average
+    // Gateway uses chars/2.5 = 20% safety margin over the average
+    // This ensures reservation always covers actual token count
+    const avgCharsPerToken = 3; // New tokenizer average
+    const safetyBound = 2.5;   // Gateway divisor
+    expect(safetyBound).toBeLessThan(avgCharsPerToken);
   });
 
   it('Gateway rejects input exceeding maxInputTokens before dispatch', () => {

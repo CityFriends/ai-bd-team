@@ -512,7 +512,7 @@ Return your analysis as a single JSON object.`;
       idempotencyKey: gatewayKey, workflowId: request.workflowId,
       taskId: taskKey, opportunityId: request.opportunityId,
       messages: [{ role: 'user', content: userMessage }],
-      systemPrompt: SYSTEM_PROMPT, maxOutputTokens: 2048, maxCostUsd: maxCost,
+      systemPrompt: SYSTEM_PROMPT, maxCostUsd: maxCost,
     });
     ledgerId = response.ledgerId;
     costUsd = response.costUsd;

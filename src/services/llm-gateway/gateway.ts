@@ -257,11 +257,12 @@ export async function complete(request: InferenceRequest): Promise<InferenceResp
   //    Reserve for worst-case: bounded input + max output at model prices.
   //    Use max(estimated, chars/3) to account for tokenizer variance.
   const estInput = estimateInputTokens(request.messages, request.systemPrompt);
-  // Also compute a more conservative estimate: chars/3 (tokens are ~3-4 chars average)
+  // Conservative token estimate: chars/2.5 to account for the newer tokenizer
+  // (Claude 4.7+ produces ~30% more tokens; shortest tokens are ~2 chars)
   let totalChars = 0;
   for (const m of request.messages) totalChars += m.content.length;
   if (request.systemPrompt) totalChars += request.systemPrompt.length;
-  const conservativeInput = Math.ceil(totalChars / 3); // More conservative than /4
+  const conservativeInput = Math.ceil(totalChars / 2.5);
   const rawInput = Math.max(estInput, conservativeInput);
 
   // Reject if input exceeds route max BEFORE bounding
