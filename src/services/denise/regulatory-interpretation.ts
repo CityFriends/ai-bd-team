@@ -521,6 +521,15 @@ Return your analysis as a single JSON object.`;
       p_task_id: deterministicUUID(taskKey), p_reserved_cost_usd: maxCost,
       p_actual_cost_usd: costUsd, p_ledger_id: ledgerId,
     });
+
+    // 6b. Fail closed on incomplete output (thinking consumed entire token budget)
+    if (response.incomplete) {
+      if (claimId) {
+        await supabase.rpc('fail_denise_eval_claim', { p_claim_id: claimId, p_error_code: 'INCOMPLETE_OUTPUT', p_error_message: 'Model hit max_tokens before producing text (thinking consumed budget)' }).then(() => {}, () => {});
+      }
+      await recordValidationFailureAudit(supabase, ledgerId, claimId, costUsd, 'INCOMPLETE', ['Output truncated: stop_reason=max_tokens'], rawText || '[empty]');
+      return { ...fail('Incomplete output — model hit token limit'), ledgerId, costUsd };
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes('IDEMPOTENT')) return { success: true, interpretationId: null, ledgerId: null, costUsd: 0, validationErrors: [], error: 'Idempotent replay' };

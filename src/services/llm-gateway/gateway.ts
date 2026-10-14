@@ -399,20 +399,10 @@ export async function complete(request: InferenceRequest): Promise<InferenceResp
     const textBlock = response.content.find((b) => b.type === 'text');
     const outputText = textBlock?.type === 'text' ? textBlock.text : '';
 
-    // Detect incomplete output: model hit max_tokens before producing text
-    // (e.g., adaptive thinking consumed the entire output budget)
-    if (!outputText && response.stop_reason === 'max_tokens') {
-      return {
-        ledgerId,
-        text: '',
-        usage: { inputTokens: actualIn, outputTokens: actualOut },
-        costUsd: actualCost,
-        model: response.model,
-        provider: 'anthropic',
-        providerRequestId: response.id,
-        incomplete: true,
-      };
-    }
+    // Flag incomplete output: stop_reason=max_tokens means the response
+    // was truncated, regardless of whether text is empty, partial, or parseable.
+    // With adaptive thinking, this often means thinking consumed the budget.
+    const isIncomplete = response.stop_reason === 'max_tokens';
 
     return {
       ledgerId,
@@ -422,6 +412,7 @@ export async function complete(request: InferenceRequest): Promise<InferenceResp
       model: response.model,
       provider: 'anthropic',
       providerRequestId: response.id,
+      incomplete: isIncomplete || undefined,
     };
   } catch (err) {
     if (
