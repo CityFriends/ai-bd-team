@@ -61,10 +61,10 @@ describe('Input-token enforcement proof', () => {
     expect(content).toContain('BudgetExceededError');
   });
 
-  it('reservation uses route maxInputTokens (not estimate)', () => {
+  it('reservation uses route maxInputTokens and capped output', () => {
     const content = fs.readFileSync(gatewayPath, 'utf-8');
     expect(content).toContain('Math.max(boundedInput, maxInputTokens)');
-    expect(content).toContain('estimateMaxCost(provider, model, reservationInput, maxOutputTokens)');
+    expect(content).toContain('estimateMaxCost(provider, model, reservationInput, effectiveMaxOutput)');
   });
 });
 
@@ -98,16 +98,14 @@ describe('Reservation bound proof', () => {
     }
   });
 
-  it('settlement cannot fail when actual is within route limits', () => {
+  it('settlement cannot fail when actual is within capped limits', () => {
     // The settle_inference RPC rejects when actual > reserved.
-    // Since reservation uses route max tokens, and the provider
-    // is given max_tokens=maxOutputTokens, any response within
-    // the token limits will settle successfully.
+    // Reservation uses route-max input + capped output.
+    // Provider is given max_tokens=effectiveMaxOutput.
+    // Any response within these limits will settle successfully.
     const content = fs.readFileSync(gatewayPath, 'utf-8');
-    // Gateway passes max_tokens to provider
-    expect(content).toContain('max_tokens: maxOutputTokens');
-    // Provider cannot produce more output tokens than max_tokens
-    // Provider input is bounded by evidence truncation + prompt template
+    // Gateway passes dynamically capped max_tokens to provider
+    expect(content).toContain('max_tokens: effectiveMaxOutput');
   });
 });
 

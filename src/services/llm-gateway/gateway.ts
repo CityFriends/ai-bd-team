@@ -271,24 +271,48 @@ export async function complete(request: InferenceRequest): Promise<InferenceResp
   }
   const boundedInput = rawInput;
 
-  // Estimate cost for per-request cap check (uses actual estimated input)
-  const estimatedCost = estimateMaxCost(provider, model, boundedInput, maxOutputTokens);
+  // 5b. HARD COST CAP — dynamically constrain output tokens to fit within ceiling
+  //
+  // Given the estimated input cost, compute the maximum affordable output tokens:
+  //   affordable_output = floor((ceiling - input_cost) / output_price_per_token)
+  // Cap max_tokens to this value. This makes the ceiling a HARD guarantee:
+  //   actual_cost ≤ actual_input_cost + capped_output × output_price ≤ ceiling
+  //
+  // The output cap uses the ROUTE-MAX input (not estimate) for safety:
+  //   even if actual input exceeds the estimate, the output cap ensures
+  //   worst-case total stays under the ceiling.
+  const maxCost = request.maxCostUsd || route.maxCostUsd;
+  let effectiveMaxOutput = maxOutputTokens;
+
+  if (maxCost && pricing.outputPricePerMillion > 0) {
+    const inputCostAtRouteMax = (maxInputTokens * pricing.inputPricePerMillion) / 1_000_000;
+    const budgetForOutput = maxCost - inputCostAtRouteMax;
+
+    if (budgetForOutput <= 0) {
+      // Input alone exceeds ceiling at route-max — reject
+      throw new BudgetExceededError('request_cap', request.purpose, maxCost, inputCostAtRouteMax);
+    }
+
+    const affordableOutput = Math.floor((budgetForOutput * 1_000_000) / pricing.outputPricePerMillion);
+    effectiveMaxOutput = Math.min(maxOutputTokens, affordableOutput);
+
+    if (effectiveMaxOutput < 1) {
+      throw new BudgetExceededError('request_cap', request.purpose, maxCost, inputCostAtRouteMax);
+    }
+  }
+
+  // Verify estimated cost with capped output
+  const estimatedCost = estimateMaxCost(provider, model, boundedInput, effectiveMaxOutput);
   if (estimatedCost === null) {
     throw new DatabaseUnavailableError(new Error('Cannot calculate estimated cost'));
   }
-
-  // Per-request cost cap — compare ESTIMATED cost (not route-max reservation)
-  // This prevents rejecting requests whose actual input is well under the route max
-  const maxCost = request.maxCostUsd || route.maxCostUsd;
   if (maxCost && estimatedCost > maxCost) {
     throw new BudgetExceededError('request_cap', request.purpose, maxCost, estimatedCost);
   }
 
-  // Reserve using the LARGER of the estimated input and the route's max input.
-  // This guarantees the budget reservation covers worst-case actual token count,
-  // even if the estimated input underestimates due to tokenizer variance.
+  // Reserve using route-max input + capped output for budget safety
   const reservationInput = Math.max(boundedInput, maxInputTokens);
-  const reservationCost = estimateMaxCost(provider, model, reservationInput, maxOutputTokens);
+  const reservationCost = estimateMaxCost(provider, model, reservationInput, effectiveMaxOutput);
   if (reservationCost === null) {
     throw new DatabaseUnavailableError(new Error('Cannot calculate reservation cost'));
   }
@@ -371,7 +395,7 @@ export async function complete(request: InferenceRequest): Promise<InferenceResp
 
     const response = await client.messages.create({
       model,
-      max_tokens: maxOutputTokens,
+      max_tokens: effectiveMaxOutput,
       system: request.systemPrompt,
       messages,
     });

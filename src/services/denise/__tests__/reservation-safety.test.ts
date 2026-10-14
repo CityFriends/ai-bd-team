@@ -21,9 +21,9 @@ describe('Reservation uses route max input tokens', () => {
     expect(content).toContain('reservationInput');
   });
 
-  it('estimateMaxCost uses reservationInput not boundedInput', () => {
+  it('estimateMaxCost uses reservationInput and effectiveMaxOutput', () => {
     const section = content.slice(content.indexOf('reservationInput'));
-    expect(section).toContain('estimateMaxCost(provider, model, reservationInput, maxOutputTokens)');
+    expect(section).toContain('estimateMaxCost(provider, model, reservationInput, effectiveMaxOutput)');
   });
 
   it('worst-case Haiku 5.5 regulatory reservation fits under $0.05', () => {

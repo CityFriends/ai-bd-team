@@ -11,27 +11,30 @@ import * as path from 'path';
 
 const gatewayPath = path.join(import.meta.dirname, '..', 'gateway.ts');
 
-describe('Cost-cap enforcement semantics', () => {
+describe('Hard cost-cap enforcement', () => {
   const content = fs.readFileSync(gatewayPath, 'utf-8');
 
-  it('cost-cap check uses ESTIMATED cost, not route-max reservation', () => {
-    // The cost-cap comparison should use estimatedCost (from boundedInput)
-    // not reservationCost (from max(boundedInput, maxInputTokens))
-    const capSection = content.slice(content.indexOf('Per-request cost cap'));
-    expect(capSection).toContain('estimatedCost > maxCost');
-    expect(capSection).not.toContain('reservationCost > maxCost');
+  it('dynamically caps output tokens to fit within ceiling', () => {
+    expect(content).toContain('affordableOutput');
+    expect(content).toContain('effectiveMaxOutput');
+    expect(content).toContain('Math.min(maxOutputTokens, affordableOutput)');
   });
 
-  it('reservation uses route-max input for budget safety', () => {
-    expect(content).toContain('Math.max(boundedInput, maxInputTokens)');
-    expect(content).toContain('estimateMaxCost(provider, model, reservationInput, maxOutputTokens)');
+  it('uses route-max input for output budget calculation (conservative)', () => {
+    expect(content).toContain('maxInputTokens * pricing.inputPricePerMillion');
   });
 
-  it('settlement checks actual vs reserved (not actual vs ceiling)', () => {
-    // The settlement RPC rejects if actual > reserved
-    // This is the hard financial guarantee
-    const settleSection = content.slice(content.indexOf('settleBudget'));
-    expect(settleSection).toContain('actualCostUsd');
+  it('provider dispatch uses capped output tokens', () => {
+    expect(content).toContain('max_tokens: effectiveMaxOutput');
+    expect(content).not.toContain('max_tokens: maxOutputTokens');
+  });
+
+  it('reservation uses capped output for budget safety', () => {
+    expect(content).toContain('estimateMaxCost(provider, model, reservationInput, effectiveMaxOutput)');
+  });
+
+  it('rejects when input alone exceeds ceiling', () => {
+    expect(content).toContain('budgetForOutput <= 0');
   });
 });
 
@@ -45,12 +48,16 @@ describe('Jodie Sonnet route compatibility', () => {
     expect(estimatedCost).toBeLessThan(0.10);
   });
 
-  it('route-max reservation for Jodie Sonnet exceeds $0.10 ceiling', () => {
-    // This is expected and acceptable — the reservation is a budget safety margin
-    // The cost-cap check uses the ESTIMATED cost, not the reservation
-    const maxReservation = (16000 * 3.0 + 4096 * 15.0) / 1_000_000;
-    expect(maxReservation).toBeGreaterThan(0.10);
-    expect(maxReservation).toBeCloseTo(0.1094, 3);
+  it('Jodie Sonnet output dynamically capped to 3466 tokens', () => {
+    // Hard cap: (ceiling - route_max_input_cost) / output_price
+    // ($0.10 - 16000 * $3/M) / ($15/M) = ($0.10 - $0.048) / $0.000015 = 3466
+    const inputCost = (16000 * 3.0) / 1_000_000;
+    const budgetForOutput = 0.10 - inputCost;
+    const affordable = Math.floor((budgetForOutput * 1_000_000) / 15.0);
+    expect(affordable).toBe(3466);
+    // Worst-case at capped output: exactly $0.10
+    const worstCase = (16000 * 3.0 + 3466 * 15.0) / 1_000_000;
+    expect(worstCase).toBeLessThanOrEqual(0.10);
   });
 
   it('actual cost can only exceed estimate if input underestimates', () => {
