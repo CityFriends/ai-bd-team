@@ -113,6 +113,20 @@ export interface AdmissionResult {
   errorCode?: string;
 }
 
+/**
+ * Canonical evidence hash contract:
+ *   SHA-256 of the exact UTF-8 bytes in bounded_relevant_text
+ *   as stored in PostgreSQL and supplied to the model.
+ *
+ * No trailing newline, no normalization. Byte-exact.
+ * The DB content_hash field should match this computation.
+ * Historical records may have content_hash computed with a trailing
+ * newline (heredoc artifact) — those are identified by audit metadata.
+ */
+export function computeEvidenceHash(text: string): string {
+  return createHash('sha256').update(text).digest('hex');
+}
+
 export async function admitEvidence(
   supabase: SupabaseClient,
   evidenceId: string,
@@ -134,8 +148,8 @@ export async function admitEvidence(
     return { admitted: false, evidenceText: null, error: `Provision mismatch: expected ${expectedProvisionId}, found ${data.citation}`, errorCode: 'PROVISION_MISMATCH' };
   }
 
-  // Recompute and verify content hash
-  const computedHash = createHash('sha256').update(data.bounded_relevant_text).digest('hex');
+  // Recompute and verify content hash — canonical contract: SHA-256 of exact stored bytes
+  const computedHash = computeEvidenceHash(data.bounded_relevant_text);
   if (computedHash !== expectedHash) {
     return { admitted: false, evidenceText: null, error: 'Content hash mismatch — evidence may have been tampered', errorCode: 'HASH_MISMATCH' };
   }
@@ -238,6 +252,13 @@ export function enforceNoUnsupportedLegalConclusions(output: InterpretationOutpu
       output.legalReviewReason = output.legalReviewReason || 'Legal-adjacent content detected — human review recommended';
       downgrades.push('Forced legalReviewRequired=true: legal-adjacent content');
     }
+  }
+
+  // Ensure a reason exists whenever legalReviewRequired is true
+  // (model may set the flag without providing a reason)
+  if (output.legalReviewRequired && !output.legalReviewReason) {
+    output.legalReviewReason = 'Model flagged legal review — regulatory content requires human verification';
+    downgrades.push('Added missing legalReviewReason for model-requested review');
   }
 
   return { modified: downgrades.length > 0, downgrades };
