@@ -11,6 +11,8 @@
 -- Single explicit transaction with assertions that abort on mismatch.
 -- Captures exact original values for rollback before modification.
 -- Does NOT re-seed data, run the update script, or use supabase db push.
+--
+-- NOTE: case_studies.outcomes is text[], not jsonb.
 -- ============================================================
 
 -- ============================================================
@@ -19,25 +21,24 @@
 BEGIN;
 
 -- ============================================================
--- 0. PROJECT IDENTITY ASSERTION
+-- 0. PRE-MODIFICATION ASSERTIONS
 -- ============================================================
--- Verify we are operating on production project bvgtfadggtgnakrxvuim.
--- The current_setting('app.settings.supabase_project_ref') is available
--- in Supabase SQL Editor / Management API context. If not available,
--- this DO block uses a no-op fallback (the row-level assertions below
--- still protect against wrong-database execution).
 DO $$
 BEGIN
   -- Row existence assertion: the target case_study must exist with
   -- the exact expected title and contain all 4 original outcomes.
+  -- outcomes is text[], so use @> (array contains) operator.
   IF NOT EXISTS (
     SELECT 1 FROM case_studies
     WHERE id = 'd9a7ca5d-cd41-4f81-ae21-b8355525eb4c'
       AND title = 'Resolving Veteran Debt in Minutes'
-      AND outcomes ? '88% increase in waiver submissions'
-      AND outcomes ? '95% instant approval rate for Streamlined Waiver'
-      AND outcomes ? 'Veterans resolve debt in minutes instead of weeks'
-      AND outcomes ? '30K+ veterans helped'
+      AND outcomes @> ARRAY[
+        '88% increase in waiver submissions',
+        '95% instant approval rate for Streamlined Waiver',
+        'Veterans resolve debt in minutes instead of weeks',
+        '30K+ veterans helped'
+      ]
+      AND array_length(outcomes, 1) = 4
   ) THEN
     RAISE EXCEPTION 'ABORT: case_studies row d9a7ca5d does not match expected pre-remediation state. Outcomes array does not contain all 4 expected entries.';
   END IF;
@@ -83,7 +84,7 @@ REVOKE ALL ON _evidence_remediation_rollback_20261014 FROM anon;
 REVOKE ALL ON _evidence_remediation_rollback_20261014 FROM authenticated;
 GRANT ALL ON _evidence_remediation_rollback_20261014 TO service_role;
 
--- Capture case_studies.outcomes (as JSON text)
+-- Capture case_studies.outcomes (as text representation of the text[] array)
 INSERT INTO _evidence_remediation_rollback_20261014 (table_name, row_id, column_name, original_value)
 SELECT 'case_studies', id, 'outcomes', outcomes::text
 FROM case_studies
@@ -110,18 +111,20 @@ BEGIN
 END $$;
 
 -- ============================================================
--- 2. case_studies: Remove unsupported outcomes from JSONB array
+-- 2. case_studies: Remove unsupported outcomes from text[] array
 -- ============================================================
--- Removes exactly 3 elements by value, preserving all others.
+-- Uses array_remove() to remove exactly 3 elements by value,
+-- preserving all others including order.
 UPDATE case_studies
-SET outcomes = (
-      SELECT jsonb_agg(elem)
-      FROM jsonb_array_elements_text(outcomes) AS elem
-      WHERE elem NOT IN (
-        '88% increase in waiver submissions',
-        '95% instant approval rate for Streamlined Waiver',
-        '30K+ veterans helped'
-      )
+SET outcomes = array_remove(
+      array_remove(
+        array_remove(
+          outcomes,
+          '88% increase in waiver submissions'
+        ),
+        '95% instant approval rate for Streamlined Waiver'
+      ),
+      '30K+ veterans helped'
     ),
     updated_at = NOW()
 WHERE id = 'd9a7ca5d-cd41-4f81-ae21-b8355525eb4c'
@@ -171,7 +174,7 @@ WHERE id = '2dd5af3b-c2e2-4d20-8884-73b85371825a'
 -- ============================================================
 DO $$
 DECLARE
-  cs_outcomes jsonb;
+  cs_outcomes text[];
   cs_count integer;
   ps1_has_88 boolean;
   ps1_has_95 boolean;
@@ -181,7 +184,7 @@ DECLARE
   ps2_ends_with text;
 BEGIN
   -- Assert case_studies outcomes contains exactly 1 verified entry
-  SELECT outcomes, jsonb_array_length(outcomes)
+  SELECT outcomes, array_length(outcomes, 1)
   INTO cs_outcomes, cs_count
   FROM case_studies
   WHERE id = 'd9a7ca5d-cd41-4f81-ae21-b8355525eb4c';
@@ -190,7 +193,7 @@ BEGIN
     RAISE EXCEPTION 'ABORT: Expected 1 remaining outcome, found %. Outcomes: %', cs_count, cs_outcomes;
   END IF;
 
-  IF NOT (cs_outcomes ? 'Veterans resolve debt in minutes instead of weeks') THEN
+  IF NOT (cs_outcomes @> ARRAY['Veterans resolve debt in minutes instead of weeks']) THEN
     RAISE EXCEPTION 'ABORT: Verified outcome "Veterans resolve debt in minutes instead of weeks" is missing from outcomes.';
   END IF;
 
@@ -249,27 +252,30 @@ COMMIT;
 --
 -- DO $$
 -- DECLARE
---   expected_outcomes jsonb;
---   actual_outcomes jsonb;
+--   expected_outcomes text[];
+--   actual_outcomes text[];
 --   expected_ps1 text;
 --   actual_ps1 text;
 --   expected_ps2 text;
 --   actual_ps2 text;
 -- BEGIN
---   -- Derive expected post-remediation outcomes: the original array
---   -- minus the 3 removed claims.
---   SELECT jsonb_agg(elem) INTO expected_outcomes
---   FROM jsonb_array_elements_text(
---     (SELECT original_value::jsonb FROM _evidence_remediation_rollback_20261014
---      WHERE table_name = 'case_studies'
---        AND row_id = 'd9a7ca5d-cd41-4f81-ae21-b8355525eb4c'
---        AND column_name = 'outcomes')
---   ) AS elem
---   WHERE elem NOT IN (
---     '88% increase in waiver submissions',
---     '95% instant approval rate for Streamlined Waiver',
+--   -- Derive expected post-remediation outcomes from rollback artifact.
+--   -- The original_value is the text[] cast to text. Parse it back and
+--   -- remove the 3 unsupported claims.
+--   SELECT array_remove(
+--     array_remove(
+--       array_remove(
+--         original_value::text[],
+--         '88% increase in waiver submissions'
+--       ),
+--       '95% instant approval rate for Streamlined Waiver'
+--     ),
 --     '30K+ veterans helped'
---   );
+--   ) INTO expected_outcomes
+--   FROM _evidence_remediation_rollback_20261014
+--   WHERE table_name = 'case_studies'
+--     AND row_id = 'd9a7ca5d-cd41-4f81-ae21-b8355525eb4c'
+--     AND column_name = 'outcomes';
 --
 --   SELECT outcomes INTO actual_outcomes
 --   FROM case_studies WHERE id = 'd9a7ca5d-cd41-4f81-ae21-b8355525eb4c';
@@ -319,7 +325,7 @@ COMMIT;
 -- -- Restore case_studies.outcomes
 -- UPDATE case_studies
 -- SET outcomes = (
---       SELECT original_value::jsonb
+--       SELECT original_value::text[]
 --       FROM _evidence_remediation_rollback_20261014
 --       WHERE table_name = 'case_studies'
 --         AND row_id = 'd9a7ca5d-cd41-4f81-ae21-b8355525eb4c'

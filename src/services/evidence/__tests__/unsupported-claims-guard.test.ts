@@ -74,10 +74,9 @@ describe('Unsupported Claims Guard', () => {
       expect(migrationContent).toMatch(/regexp_replace/);
     });
 
-    it('uses JSONB element removal for case_studies, not full array replacement', () => {
-      // Must use jsonb_agg + filter pattern, not SET outcomes = '[...]'::jsonb
-      expect(migrationContent).toMatch(/jsonb_array_elements/);
-      expect(migrationContent).toMatch(/NOT IN/);
+    it('uses array_remove for case_studies, not full array replacement', () => {
+      // Must use array_remove() to remove elements by value from text[]
+      expect(migrationContent).toMatch(/array_remove/);
     });
 
     it('captures rollback artifacts before modification', () => {
@@ -130,8 +129,9 @@ describe('Unsupported Claims Guard', () => {
       // The pre-modification assertions check for the original 4-element outcomes array.
       // After first run, outcomes has 1 element, so rerun will RAISE EXCEPTION.
       expect(migrationContent).toMatch(
-        /outcomes \? '88% increase in waiver submissions'/
+        /88% increase in waiver submissions/
       );
+      expect(migrationContent).toMatch(/array_length\(outcomes, 1\) = 4/);
     });
   });
 });
