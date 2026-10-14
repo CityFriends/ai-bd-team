@@ -20,13 +20,65 @@ Remove three unsupported performance claims from the VA debt resolution case stu
 
 ### Code (committed)
 - `src/scripts/update-company-data.ts` — removed 3 unsupported outcomes from VA debt case study outcomes array (lines 413–418)
-- `src/services/evidence/__tests__/unsupported-claims-guard.test.ts` — 4 guard tests preventing re-introduction
+- `src/services/evidence/__tests__/unsupported-claims-guard.test.ts` — 14 guard tests covering seed script and migration contract
 
-### Database (requires authorization)
-- `supabase/migrations/20261014_evidence_remediation.sql` — 3 UPDATE statements affecting:
-  - `case_studies` row `d9a7ca5d-cd41-4f81-ae21-b8355525eb4c` (outcomes array)
-  - `proposal_snippets` row `23618839-647b-4d14-a681-681499f2045b` (content text)
-  - `proposal_snippets` row `2dd5af3b-c2e2-4d20-8884-73b85371825a` (content text)
+### Database (requires owner authorization)
+- `supabase/migrations/20261014_evidence_remediation.sql` — surgical removal-only migration affecting 3 rows across 2 tables:
+  - `case_studies` row `d9a7ca5d` — JSONB array element removal (removes 3 elements by value, preserves all others)
+  - `proposal_snippets` row `23618839` — `regexp_replace` removes 2 unsupported sentences from end of content
+  - `proposal_snippets` row `2dd5af3b` — `regexp_replace` removes 1 unsupported paragraph from end of content
+
+### Migration Safety Features
+- **Explicit transaction** with `BEGIN`/`COMMIT`
+- **Pre-modification assertions** — aborts if any row content does not match expected pre-remediation state
+- **Rollback artifact** — captures exact original values in `_evidence_remediation_rollback_20261014` table (service_role access only)
+- **Post-modification assertions** — verifies claims are removed and verified outcome is preserved
+- **Idempotency safety** — rerun aborts because pre-assertions check for original 4-element outcomes array
+- **Commented rollback script** — restores originals only when post-remediation values still match
+
+## Original-to-Revised Diffs
+
+### case_studies outcomes (row d9a7ca5d)
+
+```diff
+ [
+-  "88% increase in waiver submissions",
+-  "95% instant approval rate for Streamlined Waiver",
+   "Veterans resolve debt in minutes instead of weeks",
+-  "30K+ veterans helped"
+ ]
+```
+
+### proposal_snippets content (row 23618839 — Short)
+
+```diff
+ We redesigned the VA's debt resolution process so Veterans can check
+ balances, request waivers, and resolve debt online in minutes instead
+ of weeks. We ran co-design sessions with Veterans including those with
+ PTSD and TBI, identified 66 issues in the existing form, and developed
+-trauma-informed research protocols. Waiver submissions increased 88%.
+-The Streamlined Waiver, a Presidential Initiative, now delivers 95%
+-instant approval.
++trauma-informed research protocols.
+```
+
+### proposal_snippets content (row 2dd5af3b — Full)
+
+```diff
+ ...We connected the platform to VA's Debt Management Center, Health
+ Resource Center, and VBMS. For the first time, Veterans could submit
+ a form and know immediately it had been received.
+-
+-The Streamlined Waiver, a Presidential Initiative, offers fast-track
+-debt forgiveness. Waiver submissions increased 88%. Ninety-five percent
+-of qualifying Veterans now receive instant approval.
+```
+
+## Evidence for Retained Claim
+
+| Claim | Evidence |
+|-------|----------|
+| "Veterans resolve debt in minutes instead of weeks" | FFTC case study page describes the before/after: paper-based multi-week process → digital same-session resolution. Attributable to FFTC design work on the VA eFSR platform. |
 
 ## Propagation Chain (Verified Clean)
 
