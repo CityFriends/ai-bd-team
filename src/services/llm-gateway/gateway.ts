@@ -271,7 +271,11 @@ export async function complete(request: InferenceRequest): Promise<InferenceResp
   }
   const boundedInput = rawInput;
 
-  const reservationCost = estimateMaxCost(provider, model, boundedInput, maxOutputTokens);
+  // Reserve using the LARGER of the estimated input and the route's max input.
+  // This guarantees the reservation always covers the worst-case actual token count,
+  // regardless of tokenizer variance between estimation and provider counting.
+  const reservationInput = Math.max(boundedInput, maxInputTokens);
+  const reservationCost = estimateMaxCost(provider, model, reservationInput, maxOutputTokens);
   if (reservationCost === null) {
     throw new DatabaseUnavailableError(new Error('Cannot calculate reservation cost'));
   }
@@ -391,10 +395,19 @@ export async function complete(request: InferenceRequest): Promise<InferenceResp
     });
 
     if (!settled) {
-      // Settlement failed (likely safety violation: actual > reserved)
+      // Settlement failed — likely safety violation: actual > reserved.
+      // Mark ambiguous (budget stays locked) and fail closed.
+      // The provider was paid but the reservation was insufficient.
       console.error(
-        `[GATEWAY] Settlement failed for ${ledgerId} — actual cost may exceed reservation`
+        `[GATEWAY SAFETY VIOLATION] Settlement failed for ${ledgerId} — actual_cost $${actualCost} > reserved $${reservationCost}`
       );
+      await markAmbiguous(
+        supabase, ledgerId,
+        'settlement_violation',
+        `actual_cost $${actualCost} > reserved $${reservationCost}. Provider charged.`
+      );
+      throw new ProviderError('anthropic', undefined,
+        `Settlement safety violation: actual $${actualCost} > reserved $${reservationCost}`, false);
     }
 
     const textBlock = response.content.find((b) => b.type === 'text');
