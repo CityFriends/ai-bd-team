@@ -181,7 +181,7 @@ const SYNTHETIC_UX_RESEARCH = makeOpp({
   setAside: 'SBA',
   noticeType: 'Solicitation',
   estimatedValue: 200000,
-  description: `Statement of Work: The Department of Veterans Affairs seeks a contractor to perform user research and service design for the redesign of the Benefits Portal. The contractor shall: conduct qualitative user research including user interviews, usability testing, and contextual inquiry with Veterans and VA staff; develop journey maps and service blueprints documenting the current and future state of the benefits application experience; create wireframes and interactive prototypes using the VA Design System (VADS) and USWDS; conduct accessibility research with Veterans using screen readers and assistive technology; deliver research synthesis reports with behavioral archetypes and design recommendations. Deliverables: research plan, moderator guides, participant recruitment plan, usability test reports, journey maps, wireframes, prototype, design recommendations report. Key Personnel: Lead UX Researcher (minimum 5 years federal UX research experience). Period of performance: 12 months. This is a small business set-aside.`,
+  description: `Statement of Work: The Department of Veterans Affairs seeks a contractor to perform user research and service design for the redesign of the Benefits Portal. The contractor shall: conduct qualitative user research including user interviews, usability testing, and contextual inquiry with Veterans and VA staff; develop journey maps and service blueprints documenting the current and future state of the benefits application experience; create wireframes and deliver interactive prototypes using the VA Design System (VADS) and USWDS; conduct accessibility research with Veterans using screen readers and assistive technology; deliver research synthesis reports with behavioral archetypes and design recommendations. Deliverables: research plan, moderator guides, participant recruitment plan, usability test reports, journey maps, wireframes, prototype, design recommendations report. Key Personnel: Lead UX Researcher (minimum 5 years federal UX research experience). Period of performance: 12 months. This is a small business set-aside.`,
 });
 
 /**
@@ -204,6 +204,61 @@ const THIN_NOTICE = makeOpp({
   sourceId: 'THIN-001',
   title: 'IT Support Services',
   description: 'The agency is seeking information about IT support services for an upcoming requirement. Interested vendors should submit capability statements demonstrating relevant experience. This is for market research purposes only and does not constitute a solicitation. No award will result from this notice.',
+});
+
+// ============================================================
+// FALSE-POSITIVE REGRESSION FIXTURES
+// From the 72-record validation run that identified 8 false positives.
+// Each must classify as NOT_A_FIT after the targeted fixes.
+// ============================================================
+
+const SANTI_PROTOTYPE = makeOpp({
+  sourceId: 'FP-SANTI',
+  title: 'Modernization of Scientific and Technical Intelligence (SandTI;) Prototype Effort',
+  agency: 'DEPT OF DEFENSE',
+  naics: '541715',
+  description: `DEPARTMENT OF THE AIR FORCE HEADQUARTERS AIR FORCE LIFE CYCLE MANAGEMENT CENTER WRIGHT-PATTERSON AIR FORCE BASE 30 September 2026 MEMORANDUM FOR: Modernization of Scientific and Technical Intelligence (S&TI) Prototype Effort Interested Parties FROM: AFLCMC/PZIEC Building 2, Room 11 2000 Allbrook Dr. WPAFB, OH 45433 SUBJECT: Government Response to the Question from Industry on the S&TI Prototype Sources Sought Posting 1. In response to the subject effort, please see below Government response: A. Regarding Item 5: Prototype Feasibility, Ballpark ROM & Relevant IP, please confirm if the total period of the ROM is 12 Months +13-48 Months = a projected total of 48 Months Total OR is the intention that the effort is projected at 12 Months + another 13- 48 Months = Upward to 60 Months Total? Government Response: The overall projected total period of performance is 48 months. The Government requests two separate ROMs: One for the initial 12 months, and One for the remaining 36 months (months 13-48).`,
+});
+
+const TRACKCORE_LICENSE = makeOpp({
+  sourceId: 'FP-TRACKCORE',
+  title: 'DA10--TRACKCORE LICENSE AND SUPPORT',
+  agency: 'VETERANS AFFAIRS, DEPARTMENT OF',
+  naics: '541519',
+  description: `SUBJECT* TRACKCORE LICENSE AND SUPPORT GENERAL INFORMATION CONTRACTING OFFICE'S ZIP CODE* 23667 SOLICITATION NUMBER* 36C24626Q1109 RESPONSE DATE/TIME/ZONE 10-05-2026 11:00 EASTERN TIME, NEW YORK, USA ARCHIVE 60 DAYS AFTER THE RESPONSE DATE RECOVERY ACT FUNDS N PRODUCT SERVICE CODE* DA10 NAICS CODE* 541519 CONTRACTING OFFICE ADDRESS Department of Veterans Affairs Network Contracting Office 6 100 Emancipation Drive Hampton VA 23667 POINT OF CONTACT* Contract Specialist Ruth A. Morris ruth.morris@va.gov 757-251-4296 ADDITIONAL INFORMATION AGENCY'S URL https://www.va.gov URL DESCRIPTION website AGENCY CONTACT'S EMAIL ADDRESS ruth.morris@va.gov EMAIL DESCRIPTION Email DESCRIPTION NOTICE OF INTENT TO SOLE SOURCE: The Department of Veterans Affairs Network Contracting Office 6 intends to award a Sole Source, Firm-Fixed-Price, contract to Four Points Technology, LLC, the exclusive authorized distributor of TrackCore software and services. This requirement is for TrackCore software licensing and annual support.`,
+});
+
+const CLC_ELOPEMENT = makeOpp({
+  sourceId: 'FP-CLC-ELOPEMENT',
+  title: '7A21--460-24-009 CLC and Fourth Floor Patient Elopement System',
+  agency: 'VETERANS AFFAIRS, DEPARTMENT OF',
+  naics: '541519',
+  setAside: 'SDVOSBC',
+  description: `VAMC WILMINGTON, DE Infection Control Risk Assessment (ICRA) Step 1. Use the following chart to identify the Type of Construction Project Activity (Type A-D) Type A Inspect and Non-invasive Activities: Includes, but not limited to: Removal of ceiling tiles for visual inspection limited to 1 tile per 50 square feet Painting (but not sanding) Wall covering, electrical trim work, minor plumbing, and activities which do not generate dust or require cutting of walls or access to ceilings. The contractor shall install a patient elopement system with RFID wristbands and door sensors. POINT OF CONTACT* Contract Specialist Kevin Rodgers Kevin.Rodgers2@va.gov 267-207-9835 CONTRACTING OFFICE ADDRESS Department of Veterans Affairs Network Contracting Office 4 Wilmington VA Medical Center 1601 Kirkwood Highway Wilmington, DE 19805 AGENCY'S URL https://www.va.gov URL DESCRIPTION VA website`,
+});
+
+const SMALL_BIZ_EVENT = makeOpp({
+  sourceId: 'FP-SMALL-BIZ-EVENT',
+  title: 'R499--Small Business Event | 2026 National Veterans Small Business Engagement | Cleveland Ohio Dec 8-9',
+  agency: 'VETERANS AFFAIRS, DEPARTMENT OF',
+  naics: '541519',
+  description: `SUBJECT* Small Business Event | 2026 National Veterans Small Business Engagement | Cleveland Ohio Dec 8-9 | Amendment 1 GENERAL INFORMATION CONTRACTING OFFICE'S ZIP CODE* 20001 SOLICITATION NUMBER* 36U10126Q0023 BASE NOTICE TYPE RESPONSE DATE/TIME/ZONE 12-08-2026 23:59 EASTERN TIME, NEW YORK, USA ARCHIVE 90 DAYS AFTER THE RESPONSE DATE RECOVERY ACT FUNDS N SET-ASIDE PRODUCT SERVICE CODE* R499 NAICS CODE* 238290 CONTRACTING OFFICE ADDRESS POINT OF CONTACT* Event Planning Direct Access Program (DAP) DirectAccess@va.gov 202-461-4694 Monday - Friday: 8:00am - 4:00pm (EST) AGENCY'S URL https://www.va.gov URL DESCRIPTION VA website DESCRIPTION 1. PURPOSE: This amendment is being issued to reference an additional industry NAICS code that is closely associated with the specific communities of interest targeted for the 2026 National Veterans Small Business Engagement event in Cleveland, Ohio.`,
+});
+
+const IVX_CERNER = makeOpp({
+  sourceId: 'FP-IVX-CERNER',
+  title: '36C255-27-AP-0383 - IVX & Cerner to Interface with EHRM',
+  agency: 'VETERANS AFFAIRS, DEPARTMENT OF',
+  naics: '541519',
+  description: `Sources Sought Notice SUBJECT* IVX & Cerner to Interface with EHRM GENERAL INFORMATION CONTRACTING OFFICE'S ZIP CODE* 66048 REQUIREMENT NUMBER* 36C255-26-AP-0383 RESPONSE DATE/TIME/ZONE 10-27-2026 11:00AM CENTRAL TIME, CHICAGO, USA RECOVERY ACT FUNDS N SET-ASIDE TBD PRODUCT SERVICE CODE* DA01 NAICS CODE* 541519 CONTRACTING OFFICE ADDRESS Department of Veterans Affairs Network Contracting Office (NCO) 15 3450 S 4th Street Trafficway Leavenworth KS 66048 POINT OF CONTACT* Teresa Cabanting AGENCY'S URL https://www.va.gov URL DESCRIPTION VA website DESCRIPTION THIS IS A SOURCES SOUGHT. The VA Harry S. Truman Memorial Veterans Hospital requires IVX and Cerner software to interface with the Electronic Health Record Modernization (EHRM) system. The contractor shall provide HL7 interface development, Cerner integration, and Oracle Health interoperability services.`,
+});
+
+const GIBBSCAM = makeOpp({
+  sourceId: 'FP-GIBBSCAM',
+  title: 'GibbsCAM GO Software Subscriptions',
+  agency: 'NATIONAL AERONAUTICS AND SPACE ADMINISTRATION',
+  naics: '541519',
+  description: `STATEMENT OF WORK 1. Objective/Requirements The Stennis Space Center machine shop requires the purchase of GibbsCAM software and services to support an increase in workload. 2. Characteristics, Scope, and Specs DESCRIPTION QTY CID # 51121 Key # 44931 GibbsCAM GO Pro Milling - SMP 2 GibbsCAM GO Turning / Combo - SMP 2 New GibbsCAM License GibbsCAM GO Pro Milling - System Create and machine 3-axis solid and surface part models. Import Parasolid and IGES CAD files with ability to repair and modify. Generate automated roughing and finishing cycles with Gouge-free toolpaths. Includes: SolidSurfacer, 2.5D Solids, Solids Import, Advanced CS, Polar & Cylindrical Interpolation, Radial Milling, Machine Simulation, VoluMill Wireframe, VoluMill Solids, CutDATA, Utility Operations, ACIS/SAT Reader, STEP Reader, and VDAFS Reader.`,
 });
 
 // ============================================================
@@ -289,6 +344,43 @@ describe('Capability Qualifier', () => {
       expect(result.classification).not.toBe('PRIME_FIT');
       // If qualifier finds FE dev as supporting, teaming might be possible — but
       // without explicit UX deliverables in the SOW, NOT_A_FIT is the safer call.
+    });
+  });
+
+  describe('False-Positive Regressions (from 72-record validation)', () => {
+    it('S&TI Prototype Effort — defense prototype, not UI prototype', () => {
+      const result = qualifyOpportunity(SANTI_PROTOTYPE, CAPABILITIES, ENGAGEMENTS);
+      expect(result.classification).toBe('NOT_A_FIT');
+    });
+
+    it('TrackCore License — sole-source software license', () => {
+      const result = qualifyOpportunity(TRACKCORE_LICENSE, CAPABILITIES, ENGAGEMENTS);
+      // Boilerplate filter strips false matches; result is NOT_A_FIT or INSUFFICIENT_EVIDENCE
+      expect(result.classification).not.toBe('PRIME_FIT');
+      expect(result.classification).not.toBe('TEAMING_FIT');
+    });
+
+    it('CLC Elopement System — RFID/sensor installation', () => {
+      const result = qualifyOpportunity(CLC_ELOPEMENT, CAPABILITIES, ENGAGEMENTS);
+      expect(result.classification).not.toBe('PRIME_FIT');
+      expect(result.classification).not.toBe('TEAMING_FIT');
+    });
+
+    it('Small Business Event — conference, not services contract', () => {
+      const result = qualifyOpportunity(SMALL_BIZ_EVENT, CAPABILITIES, ENGAGEMENTS);
+      // Not a services contract; boilerplate dominates
+      expect(result.classification).not.toBe('PRIME_FIT');
+      expect(result.classification).not.toBe('TEAMING_FIT');
+    });
+
+    it('IVX & Cerner EHRM — EHR integration', () => {
+      const result = qualifyOpportunity(IVX_CERNER, CAPABILITIES, ENGAGEMENTS);
+      expect(result.classification).toBe('NOT_A_FIT');
+    });
+
+    it('GibbsCAM — CNC machining software subscription', () => {
+      const result = qualifyOpportunity(GIBBSCAM, CAPABILITIES, ENGAGEMENTS);
+      expect(result.classification).toBe('NOT_A_FIT');
     });
   });
 

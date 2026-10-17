@@ -214,13 +214,80 @@ export function extractRequirements(
 }
 
 /**
+ * Line-level boilerplate patterns found in SAM.gov notice formatting.
+ * A signal match on a line containing any of these patterns is boilerplate,
+ * not a technical requirement.
+ */
+const BOILERPLATE_LINE_PATTERNS = [
+  // Agency URLs and contact fields
+  "agency's url",
+  'url description',
+  'email description',
+  'agency contact',
+  'point of contact',
+  'contracting office address',
+  'contracting office',
+  'contract specialist',
+  // Procurement metadata (only exact SAM.gov field labels)
+  'solicitation number*',
+  'response date/time/zone',
+  'recovery act funds',
+  'naics code*',
+  'product service code*',
+  'set-aside*',
+  // Generic notice instructions
+  'this sources sought',
+  'does not constitute a solicitation',
+  'market research purposes',
+  'no award will result',
+  'disclaimer',
+  'interested parties',
+  // VA-specific boilerplate
+  'va.gov',
+  'network contracting office',
+  'technology acquisition center',
+] as const;
+
+/**
  * Check if a character offset falls within a boilerplate section.
- * Looks for boilerplate headers within 500 chars before the offset.
+ *
+ * Two-level check:
+ * 1. Section-level: boilerplate headers within 500 chars before offset
+ * 2. Line-level: the line containing the match has boilerplate patterns
  */
 function isInBoilerplateSection(text: string, offset: number): boolean {
+  // Section-level check (original)
   const windowStart = Math.max(0, offset - 500);
-  const window = text.slice(windowStart, offset).toLowerCase();
-  return BOILERPLATE_SECTION_HEADERS.some((h) => window.includes(h));
+  const sectionWindow = text.slice(windowStart, offset).toLowerCase();
+  if (BOILERPLATE_SECTION_HEADERS.some((h) => sectionWindow.includes(h))) {
+    return true;
+  }
+
+  // Line-level check: extract the line containing the offset
+  const lineStart = text.lastIndexOf('\n', offset) + 1;
+  const lineEnd = text.indexOf('\n', offset);
+  const line = text
+    .slice(lineStart, lineEnd === -1 ? undefined : lineEnd)
+    .toLowerCase();
+
+  if (BOILERPLATE_LINE_PATTERNS.some((p) => line.includes(p))) {
+    return true;
+  }
+
+  // Nearby-line check: if the surrounding 300 chars contain 3+ distinct
+  // boilerplate indicators, this is a metadata section. Threshold of 3
+  // avoids false positives when SOW text happens to mention one or two
+  // administrative terms.
+  const nearbyStart = Math.max(0, offset - 150);
+  const nearbyEnd = Math.min(text.length, offset + 150);
+  const nearby = text.slice(nearbyStart, nearbyEnd).toLowerCase();
+  let nearbyHits = 0;
+  for (const p of BOILERPLATE_LINE_PATTERNS) {
+    if (nearby.includes(p)) nearbyHits++;
+  }
+  if (nearbyHits >= 3) return true;
+
+  return false;
 }
 
 /**

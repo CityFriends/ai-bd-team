@@ -106,8 +106,10 @@ export const CAPABILITIES: CapabilityEntry[] = [
     strength: 'Strong',
     matchSignals: [
       'product design', 'interaction design', 'ui design', 'ux design',
-      'design system', 'uswds', 'va design system', 'figma', 'wireframe',
-      'prototype', 'mockup', 'visual design',
+      'design system', 'uswds', 'va design system', 'figma',
+      'wireframes and', 'create wireframes', 'deliver wireframes',
+      'interactive prototype', 'design prototype', 'clickable prototype',
+      'high-fidelity prototype', 'lo-fi prototype', 'mockup', 'visual design',
     ],
     exclusionSignals: [],
     engagementIds: ['ENG-11', 'ENG-06', 'ENG-10', 'ENG-14', 'ENG-17'],
@@ -177,7 +179,7 @@ export const CAPABILITIES: CapabilityEntry[] = [
     strength: 'Moderate',
     matchSignals: [
       'front-end development', 'frontend development', 'front-end engineering',
-      'frontend engineering', 'react development', 'va.gov',
+      'frontend engineering', 'react application', 'react front-end',
     ],
     exclusionSignals: [],
     engagementIds: ['ENG-07', 'ENG-05', 'ENG-18'],
