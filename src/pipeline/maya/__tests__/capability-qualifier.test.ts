@@ -198,6 +198,40 @@ const SYNTHETIC_MIXED_SCOPE = makeOpp({
   description: `Statement of Work: The contractor shall modernize a legacy caseworker portal used by 5,000 HHS field staff. Work scope includes two primary areas: (1) User Research and Design — Conduct user research with caseworkers including contextual inquiry, usability testing, and co-design sessions. Develop service blueprints, interaction designs, and accessible prototypes. Perform accessibility research and deliver design system contributions. (2) Backend Development and Infrastructure — Develop RESTful APIs and microservices using Python/Django. Perform database development including PostgreSQL schema design and data migration from legacy Oracle systems. Implement cloud infrastructure on AWS GovCloud with CI/CD pipelines and DevSecOps practices. Manage ATO process including FISMA documentation and vulnerability management. The contractor shall provide key personnel for both UX and engineering work streams. Labor categories include: UX Researcher, UX Designer, Backend Engineer, DevOps Engineer, Cloud Architect. Period of performance: Base plus two option years.`,
 });
 
+/**
+ * SYNTHETIC OPPORTUNITY — Backend modernization that mentions UX only in passing.
+ * The SOW does NOT include UX/design deliverables — "user experience" appears
+ * only as a motivation, not as a contracted work scope.
+ * Must NOT classify as TEAMING_FIT just because UX keywords exist in context.
+ * NOT a real government opportunity.
+ */
+const SYNTHETIC_BACKEND_NO_UX_SCOPE = makeOpp({
+  sourceId: 'SYNTHETIC-BACKEND-NO-UX-001',
+  title: 'Legacy Application Modernization and Cloud Migration',
+  agency: 'VETERANS AFFAIRS, DEPARTMENT OF',
+  naics: '541512',
+  noticeType: 'Sources Sought',
+  description: `Statement of Work: The contractor shall modernize the VA's legacy claims processing application from a monolithic Java architecture to cloud-native microservices. The goal is to improve user experience by reducing system latency and increasing availability. Tasks include: (1) Backend Development — Redesign the existing Java application as RESTful microservices using Spring Boot and PostgreSQL. Implement event-driven architecture with Apache Kafka. (2) Cloud Migration — Migrate from on-premises hosting to AWS GovCloud. Implement Infrastructure as Code using Terraform. Configure CI/CD pipelines with Jenkins and ArgoCD. (3) DevSecOps — Implement automated security scanning, vulnerability management, and continuous ATO monitoring per NIST 800-53. (4) Data Migration — Design and execute data migration from Oracle 11g to PostgreSQL including schema transformation and validation. Labor categories: Senior Java Developer, Cloud Architect, DevOps Engineer, Database Engineer, Security Engineer. Period of performance: 24 months.`,
+});
+
+/**
+ * SYNTHETIC OPPORTUNITY — Full-stack with explicit, separable UX research task.
+ * The SOW explicitly requires user research AND backend development as
+ * separate work streams with distinct labor categories.
+ * Should classify as TEAMING_FIT: FFTC delivers the UX research workshare,
+ * partner brings backend/DevOps.
+ * NOT a real government opportunity.
+ */
+const SYNTHETIC_FULLSTACK_WITH_UX = makeOpp({
+  sourceId: 'SYNTHETIC-FULLSTACK-UX-001',
+  title: 'Benefits Portal Modernization — Full Stack with User Research',
+  agency: 'VETERANS AFFAIRS, DEPARTMENT OF',
+  naics: '541512',
+  setAside: 'SBA',
+  noticeType: 'Solicitation',
+  description: `Performance Work Statement: The contractor shall modernize the VA Benefits Portal through two integrated work streams. Task Area 1 — User Research and Design: Conduct user research with Veterans including usability testing, contextual inquiry, and co-design sessions. Develop journey maps and service blueprints. Create wireframes and deliver interactive prototypes using the VA Design System. Perform accessibility research with assistive technology users. Deliver behavioral archetypes and design recommendations. Key personnel: Lead UX Researcher. Task Area 2 — Application Development: Develop backend APIs using Node.js and PostgreSQL. Implement cloud infrastructure on AWS GovCloud with DevSecOps practices. Build CI/CD pipelines. Manage the ATO process. Key personnel: Technical Lead, Senior Backend Developer. Task Area 3 — Product Management: Provide embedded product management including backlog management, sprint planning, and stakeholder coordination. The contractor shall deliver working software increments every two weeks. Period of performance: Base plus two option years.`,
+});
+
 // Thin notice for INSUFFICIENT_EVIDENCE testing — has description but
 // too sparse to determine scope (above 200 chars but no SOW indicators)
 const THIN_NOTICE = makeOpp({
@@ -381,6 +415,47 @@ describe('Capability Qualifier', () => {
     it('GibbsCAM — CNC machining software subscription', () => {
       const result = qualifyOpportunity(GIBBSCAM, CAPABILITIES, ENGAGEMENTS);
       expect(result.classification).toBe('NOT_A_FIT');
+    });
+  });
+
+  describe('Backend/Full-Stack Discovery Coverage', () => {
+    it('backend-only SOW without UX deliverables → NOT_A_FIT (not TEAMING)', () => {
+      const result = qualifyOpportunity(SYNTHETIC_BACKEND_NO_UX_SCOPE, CAPABILITIES, ENGAGEMENTS);
+      // "user experience" appears as motivation text, not as a deliverable
+      // No UX/design labor categories, no research tasks
+      expect(result.classification).toBe('NOT_A_FIT');
+      expect(result.classification).not.toBe('TEAMING_FIT');
+      expect(result.classification).not.toBe('PRIME_FIT');
+    });
+
+    it('full-stack with explicit UX research task area → TEAMING_FIT', () => {
+      const result = qualifyOpportunity(SYNTHETIC_FULLSTACK_WITH_UX, CAPABILITIES, ENGAGEMENTS);
+      expect(result.classification).toBe('TEAMING_FIT');
+
+      // FFTC workshare should be UX research and/or design, not backend
+      expect(result.teamingFeasibility.fftcWorkshare.length).toBeGreaterThan(0);
+      const workshareText = result.teamingFeasibility.fftcWorkshare.join(' ');
+      expect(workshareText).not.toContain('Backend');
+      expect(workshareText).not.toContain('Cloud');
+
+      // Partner requirements should include backend/DevOps
+      expect(result.teamingFeasibility.partnerRequirements.length).toBeGreaterThan(0);
+
+      // Supporting engagements should reference real FFTC work
+      expect(result.supportingEngagements.length).toBeGreaterThan(0);
+    });
+
+    it('full-stack discovery does not automatically produce PRIME_FIT', () => {
+      // Even with UX deliverables, backend-heavy scope should not be PRIME
+      const result = qualifyOpportunity(SYNTHETIC_FULLSTACK_WITH_UX, CAPABILITIES, ENGAGEMENTS);
+      expect(result.classification).not.toBe('PRIME_FIT');
+    });
+
+    it('MCC full-stack recompete — no separable UX workshare in SOW', () => {
+      // MCC SOW lists only engineering labor categories, no UX roles
+      const result = qualifyOpportunity(MCC_SOFTWARE, CAPABILITIES, ENGAGEMENTS);
+      expect(result.classification).not.toBe('PRIME_FIT');
+      expect(result.classification).not.toBe('TEAMING_FIT');
     });
   });
 

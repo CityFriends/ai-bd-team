@@ -165,7 +165,6 @@ export const CAPABILITIES: CapabilityEntry[] = [
     strength: 'Limited',
     matchSignals: [
       'product management', 'product owner', 'product strategy', 'product roadmap',
-      'backlog management',
     ],
     exclusionSignals: [],
     engagementIds: ['ENG-09', 'ENG-04', 'ENG-19', 'ENG-13'],

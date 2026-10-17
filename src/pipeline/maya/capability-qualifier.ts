@@ -511,47 +511,48 @@ function determineClassification(
     return 'INSUFFICIENT_EVIDENCE';
   }
 
-  // NOT_A_FIT if primary scope is dominated by NOT_ESTABLISHED exclusions
-  const notEstablishedExclusions = primaryExclusions.filter((e) => {
-    const cap = CAPABILITIES.find((c) => c.id === e.capabilityId);
-    return cap?.classification === 'NOT_ESTABLISHED';
-  });
-  if (notEstablishedExclusions.length > 0 && primaryProven.length === 0) {
-    return 'NOT_A_FIT';
-  }
-  // Even with proven matches, if NOT_ESTABLISHED exclusions outnumber them,
-  // the primary scope is outside FFTC's capabilities
-  if (notEstablishedExclusions.length > primaryProven.length) {
-    return 'NOT_A_FIT';
-  }
-
-  // NOT_A_FIT if primary scope requires only TEAMING capabilities with no proven anchor
-  if (primaryTeaming.length > 0 && primaryProven.length === 0 && !teaming.feasible) {
-    return 'NOT_A_FIT';
-  }
-
   // NOT_A_FIT if it's a COTS/SaaS/product licensing procurement
   if (isCOTSOrProductProcurement(_lowerText)) {
     return 'NOT_A_FIT';
   }
 
-  // No proven matches in primary scope at all → NOT_A_FIT
-  if (primaryProven.length === 0) {
+  const notEstablishedExclusions = primaryExclusions.filter((e) => {
+    const cap = CAPABILITIES.find((c) => c.id === e.capabilityId);
+    return cap?.classification === 'NOT_ESTABLISHED';
+  });
+
+  // NOT_A_FIT if primary scope is NOT_ESTABLISHED and no proven anchor exists
+  // AND no teaming workshare is feasible
+  if (notEstablishedExclusions.length > 0 && primaryProven.length === 0 && !teaming.feasible) {
     return 'NOT_A_FIT';
   }
 
-  // PRIME_FIT if prime feasibility is assessed as feasible
-  if (prime.feasible && primaryExclusions.length === 0) {
+  // NOT_A_FIT if primary scope requires only TEAMING capabilities with no proven anchor
+  // AND no teaming workshare is feasible
+  if (primaryTeaming.length > 0 && primaryProven.length === 0 && !teaming.feasible) {
+    return 'NOT_A_FIT';
+  }
+
+  // No proven matches in primary scope at all AND no teaming workshare → NOT_A_FIT
+  if (primaryProven.length === 0 && !teaming.feasible) {
+    return 'NOT_A_FIT';
+  }
+
+  // PRIME_FIT if prime feasibility is assessed as feasible and no NOT_ESTABLISHED
+  // exclusions dominate the primary scope
+  if (prime.feasible && notEstablishedExclusions.length === 0 && primaryExclusions.length === 0) {
     return 'PRIME_FIT';
   }
 
-  // TEAMING_FIT if there's a meaningful proven workshare alongside partner requirements
+  // TEAMING_FIT: a credible separable FFTC workshare exists alongside
+  // TEAMING_REQUIRED or NOT_ESTABLISHED scope that requires a partner.
+  // Discovery is broad; qualification is against FFTC capabilities.
   if (teaming.feasible && teaming.fftcWorkshare.length > 0) {
     return 'TEAMING_FIT';
   }
 
-  // NOT_A_FIT as default when exclusions dominate or no match
-  if (primaryExclusions.length > 0) {
+  // NOT_A_FIT if exclusions dominate and no workshare identified
+  if (notEstablishedExclusions.length > primaryProven.length && !teaming.feasible) {
     return 'NOT_A_FIT';
   }
 
