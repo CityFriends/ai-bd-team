@@ -27,6 +27,7 @@ const MAX_SUBDIVISION_DEPTH = 4; // Minimum window: ~1 day from a 16-day range
 export type DiscoveryLane = 'CORE_NAICS' | 'BROAD_FEDERAL' | 'CERTIFICATION' | 'MULTIPLE';
 
 const BROAD_TITLE_KEYWORDS = [
+  // Existing (proven coverage)
   'modernization',
   'software development',
   'web application',
@@ -35,6 +36,14 @@ const BROAD_TITLE_KEYWORDS = [
   'agile',
   'digital transformation',
   'Drupal',
+  // UX/HCD — FFTC proven capabilities
+  'user research',
+  'human-centered design',
+  'service design',
+  'accessibility',
+  // Backend/full-stack — teaming discovery targets
+  'cloud native',
+  'application development',
 ];
 
 const CERTIFICATION_SET_ASIDES = ['8A', '8AN', 'SDVOSB', 'SDVOSBC', 'SDVOSBS', 'WOSB'];
