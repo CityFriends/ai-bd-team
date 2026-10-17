@@ -25,6 +25,7 @@ import {
 } from '../../services/evidence/document-acquisition.js';
 import { computeRawHash, computeMaterialHash } from '../../pipeline/maya/change-detect.js';
 import { DEFAULT_THRESHOLDS } from '../../pipeline/maya/types.js';
+import { qualifyOpportunity } from '../../pipeline/maya/capability-qualifier.js';
 import type { NormalizedOpportunity } from '../../pipeline/maya/types.js';
 import { SupabaseCompanyProfileRepository } from '../../pipeline/maya/company-repository.js';
 import { emitEvent, MAYA_EVENT_TYPES } from './events.js';
@@ -237,6 +238,36 @@ export async function runCollectorCycle(
         .digest('hex')
         .slice(0, 16);
 
+      // Shadow capability qualification (does not affect pipeline_decision)
+      let shadowQualification: Record<string, unknown> | null = null;
+      try {
+        const qual = qualifyOpportunity(enrichedOpp);
+        shadowQualification = {
+          classification: qual.classification,
+          primaryScope: qual.primaryScope,
+          evidenceQuality: qual.evidenceQuality.classification,
+          matchedCapabilities: qual.matchedCapabilities.map((m) => ({
+            id: m.capabilityId,
+            name: m.capabilityName,
+            relevance: m.relevance,
+            engagements: m.engagementIds,
+          })),
+          exclusions: qual.exclusions.map((e) => ({
+            id: e.capabilityId,
+            signal: e.signal,
+            inPrimaryScope: e.inPrimaryScope,
+          })),
+          supportingEngagements: qual.supportingEngagements,
+          deliveryLimitations: qual.deliveryLimitations,
+          confidence: qual.confidence,
+          rationale: qual.rationale,
+          qualifierVersion: 'v1-shadow',
+          evaluatedAt: new Date().toISOString(),
+        };
+      } catch {
+        // Shadow qualification errors must never interrupt the collector
+      }
+
       // Determine if Maya review is warranted
       const score = fitScore.totalScore;
       const t = DEFAULT_THRESHOLDS;
@@ -281,6 +312,7 @@ export async function runCollectorCycle(
           past_performance_matches: ppMatches.slice(0, 3),
           scorer_version: 'v1',
           evidence_hash: evidenceHash,
+          capability_qualification: shadowQualification,
           last_seen_at: new Date().toISOString(),
           last_scored_at: new Date().toISOString(),
         },
