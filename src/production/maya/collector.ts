@@ -26,6 +26,7 @@ import {
 import { computeRawHash, computeMaterialHash } from '../../pipeline/maya/change-detect.js';
 import { DEFAULT_THRESHOLDS } from '../../pipeline/maya/types.js';
 import { qualifyOpportunity } from '../../pipeline/maya/capability-qualifier.js';
+import { recommendPursuit } from '../../pipeline/maya/pursuit-recommendation.js';
 import type { NormalizedOpportunity } from '../../pipeline/maya/types.js';
 import { SupabaseCompanyProfileRepository } from '../../pipeline/maya/company-repository.js';
 import { emitEvent, MAYA_EVENT_TYPES } from './events.js';
@@ -204,8 +205,9 @@ export async function runCollectorCycle(
 
       // Evidence enrichment
       let enrichedOpp = opp;
+      let ev: Awaited<ReturnType<typeof acquireOpportunityEvidence>> | null = null;
       if (opp.attachments.length > 0) {
-        const ev = await acquireOpportunityEvidence(
+        ev = await acquireOpportunityEvidence(
           opp.sourceId,
           opp.attachments,
           config.enrichmentConfig
@@ -268,6 +270,30 @@ export async function runCollectorCycle(
         // Shadow qualification errors must never interrupt the collector
       }
 
+      // Shadow pursuit recommendation (does not affect pipeline_decision)
+      let shadowPursuit: Record<string, unknown> | null = null;
+      try {
+        if (shadowQualification) {
+          const qual = qualifyOpportunity(enrichedOpp);
+          const pursuit = recommendPursuit(enrichedOpp, qual);
+          shadowPursuit = {
+            action: pursuit.action,
+            qualification: pursuit.qualification,
+            evidenceCompleteness: pursuit.evidenceCompleteness,
+            primeAssessment: pursuit.primeAssessment,
+            teamingAssessment: pursuit.teamingAssessment,
+            attractiveness: pursuit.attractiveness,
+            deniseQuestions: pursuit.deniseQuestions,
+            nextSteps: pursuit.nextSteps,
+            rationale: pursuit.rationale,
+            recommenderVersion: pursuit.recommenderVersion,
+            evaluatedAt: pursuit.evaluatedAt,
+          };
+        }
+      } catch {
+        // Shadow pursuit errors must never interrupt the collector
+      }
+
       // Determine if Maya review is warranted
       const score = fitScore.totalScore;
       const t = DEFAULT_THRESHOLDS;
@@ -313,11 +339,44 @@ export async function runCollectorCycle(
           scorer_version: 'v1',
           evidence_hash: evidenceHash,
           capability_qualification: shadowQualification,
+          pursuit_recommendation: shadowPursuit,
           last_seen_at: new Date().toISOString(),
           last_scored_at: new Date().toISOString(),
         },
         { onConflict: 'source,source_id' }
       );
+
+      // Persist evidence metadata after upsert (FK now exists)
+      try {
+        if (ev && ev.sources.length > 0) {
+          const { data: oppRow } = await supabase
+            .from('pipeline_opportunities')
+            .select('id')
+            .eq('source', opp.source)
+            .eq('source_id', opp.sourceId)
+            .maybeSingle();
+
+          if (oppRow?.id) {
+            for (const src of ev.sources) {
+              await supabase.from('opportunity_evidence').upsert(
+                {
+                  opportunity_id: oppRow.id,
+                  document_url: src.documentUrl,
+                  document_name: src.documentName,
+                  content_hash: src.contentHash,
+                  extraction_method: src.extractionMethod,
+                  extracted_chars: src.charCount,
+                  status: 'extracted',
+                  retrieved_at: src.retrievedAt,
+                },
+                { onConflict: 'opportunity_id,document_url' }
+              );
+            }
+          }
+        }
+      } catch {
+        // Evidence persistence errors must never interrupt the collector
+      }
 
       // Create review event if warranted and within caps
       if (needsReview && reviewsThisCycle < maxPerCycle && reviewsToday < maxPerDay) {
