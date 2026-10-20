@@ -192,7 +192,8 @@ SCOPE: ${(opp.description || '').slice(0, 1800)}
 REASONING: 1. What is being bought? 2. What maps to FFTC services? 3. Services or COTS? 4. CAN vs SHOULD compete.
 For clear COTS/licensing → PASS. For ambiguous → WATCH.
 
-Return ONLY JSON (no markdown): {"recommendation":"EVALUATE"|"WATCH"|"PASS","confidence":0-100,"acquisitionNature":"max200","fitReasons":["max3"],"concerns":["max3"],"evidenceUsed":["max5"],"missingInformation":["max3"],"researchRequests":[{"type":"SAM_FOLLOWUP|SOLICITATION_DOCUMENT_REVIEW|SOURCE_REFRESH|ACQUISITION_CLARIFICATION|CUSTOMER_INFORMATION_GAP","reason":""}],"rationale":"max600chars"}
+Return ONLY JSON (no markdown): {"recommendation":"EVALUATE"|"WATCH"|"PASS","confidence":0-100,"acquisitionNature":"max200chars","fitReasons":["max3items,200chars each"],"concerns":["max3items"],"evidenceUsed":["max5items"],"missingInformation":["max3items"],"researchRequests":[{"type":"SAM_FOLLOWUP|SOLICITATION_DOCUMENT_REVIEW|SOURCE_REFRESH|ACQUISITION_CLARIFICATION|CUSTOMER_INFORMATION_GAP","reason":"max200chars"}],"rationale":"max800chars"}
+STRICT LIMITS: researchRequests max 2 items. rationale max 800 characters. All string items max 200 characters.
 Research types: SAM_FOLLOWUP (check SAM updates), SOLICITATION_DOCUMENT_REVIEW (review attached docs), SOURCE_REFRESH (re-fetch evidence), ACQUISITION_CLARIFICATION (ambiguous procurement type), CUSTOMER_INFORMATION_GAP (info humans should eventually pursue).
 Be concise. Max 3 reasons, 3 concerns. Do not repeat source text.`;
 
@@ -210,9 +211,49 @@ Be concise. Max 3 reasons, 3 concerns. Do not repeat source text.`;
       opportunityId: task.opportunity_id,
     });
 
-    // 8. Parse + validate
+    // 8. Parse + normalize + validate
     const cleanText = response.text.replace(/```json\s*/g, '').replace(/```\s*/g, '');
     const raw = JSON.parse(cleanText.match(/\{[\s\S]*\}/)?.[0] || '{}');
+
+    // Bounded normalization: truncate oversized fields rather than rejecting
+    // useful analysis. The schema remains the safety backstop.
+    if (typeof raw.rationale === 'string' && raw.rationale.length > 800) {
+      raw.rationale = raw.rationale.slice(0, 797) + '...';
+    }
+    if (Array.isArray(raw.researchRequests) && raw.researchRequests.length > 2) {
+      raw.researchRequests = raw.researchRequests.slice(0, 2);
+    }
+    if (Array.isArray(raw.fitReasons) && raw.fitReasons.length > 3) {
+      raw.fitReasons = raw.fitReasons.slice(0, 3);
+    }
+    if (Array.isArray(raw.concerns) && raw.concerns.length > 3) {
+      raw.concerns = raw.concerns.slice(0, 3);
+    }
+    if (Array.isArray(raw.evidenceUsed) && raw.evidenceUsed.length > 5) {
+      raw.evidenceUsed = raw.evidenceUsed.slice(0, 5);
+    }
+    if (Array.isArray(raw.missingInformation) && raw.missingInformation.length > 3) {
+      raw.missingInformation = raw.missingInformation.slice(0, 3);
+    }
+    // Truncate individual string items
+    for (const key of ['fitReasons', 'concerns', 'evidenceUsed', 'missingInformation'] as const) {
+      if (Array.isArray(raw[key])) {
+        raw[key] = raw[key].map((s: unknown) =>
+          typeof s === 'string' && s.length > 200 ? s.slice(0, 197) + '...' : s
+        );
+      }
+    }
+    if (Array.isArray(raw.researchRequests)) {
+      for (const rr of raw.researchRequests) {
+        if (rr && typeof rr.reason === 'string' && rr.reason.length > 200) {
+          rr.reason = rr.reason.slice(0, 197) + '...';
+        }
+      }
+    }
+    if (typeof raw.acquisitionNature === 'string' && raw.acquisitionNature.length > 200) {
+      raw.acquisitionNature = raw.acquisitionNature.slice(0, 197) + '...';
+    }
+
     const decision = MayaDecisionSchema.parse(raw);
 
     // 9. Update task
@@ -229,15 +270,13 @@ Be concise. Max 3 reasons, 3 concerns. Do not repeat source text.`;
       })
       .eq('id', taskId);
 
-    // 9b. Settle Maya observation slot
-    await supabase
-      .rpc('settle_maya_observation_slot', {
-        p_task_id: taskId,
-        p_reserved_cost_usd: 0.02,
-        p_actual_cost_usd: response.costUsd || 0,
-        p_ledger_id: response.ledgerId,
-      })
-      .catch(() => {}); // Non-critical if observation window doesn't exist
+    // 9b. Settle Maya observation slot (non-critical)
+    await supabase.rpc('settle_maya_observation_slot', {
+      p_task_id: taskId,
+      p_reserved_cost_usd: 0.02,
+      p_actual_cost_usd: response.costUsd || 0,
+      p_ledger_id: response.ledgerId,
+    }); // Error ignored — observation window is optional
 
     // 10. Update opportunity
     await supabase
