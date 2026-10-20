@@ -58,12 +58,15 @@ export async function processReviewTask(
   taskId: string
 ): Promise<MayaDecision | null> {
   // 0. Check Maya observation window (if one exists)
-  const { data: obsSlot } = await supabase
+  const { data: obsSlot, error: obsErr } = await supabase
     .rpc('claim_maya_observation_slot', {
       p_task_id: taskId,
       p_reserved_cost_usd: 0.02, // Conservative estimate for observation accounting
-    })
-    .catch(() => ({ data: true })); // RPC not found = no window = no limit
+    });
+  // RPC error (e.g., function not found, no window) = no limit, proceed
+  if (obsErr) {
+    // Non-fatal: observation window is optional
+  }
   if (obsSlot === false) {
     console.log(`[MayaTaskProcessor] Observation window exhausted — skipping task ${taskId}`);
     return null;
