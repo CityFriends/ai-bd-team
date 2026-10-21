@@ -79,11 +79,17 @@ describe('Slack Projection Control', () => {
 });
 
 describe('Button Value Parsing', () => {
-  it('parses material hash from button value', async () => {
+  it('parses material hash from legacy button value', async () => {
     const { parseButtonValue } = await import('../slack-surface.js');
-    expect(parseButtonValue('abcdef1234567890:capture')).toEqual({
-      materialHash: 'abcdef1234567890',
-    });
+    const result = parseButtonValue('abcdef1234567890:capture');
+    expect(result.materialHash).toBe('abcdef1234567890');
+  });
+
+  it('parses hash and opportunityId from new format', async () => {
+    const { parseButtonValue } = await import('../slack-surface.js');
+    const result = parseButtonValue('abcdef1234567890:DA01--VA-27-00015330:capture');
+    expect(result.materialHash).toBe('abcdef1234567890');
+    expect(result.opportunityId).toBe('DA01--VA-27-00015330');
   });
 
   it('returns empty for plain value', async () => {

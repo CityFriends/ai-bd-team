@@ -93,6 +93,35 @@ export async function processReviewTask(
 
     if (!opp) throw new Error(`Opportunity not found: ${task.opportunity_id}`);
 
+    // 2b. Recheck dismissal — may have occurred between task creation and processing.
+    // Also check by solicitation_number: SAM.gov can republish the same solicitation
+    // under a different source_id UUID.
+    let dismissed = opp.human_action === 'DISMISSED';
+    if (!dismissed && opp.solicitation_number) {
+      const { data: solDismissed } = await supabase
+        .from('pipeline_opportunities')
+        .select('source_id')
+        .eq('solicitation_number', opp.solicitation_number)
+        .eq('human_action', 'DISMISSED')
+        .limit(1);
+      if (solDismissed && solDismissed.length > 0) {
+        dismissed = true;
+        console.log(
+          `[MayaTaskProcessor] Solicitation ${opp.solicitation_number} dismissed on ${solDismissed[0].source_id} — skipping review for ${task.opportunity_id}`
+        );
+      }
+    }
+    if (dismissed) {
+      await supabase
+        .from('maya_review_tasks')
+        .update({ status: 'skipped', completed_at: new Date().toISOString() })
+        .eq('id', taskId);
+      console.log(
+        `[MayaTaskProcessor] Opportunity ${task.opportunity_id} dismissed by owner — skipping review`
+      );
+      return null;
+    }
+
     // 3. Load org data
     const repo = new SupabaseCompanyProfileRepository(supabase);
     const [profile, pp, prefs] = await Promise.all([

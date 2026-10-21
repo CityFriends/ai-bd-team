@@ -378,8 +378,37 @@ export async function runCollectorCycle(
         // Evidence persistence errors must never interrupt the collector
       }
 
+      // Respect human dismissals — a changed material hash must not override an owner's decision.
+      // human_action is not included in the upsert above, so it is preserved from prior cycles.
+      //
+      // Check BOTH source_id and solicitation_number: SAM.gov can republish the same
+      // solicitation under a different UUID, so a source_id-only check is insufficient.
+      let isDismissed = false;
+      const { data: dismissCheck } = await supabase
+        .from('pipeline_opportunities')
+        .select('human_action')
+        .eq('source_id', opp.sourceId)
+        .single();
+      if (dismissCheck?.human_action === 'DISMISSED') {
+        isDismissed = true;
+      } else if (opp.solicitationNumber) {
+        // Cross-reference: was the same solicitation dismissed under a different source_id?
+        const { data: solDismissed } = await supabase
+          .from('pipeline_opportunities')
+          .select('source_id')
+          .eq('solicitation_number', opp.solicitationNumber)
+          .eq('human_action', 'DISMISSED')
+          .limit(1);
+        if (solDismissed && solDismissed.length > 0) {
+          isDismissed = true;
+          console.log(
+            `[Collector] Solicitation ${opp.solicitationNumber} dismissed on ${solDismissed[0].source_id} — blocking review for ${opp.sourceId}`
+          );
+        }
+      }
+
       // Create review event if warranted and within caps
-      if (needsReview && reviewsThisCycle < maxPerCycle && reviewsToday < maxPerDay) {
+      if (needsReview && !isDismissed && reviewsThisCycle < maxPerCycle && reviewsToday < maxPerDay) {
         const correlationId = `opp:${opp.sourceId}`;
         const idempKey = `review:${opp.sourceId}:${materialHash}:v1`;
 
@@ -440,7 +469,7 @@ export async function runCollectorCycle(
     if (reviewsThisCycle < maxPerCycle && reviewsToday < maxPerDay) {
       const { data: deferred } = await supabase
         .from('pipeline_opportunities')
-        .select('source_id, material_hash, evidence_hash')
+        .select('source_id, material_hash, evidence_hash, human_action')
         .eq('pipeline_decision', 'MAYA_QUICK_REVIEW')
         .is('maya_task_id', null)
         .order('last_scored_at', { ascending: true })
@@ -448,6 +477,7 @@ export async function runCollectorCycle(
 
       for (const d of deferred || []) {
         if (reviewsThisCycle >= maxPerCycle || reviewsToday >= maxPerDay) break;
+        if (d.human_action === 'DISMISSED') continue;
         const idempKey = `review:${d.source_id}:${d.material_hash}:v1`;
 
         const { data: existingTask } = await supabase

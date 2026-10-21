@@ -39,13 +39,17 @@ export function formatOpportunityBrief(
     sourceUrl: string | null;
   },
   decision: MayaDecision,
-  materialHash?: string
+  materialHash?: string,
+  opportunityId?: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): { text: string; blocks: any[] } {
   const text = `MAYA — Opportunity Intelligence\n\n*${opp.title}*\nAgency: ${opp.agency || 'Unknown'}\nRecommendation: ${decision.recommendation} (${decision.confidence}%)`;
 
-  // Encode material version in button values for version-aware command identity
-  const buttonValuePrefix = materialHash ? `${materialHash}:` : '';
+  // Encode material version and opportunity ID in button values for stable command identity.
+  // Format: {materialHash}:{opportunityId}:{action} or {opportunityId}:{action} or {action}
+  const hashPrefix = materialHash ? `${materialHash}:` : '';
+  const oppPrefix = opportunityId ? `${opportunityId}:` : '';
+  const buttonValuePrefix = `${hashPrefix}${oppPrefix}`;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const blocks: any[] = [
@@ -160,37 +164,125 @@ export async function postOpportunityBrief(
     return { success: true };
   }
 
-  // Check for existing brief (idempotent)
-  const { data: existing } = await supabase
-    .from('slack_opportunity_briefs')
-    .select('id, message_ts')
-    .eq('opportunity_id', opportunityId)
-    .eq('status', 'posted')
+  // Respect human dismissals — authoritative pipeline state overrides AI recommendations.
+  // Check both this source_id AND by solicitation_number, because SAM.gov can republish
+  // the same solicitation under a different UUID.
+  const { data: oppState } = await supabase
+    .from('pipeline_opportunities')
+    .select('human_action, solicitation_number')
+    .eq('source_id', opportunityId)
     .single();
-
-  if (existing?.message_ts) {
-    return { success: true, messageTs: existing.message_ts };
+  if (oppState?.human_action === 'DISMISSED') {
+    console.log(`[SlackSurface] Opportunity ${opportunityId} dismissed by owner — skipping Slack post`);
+    return { success: true };
+  }
+  if (oppState?.solicitation_number) {
+    const { data: solDismissed } = await supabase
+      .from('pipeline_opportunities')
+      .select('source_id')
+      .eq('solicitation_number', oppState.solicitation_number)
+      .eq('human_action', 'DISMISSED')
+      .limit(1);
+    if (solDismissed && solDismissed.length > 0) {
+      console.log(
+        `[SlackSurface] Solicitation ${oppState.solicitation_number} dismissed on ${solDismissed[0].source_id} — skipping Slack post for ${opportunityId}`
+      );
+      return { success: true };
+    }
   }
 
-  // Create pending brief record FIRST (DB before Slack)
-  const { data: brief } = await supabase
+  // Check for existing brief in any terminal or active state (idempotent).
+  // Previous check only looked for status='posted', missing dismissed/capture_sent briefs.
+  const { data: existing } = await supabase
     .from('slack_opportunity_briefs')
-    .upsert(
-      {
+    .select('id, message_ts, status, maya_task_id')
+    .eq('opportunity_id', opportunityId)
+    .single();
+
+  if (existing) {
+    // Terminal states: do not re-post
+    if (existing.status === 'dismissed' || existing.status === 'capture_sent') {
+      return { success: true, messageTs: existing.message_ts || undefined };
+    }
+    // Already posted with a valid Slack message
+    if (existing.status === 'posted' && existing.message_ts) {
+      return { success: true, messageTs: existing.message_ts };
+    }
+  }
+
+  // Atomically claim a brief record BEFORE posting to Slack.
+  //
+  // Insert path: unique constraint on opportunity_id rejects concurrent inserts.
+  // Update path: CAS on maya_task_id — only the first writer succeeds because
+  //   PostgreSQL row-level locking ensures the second UPDATE evaluates WHERE
+  //   against the committed value (which the first writer already changed).
+  let briefId: string;
+  if (existing) {
+    // CAS: claim only if maya_task_id still matches what we read.
+    // Worker A: UPDATE SET maya_task_id='task-A' WHERE maya_task_id='old' → succeeds
+    // Worker B: UPDATE SET maya_task_id='task-B' WHERE maya_task_id='old' → blocked, then fails
+    //   (maya_task_id is now 'task-A', not 'old')
+    const casFilter = existing.maya_task_id
+      ? supabase
+          .from('slack_opportunity_briefs')
+          .update({
+            maya_task_id: taskId,
+            channel_id: channelId,
+            thread_owner: 'MAYA',
+            status: 'pending',
+            decision_version: 'v1',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existing.id)
+          .neq('status', 'posted')
+          .eq('maya_task_id', existing.maya_task_id)
+      : supabase
+          .from('slack_opportunity_briefs')
+          .update({
+            maya_task_id: taskId,
+            channel_id: channelId,
+            thread_owner: 'MAYA',
+            status: 'pending',
+            decision_version: 'v1',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existing.id)
+          .neq('status', 'posted')
+          .is('maya_task_id', null);
+
+    const { data: claimed, error: updateErr } = await casFilter.select('id').single();
+    if (updateErr || !claimed) {
+      console.log(`[SlackSurface] Brief ${existing.id} already claimed or posted — skipping`);
+      return { success: true };
+    }
+    briefId = claimed.id;
+  } else {
+    // No existing row — insert. With unique constraint, concurrent inserts are rejected.
+    const { data: inserted, error: insertErr } = await supabase
+      .from('slack_opportunity_briefs')
+      .insert({
         opportunity_id: opportunityId,
         maya_task_id: taskId,
         channel_id: channelId,
         thread_owner: 'MAYA',
         status: 'pending',
         decision_version: 'v1',
-      },
-      { onConflict: 'opportunity_id' }
-    )
-    .select('id')
-    .single();
+      })
+      .select('id')
+      .single();
+    if (insertErr || !inserted) {
+      // Unique violation on concurrent insert, or other DB error
+      console.error(
+        `[SlackSurface] Brief insert failed for ${opportunityId}:`,
+        insertErr?.message || 'no data returned'
+      );
+      return { success: false };
+    }
+    briefId = inserted.id;
+  }
 
   try {
-    const { text, blocks } = formatOpportunityBrief(opp, decision, materialHash);
+    const { text, blocks } = formatOpportunityBrief(opp, decision, materialHash, opportunityId);
 
     const result = await slackClient.chat.postMessage({
       channel: channelId,
@@ -201,8 +293,8 @@ export async function postOpportunityBrief(
     });
 
     if (result.ok && result.ts) {
-      // Update brief with Slack data
-      await supabase
+      // Update brief with Slack data — briefId is guaranteed valid
+      const { error: tsUpdateErr } = await supabase
         .from('slack_opportunity_briefs')
         .update({
           message_ts: result.ts,
@@ -210,13 +302,21 @@ export async function postOpportunityBrief(
           status: 'posted',
           updated_at: new Date().toISOString(),
         })
-        .eq('id', brief?.id);
+        .eq('id', briefId);
+
+      if (tsUpdateErr) {
+        // Critical: Slack message posted but DB not updated — log for reconciliation
+        console.error(
+          `[SlackSurface] CRITICAL: Slack posted but message_ts update failed for brief ${briefId}:`,
+          tsUpdateErr.message
+        );
+      }
 
       // Update opportunity with Slack ref
       await supabase
         .from('pipeline_opportunities')
         .update({
-          slack_brief_id: brief?.id,
+          slack_brief_id: briefId,
         })
         .eq('source_id', opportunityId);
 
@@ -244,11 +344,11 @@ export async function postOpportunityBrief(
     await supabase
       .from('slack_opportunity_briefs')
       .update({
-        projection_attempts: (brief?.projection_attempts || 0) + 1,
+        projection_attempts: 1,
         last_projection_error: msg,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', brief?.id);
+      .eq('id', briefId);
 
     await emitEvent(supabase, {
       eventType: MAYA_EVENT_TYPES.SLACK_PROJECTION_FAILED,
@@ -281,16 +381,38 @@ export async function retrySlackProjection(
 ): Promise<{ success: boolean; messageTs?: string }> {
   if (!isSlackProjectionEnabled()) return { success: false };
 
+  // Respect human dismissals (same check as postOpportunityBrief)
+  const { data: oppState } = await supabase
+    .from('pipeline_opportunities')
+    .select('human_action, solicitation_number')
+    .eq('source_id', opportunityId)
+    .single();
+  if (oppState?.human_action === 'DISMISSED') return { success: false };
+  if (oppState?.solicitation_number) {
+    const { data: solDismissed } = await supabase
+      .from('pipeline_opportunities')
+      .select('source_id')
+      .eq('solicitation_number', oppState.solicitation_number)
+      .eq('human_action', 'DISMISSED')
+      .limit(1);
+    if (solDismissed && solDismissed.length > 0) return { success: false };
+  }
+
   // Load existing brief
   const { data: brief } = await supabase
     .from('slack_opportunity_briefs')
-    .select('id, status, message_ts, maya_task_id')
+    .select('id, status, message_ts, projection_attempts')
     .eq('opportunity_id', opportunityId)
     .single();
 
   if (!brief) return { success: false };
+
+  // Already posted or terminal — no retry needed
   if (brief.status === 'posted' && brief.message_ts) {
     return { success: true, messageTs: brief.message_ts };
+  }
+  if (brief.status === 'dismissed' || brief.status === 'capture_sent') {
+    return { success: false };
   }
 
   // Load opportunity and decision
@@ -318,7 +440,8 @@ export async function retrySlackProjection(
         sourceUrl: opp.source_url,
       },
       decision,
-      opp.material_hash
+      opp.material_hash,
+      opportunityId
     );
 
     const result = await slackClient.chat.postMessage({
@@ -330,7 +453,7 @@ export async function retrySlackProjection(
     });
 
     if (result.ok && result.ts) {
-      await supabase
+      const { error: updateErr } = await supabase
         .from('slack_opportunity_briefs')
         .update({
           message_ts: result.ts,
@@ -339,6 +462,13 @@ export async function retrySlackProjection(
           updated_at: new Date().toISOString(),
         })
         .eq('id', brief.id);
+
+      if (updateErr) {
+        console.error(
+          `[SlackSurface] CRITICAL: Slack retry posted but message_ts update failed for brief ${brief.id}:`,
+          updateErr.message
+        );
+      }
 
       return { success: true, messageTs: result.ts };
     }
@@ -462,12 +592,33 @@ async function validateActionState(
 }
 
 /**
- * Parse material hash from button value.
- * Button values are formatted as "{materialHash}:{action}" or just "{action}".
+ * Parse material hash and opportunity ID from button value.
+ * Button values are formatted as:
+ *   "{materialHash}:{opportunityId}:{action}" (new format with stable ID)
+ *   "{materialHash}:{action}" (legacy format)
+ *   "{action}" (no version info)
+ *
+ * Material hashes are hex strings ≥8 chars. Opportunity IDs contain '--' (SAM format).
  */
-export function parseButtonValue(value: string | undefined): { materialHash?: string } {
+export function parseButtonValue(value: string | undefined): {
+  materialHash?: string;
+  opportunityId?: string;
+} {
   if (!value) return {};
   const parts = value.split(':');
+
+  // New format: {hash}:{oppId}:{action} — 3+ parts, first is hex hash, second contains '--'
+  if (parts.length >= 3 && parts[0].length >= 8) {
+    // Rejoin middle parts in case opportunityId itself contains ':'
+    const middle = parts.slice(1, -1).join(':');
+    if (middle.includes('--')) {
+      return { materialHash: parts[0], opportunityId: middle };
+    }
+    // Legacy 3-part with no '--': treat as {hash}:{action}:{extra}
+    return { materialHash: parts[0] };
+  }
+
+  // Legacy format: {hash}:{action}
   if (parts.length >= 2 && parts[0].length >= 8) {
     return { materialHash: parts[0] };
   }
@@ -849,6 +1000,47 @@ export async function handleDismiss(
  * Handlers: ACK promptly → authorize → parse state → call command handler → reply.
  * ZERO direct LLM calls.
  */
+/**
+ * Resolve opportunity_id from a button click.
+ * Primary: look up slack_opportunity_briefs by message_ts.
+ * Fallback: use opportunity_id encoded in the button value (new format).
+ * This protects against the case where message_ts was never persisted to the brief.
+ */
+async function resolveOpportunityId(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  messageTs: string,
+  buttonOpportunityId?: string
+): Promise<string | null> {
+  // Primary: lookup by message_ts
+  if (messageTs) {
+    const { data: brief } = await supabase
+      .from('slack_opportunity_briefs')
+      .select('opportunity_id')
+      .eq('message_ts', messageTs)
+      .single();
+    if (brief?.opportunity_id) return brief.opportunity_id;
+  }
+
+  // Fallback: use opportunity_id from button value if available
+  if (buttonOpportunityId) {
+    // Verify the opportunity exists before trusting the button value
+    const { data: opp } = await supabase
+      .from('pipeline_opportunities')
+      .select('source_id')
+      .eq('source_id', buttonOpportunityId)
+      .single();
+    if (opp) {
+      console.warn(
+        `[SlackSurface] Brief lookup by message_ts failed — resolved via button opportunityId: ${buttonOpportunityId}`
+      );
+      return opp.source_id;
+    }
+  }
+
+  return null;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function registerMayaActions(app: any): void {
   app.action(
@@ -860,22 +1052,16 @@ export function registerMayaActions(app: any): void {
       const messageTs = body.message?.ts || '';
       const channelId = body.channel?.id || '';
       const action = body.actions?.[0];
-      const { materialHash } = parseButtonValue(action?.value);
+      const { materialHash, opportunityId: buttonOppId } = parseButtonValue(action?.value);
 
-      // Extract opportunityId from brief DB using message_ts
       const { createClient } = await import('@supabase/supabase-js');
       const supabase = createClient(
         process.env.SUPABASE_URL || '',
         process.env.SUPABASE_SERVICE_KEY || ''
       );
 
-      const { data: brief } = await supabase
-        .from('slack_opportunity_briefs')
-        .select('opportunity_id')
-        .eq('message_ts', messageTs)
-        .single();
-
-      if (!brief) {
+      const opportunityId = await resolveOpportunityId(supabase, messageTs, buttonOppId);
+      if (!opportunityId) {
         await client.chat.postMessage({
           channel: channelId,
           thread_ts: messageTs,
@@ -886,7 +1072,7 @@ export function registerMayaActions(app: any): void {
 
       const result = await handleSendToCapture(
         supabase,
-        brief.opportunity_id,
+        opportunityId,
         userId,
         messageTs,
         materialHash
@@ -908,7 +1094,7 @@ export function registerMayaActions(app: any): void {
       const messageTs = body.message?.ts || '';
       const channelId = body.channel?.id || '';
       const action = body.actions?.[0];
-      const { materialHash } = parseButtonValue(action?.value);
+      const { materialHash, opportunityId: buttonOppId } = parseButtonValue(action?.value);
 
       const { createClient } = await import('@supabase/supabase-js');
       const supabase = createClient(
@@ -916,13 +1102,8 @@ export function registerMayaActions(app: any): void {
         process.env.SUPABASE_SERVICE_KEY || ''
       );
 
-      const { data: brief } = await supabase
-        .from('slack_opportunity_briefs')
-        .select('opportunity_id')
-        .eq('message_ts', messageTs)
-        .single();
-
-      if (!brief) {
+      const opportunityId = await resolveOpportunityId(supabase, messageTs, buttonOppId);
+      if (!opportunityId) {
         await client.chat.postMessage({
           channel: channelId,
           thread_ts: messageTs,
@@ -933,7 +1114,7 @@ export function registerMayaActions(app: any): void {
 
       const result = await handleMoreResearch(
         supabase,
-        brief.opportunity_id,
+        opportunityId,
         userId,
         messageTs,
         materialHash
@@ -955,7 +1136,7 @@ export function registerMayaActions(app: any): void {
       const messageTs = body.message?.ts || '';
       const channelId = body.channel?.id || '';
       const action = body.actions?.[0];
-      const { materialHash } = parseButtonValue(action?.value);
+      const { materialHash, opportunityId: buttonOppId } = parseButtonValue(action?.value);
 
       const { createClient } = await import('@supabase/supabase-js');
       const supabase = createClient(
@@ -963,13 +1144,8 @@ export function registerMayaActions(app: any): void {
         process.env.SUPABASE_SERVICE_KEY || ''
       );
 
-      const { data: brief } = await supabase
-        .from('slack_opportunity_briefs')
-        .select('opportunity_id')
-        .eq('message_ts', messageTs)
-        .single();
-
-      if (!brief) {
+      const opportunityId = await resolveOpportunityId(supabase, messageTs, buttonOppId);
+      if (!opportunityId) {
         await client.chat.postMessage({
           channel: channelId,
           thread_ts: messageTs,
@@ -980,7 +1156,7 @@ export function registerMayaActions(app: any): void {
 
       const result = await handleDismiss(
         supabase,
-        brief.opportunity_id,
+        opportunityId,
         userId,
         messageTs,
         'NOT_FIT',
