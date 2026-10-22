@@ -586,8 +586,36 @@ export async function runCollectorCycle(
 }
 
 /**
+ * Build the ops notification message for a newly queued review task.
+ * Exported for testability — the message is informational only.
+ */
+export function buildReviewQueuedNotification(
+  oppTitle: string,
+  agency: string | null,
+  solicitationNumber: string | null,
+  fitScore: number,
+  strategicOverride: boolean,
+  taskIdempKey: string
+): string {
+  return [
+    `[Maya Ops] Opportunity queued for AI assessment`,
+    `Title: ${oppTitle}`,
+    `Agency: ${agency || 'Unknown'}`,
+    `Solicitation: ${solicitationNumber || 'N/A'}`,
+    `Score: ${fitScore}/100${strategicOverride ? ' (strategic override)' : ''}`,
+    `Task key: ${taskIdempKey}`,
+    `Status: QUEUED — awaiting automatic Maya assessment`,
+    `Maya will assess this opportunity automatically when the review processor runs, provided AI review is enabled. No human approval is required for this assessment.`,
+  ].join('\n');
+}
+
+/**
  * Send a deterministic ops notification when a new review task is created.
  * ZERO LLM calls. Uses the ops/admin channel, NOT Maya's opportunity channel.
+ *
+ * This is informational only. Maya's review processor will assess the
+ * opportunity automatically when MAYA_REVIEW_ENABLED=true and the global
+ * AI controls permit inference. No human approval is required.
  */
 async function notifyPendingReviewTask(
   opp: NormalizedOpportunity,
@@ -604,15 +632,14 @@ async function notifyPendingReviewTask(
     const client = new WebClient(token);
     await client.chat.postMessage({
       channel: opsChannel,
-      text: [
-        `[Maya Ops] New pending review task created`,
-        `Title: ${opp.title}`,
-        `Agency: ${opp.agency || 'Unknown'}`,
-        `Solicitation: ${opp.solicitationNumber || 'N/A'}`,
-        `Score: ${fitScore}/100${strategicOverride ? ' (strategic override)' : ''}`,
-        `Task key: ${taskIdempKey}`,
-        `Status: PENDING — awaiting Maya review authorization`,
-      ].join('\n'),
+      text: buildReviewQueuedNotification(
+        opp.title,
+        opp.agency,
+        opp.solicitationNumber,
+        fitScore,
+        strategicOverride,
+        taskIdempKey
+      ),
       unfurl_links: false,
     });
   } catch {
