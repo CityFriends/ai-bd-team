@@ -11,7 +11,6 @@ import { App, LogLevel } from '@slack/bolt';
 import type { HREnvConfig } from '../config/hr-env.js';
 import type { HRAuthProvider } from '../auth/hr-auth.js';
 import { registerLeadershipChannel } from './leadership-channel.js';
-import { registerEmployeeChannel } from './employee-channel.js';
 import { registerDMHandler } from './dm-handler.js';
 
 export interface HRSlackApp {
@@ -35,9 +34,10 @@ export function createHRSlackApp(
     logLevel: LogLevel.INFO,
   });
 
-  // Register channel and DM handlers
+  // Register leadership channel and DM handlers only.
+  // Public employee-help channel (#help-people-ops) is NOT processed.
+  // Employees submit HR questions via direct message to the bot.
   registerLeadershipChannel(app, env, auth, expectedTeamId);
-  registerEmployeeChannel(app, env, auth, expectedTeamId);
   registerDMHandler(app, auth, expectedTeamId);
 
   return {
