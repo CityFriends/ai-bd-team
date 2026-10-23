@@ -173,23 +173,29 @@ export function computeRequestFingerprint(
 // ============================================================
 
 /**
- * Sync the configured admin list to hr_bootstrap_admins.
+ * Atomically sync the configured admin list to hr_bootstrap_admins.
+ * Uses a transactional RPC — inserts missing, removes stale, in one commit.
+ * Rejects empty lists to prevent accidental wipe.
  * Called once at startup so the RPC functions can verify authorization.
  */
 export async function syncBootstrapAdmins(
   db: SupabaseClient,
   adminSlackIds: string[]
-): Promise<void> {
-  // Clear stale entries
-  await db.from('hr_bootstrap_admins').delete().not('slack_user_id', 'in', `(${adminSlackIds.map((_,i) => `$${i+1}`).join(',')})`);
-
-  // Upsert current admins
-  for (const slackId of adminSlackIds) {
-    await db.from('hr_bootstrap_admins').upsert(
-      { slack_user_id: slackId },
-      { onConflict: 'slack_user_id' }
-    );
+): Promise<{ added: number; removed: number; error: string | null }> {
+  if (adminSlackIds.length === 0) {
+    return { added: 0, removed: 0, error: 'Cannot sync an empty administrator list' };
   }
+
+  const { data, error } = await db.rpc('hr_sync_bootstrap_admins', {
+    p_desired_ids: adminSlackIds,
+  });
+
+  if (error) {
+    return { added: 0, removed: 0, error: error.message };
+  }
+
+  const result = data as { error: string | null; added: number; removed: number };
+  return { added: result.added, removed: result.removed, error: result.error };
 }
 
 // ============================================================

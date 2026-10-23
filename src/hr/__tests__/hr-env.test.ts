@@ -92,11 +92,30 @@ describe('HR Environment — loadHREnv', () => {
     expect(env.anthropicApiKey).toBeNull();
   });
 
-  it('parses authorized admins from comma-separated list', async () => {
-    process.env.HR_AUTHORIZED_ADMINS = 'U001,U002, U003 ';
+  it('parses valid Slack user IDs from comma-separated list', async () => {
+    process.env.HR_AUTHORIZED_ADMINS = 'U01SC2TNYKU,UABCDEF123, U0ADMIN ';
     const { loadHREnv } = await import('../config/hr-env.js');
     const env = loadHREnv();
-    expect(env.authorizedAdmins).toEqual(['U001', 'U002', 'U003']);
+    expect(env.authorizedAdmins).toEqual(['U01SC2TNYKU', 'UABCDEF123', 'U0ADMIN']);
+  });
+
+  it('accepts empty HR_AUTHORIZED_ADMINS (zero admins)', async () => {
+    delete process.env.HR_AUTHORIZED_ADMINS;
+    const { loadHREnv } = await import('../config/hr-env.js');
+    const env = loadHREnv();
+    expect(env.authorizedAdmins).toEqual([]);
+  });
+
+  it('rejects malformed Slack user IDs', async () => {
+    process.env.HR_AUTHORIZED_ADMINS = 'U01SC2TNYKU,not-a-slack-id';
+    const { loadHREnv } = await import('../config/hr-env.js');
+    expect(() => loadHREnv()).toThrow('invalid Slack user ID');
+  });
+
+  it('rejects IDs that are too short', async () => {
+    process.env.HR_AUTHORIZED_ADMINS = 'U01';
+    const { loadHREnv } = await import('../config/hr-env.js');
+    expect(() => loadHREnv()).toThrow('invalid Slack user ID');
   });
 
   it('does not fall back to BD SLACK_BOT_TOKEN', async () => {

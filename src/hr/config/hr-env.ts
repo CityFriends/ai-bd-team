@@ -89,11 +89,37 @@ export function loadHREnv(): HREnvConfig {
       throw new HREnvError('HR_SLACK_ENABLED=true but HR_EXPECTED_TEAM_ID is missing. Required for workspace validation.');
   }
 
-  // Authorized admins — parsed from comma-separated list
-  const authorizedAdmins = (process.env.HR_AUTHORIZED_ADMINS || '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
+  // Authorized admins — parsed from comma-separated list with Slack user ID validation
+  const SLACK_USER_ID_PATTERN = /^U[A-Z0-9]{4,}$/;
+  const rawAdmins = process.env.HR_AUTHORIZED_ADMINS || '';
+  const parsedEntries = rawAdmins.split(',').map((s) => s.trim()).filter(Boolean);
+  const validAdmins: string[] = [];
+  const invalidAdmins: string[] = [];
+
+  for (const entry of parsedEntries) {
+    if (SLACK_USER_ID_PATTERN.test(entry)) {
+      validAdmins.push(entry);
+    } else {
+      invalidAdmins.push(entry);
+    }
+  }
+
+  // Diagnostic: report parsing outcome without exposing raw values
+  if (rawAdmins) {
+    console.log(`[HR Env] HR_AUTHORIZED_ADMINS: ${parsedEntries.length} entries parsed, ${validAdmins.length} valid, ${invalidAdmins.length} rejected`);
+  } else {
+    console.log('[HR Env] HR_AUTHORIZED_ADMINS: not set');
+  }
+
+  // Reject malformed entries rather than silently filtering
+  if (invalidAdmins.length > 0) {
+    throw new HREnvError(
+      `HR_AUTHORIZED_ADMINS contains ${invalidAdmins.length} invalid Slack user ID(s). ` +
+        'Valid IDs match the pattern U followed by 4+ alphanumeric characters.'
+    );
+  }
+
+  const authorizedAdmins = validAdmins;
 
   const aiEnabled = process.env.HR_AI_ENABLED?.toLowerCase() === 'true';
   const llmEnabled = process.env.HR_LLM_ENABLED?.toLowerCase() === 'true';
