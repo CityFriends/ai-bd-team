@@ -1,0 +1,53 @@
+/**
+ * HR Slack Application
+ *
+ * Dedicated Slack Bolt app for HR, completely independent of the BD Slack app.
+ * Uses HR_BOT_TOKEN / HR_APP_TOKEN — never falls back to BD tokens.
+ *
+ * Socket Mode connection is only established when HR_SLACK_ENABLED=true.
+ */
+
+import { App, LogLevel } from '@slack/bolt';
+import type { HREnvConfig } from '../config/hr-env.js';
+import type { HRAuthProvider } from '../auth/hr-auth.js';
+import { registerLeadershipChannel } from './leadership-channel.js';
+import { registerEmployeeChannel } from './employee-channel.js';
+import { registerDMHandler } from './dm-handler.js';
+
+export interface HRSlackApp {
+  start(): Promise<void>;
+  stop(): Promise<void>;
+}
+
+export function createHRSlackApp(
+  env: HREnvConfig,
+  auth: HRAuthProvider,
+  expectedTeamId?: string
+): HRSlackApp {
+  if (!env.botToken || !env.appToken) {
+    throw new Error('HR Slack app requires HR_BOT_TOKEN and HR_APP_TOKEN.');
+  }
+
+  const app = new App({
+    token: env.botToken,
+    appToken: env.appToken,
+    socketMode: true,
+    logLevel: LogLevel.INFO,
+  });
+
+  // Register channel and DM handlers
+  registerLeadershipChannel(app, env, auth, expectedTeamId);
+  registerEmployeeChannel(app, env, auth, expectedTeamId);
+  registerDMHandler(app, auth, expectedTeamId);
+
+  return {
+    async start() {
+      await app.start();
+      console.log('[HR Slack] Connected via Socket Mode');
+    },
+    async stop() {
+      await app.stop();
+      console.log('[HR Slack] Disconnected');
+    },
+  };
+}
