@@ -11,6 +11,7 @@ export interface HRControls {
   isSlackEnabled(): boolean;
   isAIEnabled(): boolean;
   isLLMEnabled(): boolean;
+  isNotionSyncEnabled(): boolean;
   isSyntheticOnly(): boolean;
 }
 
@@ -19,7 +20,8 @@ export function createHRControls(env: HREnvConfig): HRControls {
     isSlackEnabled: () => env.slackEnabled,
     isAIEnabled: () => env.aiEnabled,
     isLLMEnabled: () => env.llmEnabled,
-    // M1: always true — only synthetic employee records are permitted
+    isNotionSyncEnabled: () =>
+      process.env.HR_NOTION_SYNC_ENABLED?.toLowerCase() === 'true',
     isSyntheticOnly: () => true,
   };
 }

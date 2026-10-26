@@ -1,0 +1,211 @@
+/**
+ * Page Classification — Approved Root Verification and Exclusion
+ *
+ * A page is eligible for indexing ONLY if it descends from an active
+ * approved root. Classification comes from the root, not connection scope.
+ *
+ * Ancestry is resolved via the Notion API parent chain, not title approximation.
+ * Structural exclusion uses the verified path, not titles alone.
+ * Ambiguous or unresolvable ancestry fails closed (excluded).
+ */
+
+import type { NotionPage } from './api-client.js';
+
+export interface ApprovedRoot {
+  id: string;
+  connectionId: string;
+  notionPageId: string;
+  accessClassification: 'employee_safe' | 'hr_restricted';
+  isActive: boolean;
+}
+
+export interface ClassificationResult {
+  approvedRoot: ApprovedRoot | null;
+  accessClassification: 'employee_safe' | 'hr_restricted' | null;
+  isExcluded: boolean;
+  exclusionReason: string | null;
+  resolvedPath: string;
+}
+
+/**
+ * Structural exclusion patterns — deny-by-default for ambiguous content.
+ * Applied to the VERIFIED parent path, not the page title.
+ */
+const EXCLUDED_SUBTREE_PATTERNS = [
+  /\/New Hire Onboarding Hub\/[^/]+\//i,
+  /30-60-90 Day Plan/i,
+  /Employee Relations\/[^/]+$/i,
+  /Employee Directory$/i,
+];
+
+const EXCLUDED_TITLE_PATTERNS = [
+  /Comp Bands & Step Increases Table/i,
+  /Candidate Scoring Matrices/i,
+  /Business Accounts and Logins/i,
+];
+
+/**
+ * Resolve the full ancestry path for a page via the parent chain.
+ * Returns an array of [pageId, title] pairs from root to page.
+ *
+ * getPageTitle: function that fetches a page's title by ID (via Notion API).
+ * Returns null if the page is inaccessible.
+ */
+export async function resolveAncestry(
+  page: NotionPage,
+  pageTitle: string,
+  getPageTitle: (pageId: string) => Promise<{ id: string; title: string; parentPageId: string | null } | null>,
+  maxDepth = 10
+): Promise<{ path: string[]; pathString: string }> {
+  const path: string[] = [pageTitle];
+  let currentParentId = page.parent?.page_id || null;
+
+  for (let depth = 0; depth < maxDepth && currentParentId; depth++) {
+    const parent = await getPageTitle(currentParentId);
+    if (!parent) break; // Inaccessible ancestor — path is incomplete
+    path.unshift(parent.title);
+    currentParentId = parent.parentPageId;
+  }
+
+  return { path, pathString: path.join(' / ') };
+}
+
+/**
+ * Find the approved root for a page using its resolved ancestry.
+ * Checks each ancestor in the path against the approved roots.
+ */
+export function findApprovedRootFromAncestry(
+  pageId: string,
+  ancestorIds: string[],
+  approvedRoots: ApprovedRoot[]
+): ApprovedRoot | null {
+  // Check if the page itself is an approved root
+  const directRoot = approvedRoots.find((r) => r.notionPageId === pageId);
+  if (directRoot) return directRoot;
+
+  // Check each ancestor
+  for (const ancestorId of ancestorIds) {
+    const root = approvedRoots.find((r) => r.notionPageId === ancestorId);
+    if (root) return root;
+  }
+
+  return null;
+}
+
+/**
+ * Classify a page with its verified ancestry path.
+ * This is the primary classification entry point when ancestry is resolved.
+ */
+export function classifyWithVerifiedPath(
+  pageId: string,
+  pageTitle: string,
+  verifiedPath: string,
+  ancestorIds: string[],
+  approvedRoots: ApprovedRoot[]
+): ClassificationResult {
+  const root = findApprovedRootFromAncestry(pageId, ancestorIds, approvedRoots);
+
+  if (!root) {
+    return { approvedRoot: null, accessClassification: null, isExcluded: true,
+             exclusionReason: 'not_under_approved_root', resolvedPath: verifiedPath };
+  }
+
+  if (!root.isActive) {
+    return { approvedRoot: root, accessClassification: null, isExcluded: true,
+             exclusionReason: 'root_deactivated', resolvedPath: verifiedPath };
+  }
+
+  // Structural exclusion against the VERIFIED path
+  const exclusion = checkStructuralExclusion(verifiedPath, pageTitle);
+  if (exclusion) {
+    return { approvedRoot: root, accessClassification: root.accessClassification,
+             isExcluded: true, exclusionReason: exclusion, resolvedPath: verifiedPath };
+  }
+
+  // Quarantine ambiguous content
+  if (shouldQuarantine(pageTitle, verifiedPath)) {
+    return { approvedRoot: root, accessClassification: root.accessClassification,
+             isExcluded: true, exclusionReason: 'quarantined:ambiguous_content',
+             resolvedPath: verifiedPath };
+  }
+
+  return {
+    approvedRoot: root,
+    accessClassification: root.accessClassification,
+    isExcluded: false,
+    exclusionReason: null,
+    resolvedPath: verifiedPath,
+  };
+}
+
+/**
+ * Legacy classification with direct parent check only.
+ * Used when ancestry cannot be resolved (API failure).
+ * Fails closed — unresolvable ancestry is excluded.
+ */
+export function classifyPage(
+  page: NotionPage,
+  pagePath: string,
+  pageTitle: string,
+  approvedRoots: ApprovedRoot[]
+): ClassificationResult {
+  // Check if this page itself is an approved root
+  const directRoot = approvedRoots.find((r) => r.notionPageId === page.id);
+  if (directRoot) {
+    if (!directRoot.isActive) {
+      return { approvedRoot: directRoot, accessClassification: null, isExcluded: true,
+               exclusionReason: 'root_deactivated', resolvedPath: pagePath };
+    }
+    return { approvedRoot: directRoot, accessClassification: directRoot.accessClassification,
+             isExcluded: false, exclusionReason: null, resolvedPath: pagePath };
+  }
+
+  // Check immediate parent
+  if (page.parent?.page_id) {
+    const parentRoot = approvedRoots.find((r) => r.notionPageId === page.parent.page_id);
+    if (parentRoot) {
+      if (!parentRoot.isActive) {
+        return { approvedRoot: parentRoot, accessClassification: null, isExcluded: true,
+                 exclusionReason: 'root_deactivated', resolvedPath: pagePath };
+      }
+      const exclusion = checkStructuralExclusion(pagePath, pageTitle);
+      if (exclusion) {
+        return { approvedRoot: parentRoot, accessClassification: parentRoot.accessClassification,
+                 isExcluded: true, exclusionReason: exclusion, resolvedPath: pagePath };
+      }
+      if (shouldQuarantine(pageTitle, pagePath)) {
+        return { approvedRoot: parentRoot, accessClassification: parentRoot.accessClassification,
+                 isExcluded: true, exclusionReason: 'quarantined:ambiguous_content',
+                 resolvedPath: pagePath };
+      }
+      return { approvedRoot: parentRoot, accessClassification: parentRoot.accessClassification,
+               isExcluded: false, exclusionReason: null, resolvedPath: pagePath };
+    }
+  }
+
+  // No root found — fail closed
+  return { approvedRoot: null, accessClassification: null, isExcluded: true,
+           exclusionReason: 'not_under_approved_root', resolvedPath: pagePath };
+}
+
+function checkStructuralExclusion(path: string, title: string): string | null {
+  for (const pattern of EXCLUDED_SUBTREE_PATTERNS) {
+    if (pattern.test(path)) return `structural:${pattern.source}`;
+  }
+  for (const pattern of EXCLUDED_TITLE_PATTERNS) {
+    if (pattern.test(title)) return `title:${pattern.source}`;
+  }
+  return null;
+}
+
+/**
+ * Check if a page should be quarantined (ambiguous content).
+ */
+export function shouldQuarantine(pageTitle: string, pagePath: string): boolean {
+  // Person name in path: "/ First Last /" or "/ First Last" at end
+  // Handles both "/" and " / " path separators
+  if (/(?:\/\s*)[A-Z][a-z]+ [A-Z][a-z]+(?:\s*\/|$)/.test(pagePath)) return true;
+  // Database-type pages that might contain employee records
+  if (/(?:Directory|Roster|Headcount|Personnel)/i.test(pageTitle)) return true;
+  return false;
+}
