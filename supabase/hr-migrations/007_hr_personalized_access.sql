@@ -254,10 +254,11 @@ BEGIN
   IF v_payload_b64 IS NULL OR v_sig_provided IS NULL THEN RETURN; END IF;
 
   -- 3. Verify HMAC-SHA256 signature
-  --    public.hmac: pgcrypto function, schema-qualified to prevent pg_temp shadowing
+  --    extensions.hmac: pgcrypto on Supabase installs into the extensions schema.
+  --    Schema-qualified to prevent pg_temp shadowing and match Supabase layout.
   BEGIN
     v_sig_expected := encode(
-      public.hmac(decode(v_payload_b64, 'base64'), v_secret::bytea, 'sha256'),
+      extensions.hmac(decode(v_payload_b64, 'base64'), v_secret::bytea, 'sha256'),
       'hex'
     );
   EXCEPTION WHEN OTHERS THEN RETURN; END;
@@ -330,6 +331,16 @@ BEGIN
       OR (conn.scope = 'admin'      AND p.access_classification = 'hr_restricted'))
     AND (s.id IS NULL OR s.approval_status = 'approved')
     AND (s.id IS NULL OR s.is_authoritative = false OR s.source_type = 'handbook_pdf')
+    -- Employee-safe pages require version-locked publication approval (migration 008).
+    -- The content hash must match the approved hash, and the approval must not be revoked.
+    -- Personalized and hr_restricted pages use grants/admin access, not approval.
+    AND (
+      p.access_classification != 'employee_safe'
+      OR EXISTS(SELECT 1 FROM public.hr_page_approvals a
+        WHERE a.knowledge_page_id = p.id
+          AND a.approved_content_hash = p.content_hash
+          AND a.revoked_at IS NULL)
+    )
     AND c.content_text ILIKE '%' || p_query || '%'
     AND (
       v_is_admin

@@ -46,6 +46,16 @@ function makePage(id: string, parentPageId: string | null, title = 'Test Page'):
   };
 }
 
+function makeWikiPage(id: string, parentDatabaseId: string, title = 'Wiki Page'): any {
+  return {
+    id, url: `https://notion.so/${id}`,
+    parent: { type: 'database_id', database_id: parentDatabaseId },
+    last_edited_time: '2026-10-23T12:00:00Z', created_time: '2026-10-20T12:00:00Z',
+    properties: { title: { type: 'title', title: [{ plain_text: title }] } },
+    in_trash: false,
+  };
+}
+
 function mockDb(rpcResult?: unknown, rpcError?: { message: string }) {
   const updateChain = { eq: vi.fn().mockReturnThis() };
   const deleteChain = { eq: vi.fn().mockResolvedValue({ error: null }) };
@@ -116,6 +126,147 @@ describe('Retrieval Authorization', () => {
   it('4c. Personalized page not under any approved root is excluded', () => {
     const result = classifyWithVerifiedPath('p-orphan', 'Some Page',
       'Some Page', [], [ONBOARDING_ROOT, EMPLOYEE_ROOT]);
+    expect(result.isExcluded).toBe(true);
+    expect(result.exclusionReason).toBe('not_under_approved_root');
+  });
+});
+
+// ============================================================
+// Wiki Database Ancestry
+// ============================================================
+
+describe('Wiki Database Ancestry', () => {
+  const HQ_WIKI_ROOT: ApprovedRoot = {
+    id: 'root-hq-wiki', connectionId: 'conn-emp',
+    notionPageId: '2b107a79-51ff-806e-97f2-ec216a0b2126',
+    accessClassification: 'employee_safe', isActive: true,
+  };
+
+  it('W1. Wiki page with database_id parent resolves to wiki root', () => {
+    // Page → parent.database_id = wiki DB → approved root
+    const result = classifyWithVerifiedPath('wiki-p1', 'PTO Policy',
+      'HQ Wiki / PTO Policy',
+      ['2b107a79-51ff-806e-97f2-ec216a0b2126'], [HQ_WIKI_ROOT]);
+    expect(result.accessClassification).toBe('employee_safe');
+    expect(result.isExcluded).toBe(false);
+    expect(result.approvedRoot?.id).toBe('root-hq-wiki');
+  });
+
+  it('W2. Nested wiki page resolves through intermediate DB to root', () => {
+    // Page → inline DB → page → intermediate → wiki DB
+    const result = classifyWithVerifiedPath('wiki-p2', 'Compensation Bands & Step Increases',
+      'HQ Wiki / Career Development / Compensation Bands & Step Increases',
+      ['db-career-dev', 'page-career', 'page-intermediate', '2b107a79-51ff-806e-97f2-ec216a0b2126'],
+      [HQ_WIKI_ROOT]);
+    expect(result.accessClassification).toBe('employee_safe');
+    expect(result.isExcluded).toBe(false);
+  });
+
+  it('W3. Wiki page with database_id parent uses classifyPage correctly', () => {
+    const wikiPage = makeWikiPage('wiki-p3', '2b107a79-51ff-806e-97f2-ec216a0b2126', 'Benefits');
+    const result = classifyPage(wikiPage, 'HQ Wiki / Benefits', 'Benefits', [HQ_WIKI_ROOT]);
+    expect(result.accessClassification).toBe('employee_safe');
+    expect(result.isExcluded).toBe(false);
+  });
+
+  it('W4. Wiki page under non-approved database excluded', () => {
+    const wikiPage = makeWikiPage('wiki-p4', 'unknown-db-id', 'Orphan Page');
+    const result = classifyPage(wikiPage, 'Unknown / Orphan Page', 'Orphan Page', [HQ_WIKI_ROOT]);
+    expect(result.isExcluded).toBe(true);
+    expect(result.exclusionReason).toBe('not_under_approved_root');
+  });
+
+  it('W5. resolveAncestry handles database_id parent type', async () => {
+    const wikiPage = makeWikiPage('wiki-p5', 'db-parent-id', 'Wiki Child');
+    const getTitle = vi.fn()
+      .mockResolvedValueOnce({ id: 'db-parent-id', title: 'Parent DB', parentPageId: null });
+    const ancestry = await resolveAncestry(wikiPage, 'Wiki Child', getTitle);
+    expect(ancestry.path).toEqual(['Parent DB', 'Wiki Child']);
+    expect(getTitle).toHaveBeenCalledWith('db-parent-id');
+  });
+
+  it('W6. resolveAncestry detects cycles and terminates', async () => {
+    const cyclePage = makePage('cycle-a', 'cycle-b', 'Cycle A');
+    const getTitle = vi.fn()
+      .mockResolvedValueOnce({ id: 'cycle-b', title: 'B', parentPageId: 'cycle-a' })
+      .mockResolvedValueOnce({ id: 'cycle-a', title: 'A', parentPageId: 'cycle-b' });
+    const ancestry = await resolveAncestry(cyclePage, 'Cycle A', getTitle);
+    // Resolves cycle-b → cycle-a → detects cycle-b already seen → stops
+    expect(ancestry.path.length).toBeLessThanOrEqual(4);
+    expect(getTitle).toHaveBeenCalledTimes(2); // Resolves both before detecting cycle
+  });
+
+  it('W7. Old Friends HQ page excluded (not under new HQ Wiki root)', () => {
+    // Old HQ page ID is not the new HQ Wiki ID
+    const result = classifyWithVerifiedPath('old-hq-page', 'PTO Policy',
+      'Friends HQ / PTO Policy',
+      ['687cafd6-b54e-4613-bb07-bfc7dbbb161b'], [HQ_WIKI_ROOT]);
+    expect(result.isExcluded).toBe(true);
+    expect(result.exclusionReason).toBe('not_under_approved_root');
+  });
+
+  it('W8. Compensation Bands under new HQ Wiki is employee_safe', () => {
+    const result = classifyWithVerifiedPath(
+      '36407a79-51ff-8097-9cb2-e0c6884c9377', 'Compensation Bands & Step Increases',
+      'HQ Wiki / Career Development / Compensation Bands & Step Increases',
+      ['db-career', 'page-career-dev', '2b107a79-51ff-806e-97f2-ec216a0b2126'],
+      [HQ_WIKI_ROOT]);
+    expect(result.accessClassification).toBe('employee_safe');
+    expect(result.isExcluded).toBe(false);
+  });
+
+  it('W10. Two-word section titles are NOT quarantined', () => {
+    // Career Development, Company Goals, Brand Assets, etc. are legitimate sections
+    const paths = [
+      'HQ Wiki / Career Development / PTO Policy',
+      'HQ Wiki / Company Goals / Q4 Objectives',
+      'HQ Wiki / Brand Assets / Logo Pack',
+      'HQ Wiki / Company Structure / Engineering',
+    ];
+    for (const p of paths) {
+      expect(shouldQuarantine('Child Page', p)).toBe(false);
+    }
+  });
+
+  it('W11. Possessive and personal indicators ARE quarantined', () => {
+    expect(shouldQuarantine('Week 1', "HQ Wiki / Joshua Han's Board / Week 1")).toBe(true);
+    expect(shouldQuarantine('My Onboarding', 'HQ Wiki / My Onboarding')).toBe(true);
+    expect(shouldQuarantine('Employee Directory', 'HQ Wiki / Employee Directory')).toBe(true);
+    expect(shouldQuarantine('Team Roster', 'HQ Wiki / Team Roster')).toBe(true);
+  });
+
+  it('W12. Old Friends HQ legacy onboarding pages excluded by root', () => {
+    const result = classifyWithVerifiedPath('old-onb-page', 'Joshua Han',
+      'Friends HQ / Onboarding Hub / New Hire Onboarding Hub / Joshua Han',
+      ['62e0a340-1029-4940-bc81-501e2fc78316', 'ab49cc75-8f7f-4ccb-ba17-7b0bdc4e84c2',
+       '687cafd6-b54e-4613-bb07-bfc7dbbb161b'],
+      [HQ_WIKI_ROOT]);
+    expect(result.isExcluded).toBe(true);
+    expect(result.exclusionReason).toBe('not_under_approved_root');
+  });
+
+  it('W13. Future onboarding board under separate root is personalized', () => {
+    const ONB_ROOT: ApprovedRoot = {
+      id: 'root-new-onb', connectionId: 'conn-onb', notionPageId: 'new-onb-root-id',
+      accessClassification: 'personalized', isActive: true,
+    };
+    const result = classifyWithVerifiedPath('future-onb', 'Alice Board',
+      'Onboarding Boards / Alice Board',
+      ['new-onb-root-id'], [HQ_WIKI_ROOT, ONB_ROOT]);
+    expect(result.accessClassification).toBe('personalized');
+    expect(result.isExcluded).toBe(false);
+    expect(result.approvedRoot?.id).toBe('root-new-onb');
+  });
+
+  it('W9. Page with neither page_id nor database_id parent excluded', () => {
+    const workspacePage = {
+      id: 'ws-page', url: 'https://notion.so/ws-page',
+      parent: { type: 'workspace', workspace: true },
+      last_edited_time: '2026-10-23T12:00:00Z', created_time: '2026-10-20T12:00:00Z',
+      properties: { title: { type: 'title', title: [{ plain_text: 'Root Page' }] } },
+      in_trash: false,
+    };
+    const result = classifyPage(workspacePage as any, 'Root Page', 'Root Page', [HQ_WIKI_ROOT]);
     expect(result.isExcluded).toBe(true);
     expect(result.exclusionReason).toBe('not_under_approved_root');
   });
@@ -338,9 +489,9 @@ describe('Security Regression — Roots', () => {
     expect(result.isExcluded).toBe(true);
   });
 
-  it('27. Ambiguous descendant quarantined via verified path', () => {
+  it('27. Ambiguous descendant quarantined via possessive indicator', () => {
     const result = classifyWithVerifiedPath('p-ambig', 'Staff Updates',
-      'HQ Wiki / Company / Sarah Johnson / Staff Updates',
+      "HQ Wiki / Company / Sarah Johnson's Notes / Staff Updates",
       ['page-sarah', 'page-company', 'page-hq-wiki'], [EMPLOYEE_ROOT]);
     expect(result.isExcluded).toBe(true);
     expect(result.exclusionReason).toContain('quarantined');

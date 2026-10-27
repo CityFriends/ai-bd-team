@@ -29,11 +29,20 @@ export class NotionRateLimitError extends Error {
 export interface NotionPage {
   id: string;
   url: string;
-  parent: { type: string; page_id?: string; workspace?: boolean };
+  parent: { type: string; page_id?: string; database_id?: string; workspace?: boolean };
   last_edited_time: string;
   created_time: string;
   properties: Record<string, unknown>;
   in_trash: boolean;
+}
+
+/**
+ * Extract the parent ID from a Notion page, regardless of parent type.
+ * Pages can have parent.page_id (regular pages) or parent.database_id
+ * (wiki pages, database entries). Returns null for workspace-level pages.
+ */
+export function getParentId(page: NotionPage): string | null {
+  return page.parent?.page_id || page.parent?.database_id || null;
 }
 
 export interface NotionBlock {
@@ -160,6 +169,25 @@ export async function getPage(
   );
   if (status === 404 || status === 403) return null;
   return data as NotionPage;
+}
+
+/**
+ * Retrieve a database's metadata. Returns null on 404/403.
+ * Used for resolving wiki database parents in ancestry chains.
+ */
+export async function getDatabase(
+  connectionId: string,
+  token: string,
+  databaseId: string
+): Promise<{ id: string; title: string; parentPageId: string | null } | null> {
+  const { status, data } = await notionRequest(
+    connectionId, token, 'GET', `/databases/${databaseId}`
+  );
+  if (status === 404 || status === 403) return null;
+  const db = data as { id: string; title?: Array<{ plain_text: string }>; parent?: { type: string; page_id?: string; database_id?: string; workspace?: boolean } };
+  const title = db.title?.map((t) => t.plain_text).join('') || 'Untitled';
+  const parentPageId = db.parent?.page_id || db.parent?.database_id || null;
+  return { id: db.id, title, parentPageId };
 }
 
 /**

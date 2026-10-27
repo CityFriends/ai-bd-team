@@ -9,7 +9,7 @@
  * Ambiguous or unresolvable ancestry fails closed (excluded).
  */
 
-import type { NotionPage } from './api-client.js';
+import { type NotionPage, getParentId } from './api-client.js';
 
 export interface ApprovedRoot {
   id: string;
@@ -30,17 +30,22 @@ export interface ClassificationResult {
 /**
  * Structural exclusion patterns — deny-by-default for ambiguous content.
  * Applied to the VERIFIED parent path, not the page title.
+ *
+ * These patterns are defense-in-depth for content that should never appear
+ * under the employee-safe HQ Wiki root. The primary classification boundary
+ * is the three-root architecture (employee / onboarding / admin), not these
+ * patterns. Each pattern targets a specific known risk.
  */
 const EXCLUDED_SUBTREE_PATTERNS = [
-  /\/New Hire Onboarding Hub\/[^/]+\//i,
-  /30-60-90 Day Plan/i,
-  /Employee Relations\/[^/]+$/i,
-  /Employee Directory$/i,
+  /\/New Hire Onboarding Hub\/[^/]+\//i,  // Individual onboarding boards nested under shared hub
+  /30-60-90 Day Plan/i,                   // Individual performance plans
+  /Employee Relations\/[^/]+$/i,          // Individual employee-relations cases
+  /Employee Directory$/i,                 // Personnel rosters / databases
 ];
 
 const EXCLUDED_TITLE_PATTERNS = [
-  /Candidate Scoring Matrices/i,
-  /Business Accounts and Logins/i,
+  /Candidate Scoring Matrices/i,          // Recruitment evaluation tools
+  /Business Accounts and Logins/i,        // Credential pages
 ];
 
 /**
@@ -57,9 +62,12 @@ export async function resolveAncestry(
   maxDepth = 10
 ): Promise<{ path: string[]; pathString: string }> {
   const path: string[] = [pageTitle];
-  let currentParentId = page.parent?.page_id || null;
+  let currentParentId = getParentId(page);
+  const seen = new Set<string>(); // Cycle detection
 
   for (let depth = 0; depth < maxDepth && currentParentId; depth++) {
+    if (seen.has(currentParentId)) break; // Cycle — stop
+    seen.add(currentParentId);
     const parent = await getPageTitle(currentParentId);
     if (!parent) break; // Inaccessible ancestor — path is incomplete
     path.unshift(parent.title);
@@ -159,9 +167,10 @@ export function classifyPage(
              isExcluded: false, exclusionReason: null, resolvedPath: pagePath };
   }
 
-  // Check immediate parent
-  if (page.parent?.page_id) {
-    const parentRoot = approvedRoots.find((r) => r.notionPageId === page.parent.page_id);
+  // Check immediate parent (page or database)
+  const immediateParentId = getParentId(page);
+  if (immediateParentId) {
+    const parentRoot = approvedRoots.find((r) => r.notionPageId === immediateParentId);
     if (parentRoot) {
       if (!parentRoot.isActive) {
         return { approvedRoot: parentRoot, accessClassification: null, isExcluded: true,
@@ -199,12 +208,27 @@ function checkStructuralExclusion(path: string, title: string): string | null {
 
 /**
  * Check if a page should be quarantined (ambiguous content).
+ *
+ * The primary safety boundary is the three-root architecture:
+ *   employee_safe  → shared HQ Wiki (no personal content)
+ *   personalized   → separate onboarding root (individual boards)
+ *   hr_restricted  → admin-approved roots only
+ *
+ * This quarantine is defense-in-depth for content that appears under
+ * the wrong root. It targets specific indicators of personal content:
+ *   1. Path contains possessive forms ("'s") indicating individual ownership
+ *   2. Path contains "My" followed by content type (My Onboarding, My Goals)
+ *   3. Title is a database-type page that might list employees
  */
 export function shouldQuarantine(pageTitle: string, pagePath: string): boolean {
-  // Person name in path: "/ First Last /" or "/ First Last" at end
-  // Handles both "/" and " / " path separators
-  if (/(?:\/\s*)[A-Z][a-z]+ [A-Z][a-z]+(?:\s*\/|$)/.test(pagePath)) return true;
+  // Possessive in path: "/ Joshua Han's Onboarding /" — individual ownership
+  if (/\/[^/]*'s\s/i.test(pagePath)) return true;
+
+  // "My" prefix in path segment: "/ My Onboarding /" or "/ My Goals /"
+  if (/\/\s*My\s+\w/i.test(pagePath)) return true;
+
   // Database-type pages that might contain employee records
-  if (/(?:Directory|Roster|Headcount|Personnel)/i.test(pageTitle)) return true;
+  if (/\b(?:Directory|Roster|Headcount|Personnel)\b/i.test(pageTitle)) return true;
+
   return false;
 }

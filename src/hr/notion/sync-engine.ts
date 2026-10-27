@@ -8,8 +8,8 @@
 import { createHash } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  searchAllPages, getPage, fetchPageBlocks,
-  NotionAuthError, type NotionPage,
+  searchAllPages, getPage, getDatabase, fetchPageBlocks,
+  NotionAuthError, getParentId, type NotionPage,
 } from './api-client.js';
 import {
   classifyWithVerifiedPath, resolveAncestry,
@@ -45,20 +45,27 @@ export async function fullDiscovery(
       titleCache.set(p.id, {
         id: p.id,
         title: extractTitle(p),
-        parentPageId: p.parent?.page_id || null,
+        parentPageId: getParentId(p),
       });
     }
 
-    // Ancestry resolver: uses cache first, then API for pages not in search results
-    const getPageTitle = async (pageId: string) => {
-      const cached = titleCache.get(pageId);
+    // Ancestry resolver: uses cache first, then API (tries page, then database)
+    const getPageTitle = async (objectId: string) => {
+      const cached = titleCache.get(objectId);
       if (cached) return cached;
-      // Fetch from API for ancestors not in search results
-      const fetched = await getPage(connectionId, token, pageId);
-      if (!fetched) return null;
-      const entry = { id: fetched.id, title: extractTitle(fetched), parentPageId: fetched.parent?.page_id || null };
-      titleCache.set(pageId, entry);
-      return entry;
+      // Try as a page first, then as a database (wiki databases are not pages)
+      const fetched = await getPage(connectionId, token, objectId);
+      if (fetched) {
+        const entry = { id: fetched.id, title: extractTitle(fetched), parentPageId: getParentId(fetched) };
+        titleCache.set(objectId, entry);
+        return entry;
+      }
+      const db = await getDatabase(connectionId, token, objectId);
+      if (db) {
+        titleCache.set(objectId, db);
+        return db;
+      }
+      return null;
     };
 
     for (const page of pages) {
@@ -68,10 +75,11 @@ export async function fullDiscovery(
       // Resolve full ancestry path via parent chain
       const ancestry = await resolveAncestry(page, title, getPageTitle);
       const ancestorIds = [];
-      let parentId = page.parent?.page_id || null;
-      // Collect ancestor IDs from the parent chain
-      let current = parentId;
+      let current = getParentId(page);
+      const seen = new Set<string>(); // Cycle detection
       for (let d = 0; d < 10 && current; d++) {
+        if (seen.has(current)) break;
+        seen.add(current);
         ancestorIds.push(current);
         const ancestor = await getPageTitle(current);
         current = ancestor?.parentPageId || null;
@@ -160,14 +168,23 @@ export async function incrementalVerification(
         continue;
       }
 
-      // Re-verify root ancestry via parent chain
+      // Re-verify root ancestry via parent chain (pages and databases)
       const title = extractTitle(notionPage);
       const ancestorIds: string[] = [];
-      let parentId = notionPage.parent?.page_id || null;
-      for (let d = 0; d < 10 && parentId; d++) {
-        ancestorIds.push(parentId);
-        const ancestor = await getPage(connectionId, token, parentId);
-        parentId = ancestor?.parent?.page_id || null;
+      let verifyParent = getParentId(notionPage);
+      const verifySeen = new Set<string>();
+      for (let d = 0; d < 10 && verifyParent; d++) {
+        if (verifySeen.has(verifyParent)) break;
+        verifySeen.add(verifyParent);
+        ancestorIds.push(verifyParent);
+        // Try as page first, then database
+        const ancestor = await getPage(connectionId, token, verifyParent);
+        if (ancestor) {
+          verifyParent = getParentId(ancestor);
+        } else {
+          const db = await getDatabase(connectionId, token, verifyParent);
+          verifyParent = db?.parentPageId || null;
+        }
       }
       const classification = classifyWithVerifiedPath(
         notionPage.id, title, title, ancestorIds, approvedRoots
