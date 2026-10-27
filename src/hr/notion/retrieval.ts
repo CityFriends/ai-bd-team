@@ -1,23 +1,21 @@
 /**
- * Knowledge Retrieval — Database-Enforced Authorization
+ * Knowledge Retrieval — Signed Identity, Least-Privilege
  *
- * All retrieval flows through the hr_retrieve_knowledge RPC, which
- * enforces authorization via SQL JOINs at the database level:
+ * All retrieval flows through the hr_retrieve_knowledge RPC via the
+ * hr_reader PostgreSQL role. The function verifies a signed HMAC
+ * identity token inside a SECURITY DEFINER function.
  *
- * 1. access_classification matches the requester's role
- * 2. sync_status = 'synced' (excludes revoked/excluded)
- * 3. last_verified_at within freshness window
- * 4. conn.is_active = true (connection healthy)
- * 5. ar.is_active = true (root still approved)
- * 6. hr_knowledge_sources approval (when source record exists)
- * 7. is_authoritative constraint (handbook_pdf only)
+ * Authorization is enforced at two layers:
+ * 1. Application: creates a signed token binding Slack identity
+ * 2. Database: SECURITY DEFINER RPC verifies token, resolves employee,
+ *    checks grants/supervision, enforces scope/classification
  *
- * No less-secure fallback path exists. If the RPC is unavailable,
+ * No less-secure fallback path exists. If the reader pool is unavailable,
  * retrieval fails closed (returns empty results with error).
  */
 
-import type { SupabaseClient } from '@supabase/supabase-js';
-import type { HRAuthProvider } from '../auth/hr-auth.js';
+import type { HRReaderPool } from '../database/hr-client.js';
+import { createIdentityToken } from '../auth/identity-token.js';
 
 export interface RetrievalResult {
   chunks: RetrievedChunk[];
@@ -39,50 +37,46 @@ export interface Citation {
 
 /**
  * Retrieve knowledge chunks for a Slack user's query.
- * Authorization is checked at both the application layer (role) and
- * the database layer (RPC JOINs). No less-secure fallback exists.
+ * Creates a signed identity token and sends it through the
+ * least-privilege reader pool to the SECURITY DEFINER RPC.
  */
 export async function retrieveForUser(
-  db: SupabaseClient,
+  readerPool: HRReaderPool,
+  signingSecret: string,
   queryText: string,
-  slackUserId: string,
-  auth: HRAuthProvider
+  slackUserId: string
 ): Promise<RetrievalResult> {
-  // 1. Application-layer authorization — fail closed
-  const isKnown = await auth.isKnownEmployee(slackUserId);
-  if (!isKnown) {
-    return { chunks: [], error: 'Not authorized' };
+  // 1. Create signed identity token (30s lifetime)
+  let token: string;
+  try {
+    token = createIdentityToken(slackUserId, signingSecret);
+  } catch (err) {
+    console.error('[HR Retrieval] Token creation failed:', err instanceof Error ? err.message : err);
+    return { chunks: [], error: 'Token creation failed' };
   }
 
-  const context = auth.authorize(slackUserId);
-  const allowedClassifications = context.isAuthorizedAdmin
-    ? ['employee_safe', 'hr_restricted']
-    : ['employee_safe'];
-
-  // 2. Database-layer retrieval via RPC
-  //    The RPC enforces all JOINs and filters in a single SQL query.
+  // 2. Query via least-privilege reader pool
   const sanitized = sanitizeQuery(queryText);
-  const { data, error } = await db.rpc('hr_retrieve_knowledge', {
-    p_allowed_classifications: allowedClassifications,
-    p_query: sanitized,
-    p_freshness_minutes: 30,
-    p_limit: 5,
-  });
+  try {
+    const result = await readerPool.query(
+      'SELECT * FROM hr_retrieve_knowledge($1, $2, $3, $4)',
+      [token, sanitized, 30, 5]
+    );
 
-  if (error) {
+    // 3. Build citations with block-level deep links
+    const chunks: RetrievedChunk[] = (result.rows || []).map((row) => ({
+      contentText: row.content_text as string,
+      headingPath: (row.heading_path as string[]) || [],
+      citation: buildCitation(row),
+    }));
+
+    return { chunks, error: null };
+  } catch (err) {
     // Fail closed — no fallback to a less-secure path
-    console.error('[HR Retrieval] RPC error (returning empty):', error.message);
-    return { chunks: [], error: error.message };
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[HR Retrieval] Reader pool query error (returning empty):', msg);
+    return { chunks: [], error: msg };
   }
-
-  // 3. Build citations with block-level deep links
-  const chunks: RetrievedChunk[] = (data || []).map((row: Record<string, unknown>) => ({
-    contentText: row.content_text as string,
-    headingPath: (row.heading_path as string[]) || [],
-    citation: buildCitation(row),
-  }));
-
-  return { chunks, error: null };
 }
 
 function buildCitation(row: Record<string, unknown>): Citation {

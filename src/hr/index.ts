@@ -11,7 +11,7 @@ import 'dotenv/config';
 import { createServer } from 'http';
 import { loadHREnv, HREnvError } from './config/hr-env.js';
 import { createHRControls, markStarted, getHealthStatus } from './config/hr-controls.js';
-import { createHRClient } from './database/hr-client.js';
+import { createHRClient, createHRReaderPool, type HRReaderPool } from './database/hr-client.js';
 import { createHRAuth } from './auth/hr-auth.js';
 import { isKnownSlackUser, syncBootstrapAdmins } from './database/employees.js';
 import { createHRSlackApp, type HRSlackApp } from './slack/hr-slack-app.js';
@@ -63,6 +63,19 @@ async function main(): Promise<void> {
     console.log('[HR Service] Database: not configured (HR_SUPABASE_URL not set)');
   }
 
+  // 3b. Initialize reader pool (least-privilege retrieval)
+  let readerPool: HRReaderPool | null = null;
+  if (env.readerDatabaseUrl) {
+    try {
+      readerPool = createHRReaderPool(env.readerDatabaseUrl);
+      console.log('[HR Service] Reader pool: configured');
+    } catch (err) {
+      console.error('[HR Service] Reader pool failed:', err instanceof Error ? err.message : err);
+    }
+  } else {
+    console.log('[HR Service] Reader pool: not configured (HR_READER_DATABASE_URL not set)');
+  }
+
   // 4. Initialize authorization
   const auth = createHRAuth(
     env.authorizedAdmins,
@@ -74,7 +87,7 @@ async function main(): Promise<void> {
   let slackConnected: boolean | null = null;
   if (controls.isSlackEnabled()) {
     try {
-      slackApp = createHRSlackApp(env, auth, env.expectedTeamId ?? undefined);
+      slackApp = createHRSlackApp(env, auth, env.expectedTeamId ?? undefined, readerPool, env.identitySigningSecret);
       await slackApp.start();
       slackConnected = true;
       console.log('[HR Service] Slack: connected');
@@ -117,6 +130,9 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string) => {
     console.log(`[HR Service] Received ${signal}, shutting down...`);
     server.close();
+    if (readerPool) {
+      try { await readerPool.end(); } catch { /* best effort */ }
+    }
     if (slackApp) {
       try { await slackApp.stop(); } catch { /* best effort */ }
     }

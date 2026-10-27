@@ -10,13 +10,17 @@
 
 import type { App } from '@slack/bolt';
 import type { HRAuthProvider } from '../auth/hr-auth.js';
+import type { HRReaderPool } from '../database/hr-client.js';
+import { retrieveForUser } from '../notion/retrieval.js';
 
 const processedEvents = new Set<string>();
 
 export function registerDMHandler(
   app: App,
   auth: HRAuthProvider,
-  expectedTeamId?: string
+  expectedTeamId?: string,
+  readerPool?: HRReaderPool,
+  signingSecret?: string
 ): void {
   app.event('message', async ({ event, client, context }) => {
     // Only handle direct messages (IM channel type)
@@ -50,7 +54,25 @@ export function registerDMHandler(
       return;
     }
 
-    // M1 placeholder — LLM and handbook not yet available
+    // Knowledge retrieval via signed identity tokens (when reader pool is available)
+    if (readerPool && signingSecret && 'text' in event && event.text) {
+      const result = await retrieveForUser(readerPool, signingSecret, event.text, userId);
+      if (result.chunks.length > 0) {
+        const formatted = result.chunks.map((c) => {
+          const heading = c.citation.heading ? `*${c.citation.heading}*\n` : '';
+          return `${heading}${c.contentText}\n_Source: <${c.citation.url}|${c.citation.title}>_`;
+        }).join('\n\n---\n\n');
+
+        await client.chat.postMessage({
+          channel: event.channel,
+          text: `Here's what I found:\n\n${formatted}`,
+        });
+        return;
+      }
+      // Fall through to placeholder if no results found
+    }
+
+    // Placeholder — no matching knowledge or retrieval not configured
     const isAdmin = auth.isAdmin(userId);
     if (isAdmin) {
       await client.chat.postMessage({

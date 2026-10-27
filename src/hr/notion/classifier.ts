@@ -15,13 +15,13 @@ export interface ApprovedRoot {
   id: string;
   connectionId: string;
   notionPageId: string;
-  accessClassification: 'employee_safe' | 'hr_restricted';
+  accessClassification: 'employee_safe' | 'hr_restricted' | 'personalized';
   isActive: boolean;
 }
 
 export interface ClassificationResult {
   approvedRoot: ApprovedRoot | null;
-  accessClassification: 'employee_safe' | 'hr_restricted' | null;
+  accessClassification: 'employee_safe' | 'hr_restricted' | 'personalized' | null;
   isExcluded: boolean;
   exclusionReason: string | null;
   resolvedPath: string;
@@ -39,7 +39,6 @@ const EXCLUDED_SUBTREE_PATTERNS = [
 ];
 
 const EXCLUDED_TITLE_PATTERNS = [
-  /Comp Bands & Step Increases Table/i,
   /Candidate Scoring Matrices/i,
   /Business Accounts and Logins/i,
 ];

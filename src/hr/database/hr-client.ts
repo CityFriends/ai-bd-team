@@ -11,10 +11,17 @@
  */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import pg from 'pg';
 
 export interface HRDatabaseClient {
   client: SupabaseClient;
   isConnected(): Promise<boolean>;
+}
+
+export interface HRReaderPool {
+  pool: pg.Pool;
+  query(text: string, values?: unknown[]): Promise<pg.QueryResult>;
+  end(): Promise<void>;
 }
 
 /**
@@ -38,6 +45,41 @@ export function createHRClient(url: string, serviceKey: string): HRDatabaseClien
       } catch {
         return false;
       }
+    },
+  };
+}
+
+/**
+ * Create a least-privilege reader pool using the hr_reader PostgreSQL role.
+ * This pool can ONLY execute hr_retrieve_knowledge — no direct table access.
+ *
+ * Connection string format for Supabase shared pooler:
+ *   postgresql://hr_reader.[PROJECT-REF]:password@host:6543/postgres
+ */
+export function createHRReaderPool(connectionString: string): HRReaderPool {
+  if (!connectionString) {
+    throw new Error('HR reader database connection string is required.');
+  }
+
+  const pool = new pg.Pool({
+    connectionString,
+    max: 3,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+    ssl: { rejectUnauthorized: false },
+  });
+
+  pool.on('error', (err) => {
+    console.error('[HR Reader Pool] Unexpected error on idle client:', err.message);
+  });
+
+  return {
+    pool,
+    async query(text: string, values?: unknown[]): Promise<pg.QueryResult> {
+      return pool.query(text, values);
+    },
+    async end(): Promise<void> {
+      await pool.end();
     },
   };
 }

@@ -125,4 +125,29 @@ describe('HR Environment — loadHREnv', () => {
     const env = loadHREnv();
     expect(env.botToken).toBeNull();
   });
+
+  it('fails closed when reader URL set but signing secret missing', async () => {
+    process.env.HR_READER_DATABASE_URL = 'postgresql://hr_reader@host/postgres';
+    delete process.env.HR_IDENTITY_SIGNING_SECRET;
+    const { loadHREnv } = await import('../config/hr-env.js');
+    expect(() => loadHREnv()).toThrow('HR_IDENTITY_SIGNING_SECRET');
+  });
+
+  it('loads reader pool and signing secret when both set', async () => {
+    process.env.HR_READER_DATABASE_URL = 'postgresql://hr_reader@host/postgres';
+    process.env.HR_IDENTITY_SIGNING_SECRET = 'test-secret';
+    const { loadHREnv } = await import('../config/hr-env.js');
+    const env = loadHREnv();
+    expect(env.readerDatabaseUrl).toBe('postgresql://hr_reader@host/postgres');
+    expect(env.identitySigningSecret).toBe('test-secret');
+  });
+
+  it('accepts missing reader URL (optional capability)', async () => {
+    delete process.env.HR_READER_DATABASE_URL;
+    delete process.env.HR_IDENTITY_SIGNING_SECRET;
+    const { loadHREnv } = await import('../config/hr-env.js');
+    const env = loadHREnv();
+    expect(env.readerDatabaseUrl).toBeNull();
+    expect(env.identitySigningSecret).toBeNull();
+  });
 });
