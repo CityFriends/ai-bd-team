@@ -17,6 +17,16 @@
 import type { HRReaderPool } from '../database/hr-client.js';
 import { createIdentityToken } from '../auth/identity-token.js';
 
+/**
+ * Retrieval is gated on HR_AI_ENABLED=true. This prevents knowledge
+ * retrieval RPCs from executing when credentials are present but AI
+ * features are not explicitly activated. Checked at the retrieval
+ * boundary — cannot be bypassed by callers.
+ */
+function isRetrievalEnabled(): boolean {
+  return process.env.HR_AI_ENABLED?.toLowerCase() === 'true';
+}
+
 export interface RetrievalResult {
   chunks: RetrievedChunk[];
   error: string | null;
@@ -46,6 +56,11 @@ export async function retrieveForUser(
   queryText: string,
   slackUserId: string
 ): Promise<RetrievalResult> {
+  // 0. Gate: retrieval requires HR_AI_ENABLED=true
+  if (!isRetrievalEnabled()) {
+    return { chunks: [], error: null };
+  }
+
   // 1. Create signed identity token (30s lifetime)
   let token: string;
   try {

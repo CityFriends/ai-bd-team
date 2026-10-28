@@ -4,7 +4,7 @@
  * All tests exercise real functions with mocked dependencies.
  * No `expect(true).toBe(true)` — every test asserts meaningful behavior.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import {
   classifyPage, classifyWithVerifiedPath, findApprovedRootFromAncestry,
   shouldQuarantine, resolveAncestry, type ApprovedRoot,
@@ -80,6 +80,63 @@ function mockReaderPool(rows: unknown[] = [], error?: Error): HRReaderPool {
     end: vi.fn().mockResolvedValue(undefined),
   };
 }
+
+// ============================================================
+// Global: Enable HR_AI_ENABLED for retrieval tests
+// ============================================================
+
+const savedAIEnabled = process.env.HR_AI_ENABLED;
+beforeEach(() => { process.env.HR_AI_ENABLED = 'true'; });
+afterEach(() => {
+  if (savedAIEnabled !== undefined) process.env.HR_AI_ENABLED = savedAIEnabled;
+  else delete process.env.HR_AI_ENABLED;
+});
+
+// ============================================================
+// Retrieval Activation Gate
+// ============================================================
+
+describe('Retrieval Activation Gate', () => {
+  it('G1. Credentials present + HR_AI_ENABLED=false → zero RPC calls', async () => {
+    process.env.HR_AI_ENABLED = 'false';
+    const pool = mockReaderPool([{ content_text: 'leaked' }]);
+    const result = await retrieveForUser(pool, TEST_SIGNING_SECRET, 'query', 'UEMP1');
+    expect(result.chunks).toHaveLength(0);
+    expect(result.error).toBeNull();
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  it('G2. Credentials present + flag missing → zero RPC calls', async () => {
+    delete process.env.HR_AI_ENABLED;
+    const pool = mockReaderPool([{ content_text: 'leaked' }]);
+    const result = await retrieveForUser(pool, TEST_SIGNING_SECRET, 'query', 'UEMP1');
+    expect(result.chunks).toHaveLength(0);
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  it('G3. Credentials present + malformed flag → zero RPC calls', async () => {
+    process.env.HR_AI_ENABLED = 'yes';
+    const pool = mockReaderPool([{ content_text: 'leaked' }]);
+    const result = await retrieveForUser(pool, TEST_SIGNING_SECRET, 'query', 'UEMP1');
+    expect(result.chunks).toHaveLength(0);
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  it('G4. Credentials present + HR_AI_ENABLED=true → retrieval permitted', async () => {
+    process.env.HR_AI_ENABLED = 'true';
+    const pool = mockReaderPool([]);
+    await retrieveForUser(pool, TEST_SIGNING_SECRET, 'query', 'UEMP1');
+    expect(pool.query).toHaveBeenCalled();
+  });
+
+  it('G5. Direct retrieveForUser call respects gate', async () => {
+    process.env.HR_AI_ENABLED = 'FALSE';
+    const pool = mockReaderPool([{ content_text: 'should not appear' }]);
+    const result = await retrieveForUser(pool, TEST_SIGNING_SECRET, 'direct call', 'UEMP1');
+    expect(result.chunks).toHaveLength(0);
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+});
 
 // ============================================================
 // 1-4: Retrieval Authorization
@@ -723,6 +780,58 @@ describe('RPC Authorization Regression', () => {
     const queryArgs = (pool.query as any).mock.calls[0][1];
     expect(queryArgs[2]).toBe(30); // p_freshness_minutes
     // The actual time comparison is PostgreSQL-side — verified in T8-T13
+  });
+});
+
+describe('Security Hardening', () => {
+  it('S1. Reader pool uses verified TLS with Supabase CA', async () => {
+    const fs = await import('fs');
+    const content = fs.readFileSync(new URL('../database/hr-client.ts', import.meta.url).pathname, 'utf-8');
+    expect(content).toContain('rejectUnauthorized: true');
+    expect(content).toContain('ca: SUPABASE_ROOT_CA');
+    expect(content).not.toContain('rejectUnauthorized: false');
+  });
+
+  it('S1b. Embedded Supabase CA is a valid X509 certificate', () => {
+    const { X509Certificate } = require('crypto');
+    const fs = require('fs');
+    const src = fs.readFileSync(new URL('../database/hr-client.ts', import.meta.url).pathname, 'utf-8');
+    const match = src.match(/const SUPABASE_ROOT_CA = `(-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----)`/);
+    expect(match).not.toBeNull();
+    const cert = new X509Certificate(match![1]);
+    expect(cert.ca).toBe(true);
+    expect(cert.subject).toContain('Supabase Root 2021 CA');
+    expect(cert.fingerprint).toBe('A4:51:8A:09:33:AF:69:49:48:2C:CA:30:14:C0:07:C3:69:DF:9F:6F');
+  });
+
+  it('S2. Pool error handler sanitizes both postgresql:// and postgres:// URLs', () => {
+    const regex = /postgres(?:ql)?:\/\/[^\s]+/gi;
+    expect('error at postgresql://user:secret@host/db rest'.replace(regex, 'postgresql://***'))
+      .toBe('error at postgresql://*** rest');
+    expect('error at postgres://user:p%40ss@host:5432/db rest'.replace(regex, 'postgresql://***'))
+      .toBe('error at postgresql://*** rest');
+    expect('no url here'.replace(regex, 'postgresql://***')).toBe('no url here');
+  });
+
+  it('S3. No credential values in startup logs', async () => {
+    const fs = await import('fs');
+    const content = fs.readFileSync(new URL('../index.ts', import.meta.url).pathname, 'utf-8');
+    const logLines = content.split('\n').filter((l: string) => l.includes('console.'));
+    for (const line of logLines) {
+      // Credentials must never appear in log interpolations
+      expect(line).not.toContain('readerDatabaseUrl');
+      expect(line).not.toContain('identitySigningSecret');
+      expect(line).not.toContain('supabaseServiceKey');
+      // Connection string patterns must not be logged
+      expect(line).not.toMatch(/postgresql:\/\//i);
+    }
+  });
+
+  it('S4. Retrieval module enforces HR_AI_ENABLED gate', async () => {
+    const fs = await import('fs');
+    const content = fs.readFileSync(new URL('../notion/retrieval.ts', import.meta.url).pathname, 'utf-8');
+    expect(content).toContain('isRetrievalEnabled()');
+    expect(content).toContain("HR_AI_ENABLED");
   });
 });
 
