@@ -82,9 +82,7 @@ describe('Identity Token — verifyIdentityToken', () => {
       aud: 'wrong_audience',
     });
     const b64 = Buffer.from(payload).toString('base64');
-    const sig = createHmac('sha256', SECRET)
-      .update(Buffer.from(b64, 'base64'))
-      .digest('hex');
+    const sig = createHmac('sha256', SECRET).update(Buffer.from(b64, 'base64')).digest('hex');
     expect(verifyIdentityToken(`${b64}.${sig}`, SECRET)).toBeNull();
   });
 
