@@ -10,6 +10,7 @@
 import { App, LogLevel } from '@slack/bolt';
 import type { HREnvConfig } from '../config/hr-env.js';
 import type { HRAuthProvider } from '../auth/hr-auth.js';
+import type { HRReaderPool } from '../database/hr-client.js';
 import { registerLeadershipChannel } from './leadership-channel.js';
 import { registerDMHandler } from './dm-handler.js';
 
@@ -18,10 +19,20 @@ export interface HRSlackApp {
   stop(): Promise<void>;
 }
 
+export interface HRSlackAppOptions {
+  env: HREnvConfig;
+  auth: HRAuthProvider;
+  expectedTeamId?: string;
+  readerPool?: HRReaderPool | null;
+  signingSecret?: string | null;
+}
+
 export function createHRSlackApp(
   env: HREnvConfig,
   auth: HRAuthProvider,
-  expectedTeamId?: string
+  expectedTeamId?: string,
+  readerPool?: HRReaderPool | null,
+  signingSecret?: string | null
 ): HRSlackApp {
   if (!env.botToken || !env.appToken) {
     throw new Error('HR Slack app requires HR_BOT_TOKEN and HR_APP_TOKEN.');
@@ -38,7 +49,7 @@ export function createHRSlackApp(
   // Public employee-help channel (#help-people-ops) is NOT processed.
   // Employees submit HR questions via direct message to the bot.
   registerLeadershipChannel(app, env, auth, expectedTeamId);
-  registerDMHandler(app, auth, expectedTeamId);
+  registerDMHandler(app, auth, expectedTeamId, readerPool ?? undefined, signingSecret ?? undefined);
 
   return {
     async start() {

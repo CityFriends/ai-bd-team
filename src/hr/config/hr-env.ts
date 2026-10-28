@@ -16,6 +16,12 @@ export interface HREnvConfig {
   supabaseUrl: string;
   supabaseServiceKey: string;
 
+  // Reader pool (least-privilege retrieval via pg)
+  readerDatabaseUrl: string | null;
+
+  // Identity signing (HMAC-SHA256 for retrieval tokens)
+  identitySigningSecret: string | null;
+
   // Slack (optional when HR_SLACK_ENABLED=false)
   slackEnabled: boolean;
   botToken: string | null;
@@ -121,6 +127,20 @@ export function loadHREnv(): HREnvConfig {
 
   const authorizedAdmins = validAdmins;
 
+  // Reader database connection (least-privilege hr_reader role)
+  const readerDatabaseUrl = process.env.HR_READER_DATABASE_URL || null;
+
+  // Identity signing secret (HMAC-SHA256 for retrieval tokens)
+  const identitySigningSecret = process.env.HR_IDENTITY_SIGNING_SECRET || null;
+
+  // Fail closed: if reader URL is set, signing secret is required
+  if (readerDatabaseUrl && !identitySigningSecret) {
+    throw new HREnvError(
+      'HR_READER_DATABASE_URL is set but HR_IDENTITY_SIGNING_SECRET is missing. ' +
+        'Both are required for signed-identity retrieval.'
+    );
+  }
+
   const aiEnabled = process.env.HR_AI_ENABLED?.toLowerCase() === 'true';
   const llmEnabled = process.env.HR_LLM_ENABLED?.toLowerCase() === 'true';
   const anthropicApiKey = process.env.HR_ANTHROPIC_API_KEY || null;
@@ -133,6 +153,8 @@ export function loadHREnv(): HREnvConfig {
   return {
     supabaseUrl,
     supabaseServiceKey,
+    readerDatabaseUrl,
+    identitySigningSecret,
     slackEnabled,
     botToken,
     appToken,
