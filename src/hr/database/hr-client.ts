@@ -81,6 +81,24 @@ export function createHRClient(url: string, serviceKey: string): HRDatabaseClien
 }
 
 /**
+ * Strip SSL query parameters from a PostgreSQL connection URL so that
+ * pg-connection-string does not create an ssl object that overwrites
+ * our programmatic TLS configuration via Object.assign.
+ *
+ * See: pg-connection-string 2.14.1 index.js:77-79 — when sslmode is present,
+ * parse() sets ssl = {}, which pg/lib/connection-parameters.js:60 shallow-merges
+ * over the caller-supplied ssl option, discarding ca and rejectUnauthorized.
+ */
+function stripSslParams(connectionString: string): string {
+  const url = new URL(connectionString);
+  url.searchParams.delete('sslmode');
+  url.searchParams.delete('sslcert');
+  url.searchParams.delete('sslkey');
+  url.searchParams.delete('sslrootcert');
+  return url.toString();
+}
+
+/**
  * Create a least-privilege reader pool using the hr_reader PostgreSQL role.
  * This pool can ONLY execute hr_retrieve_knowledge — no direct table access.
  *
@@ -93,7 +111,7 @@ export function createHRReaderPool(connectionString: string): HRReaderPool {
   }
 
   const pool = new pg.Pool({
-    connectionString,
+    connectionString: stripSslParams(connectionString),
     max: 3,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,
