@@ -10,7 +10,8 @@ import {
   shouldQuarantine, resolveAncestry, type ApprovedRoot,
 } from '../notion/classifier.js';
 import { verifyWebhookSignature, routeWebhookEvent, type WebhookConnection } from '../notion/webhook-handler.js';
-import { deactivateConnection, revokePage } from '../notion/sync-engine.js';
+import { deactivateConnection, revokePage, fullDiscovery, incrementalVerification, syncPageContent } from '../notion/sync-engine.js';
+import { isNotionSyncEnabled } from '../config/hr-controls.js';
 import { retrieveForUser } from '../notion/retrieval.js';
 import { createHRAuth } from '../auth/hr-auth.js';
 import type { HRReaderPool } from '../database/hr-client.js';
@@ -82,14 +83,20 @@ function mockReaderPool(rows: unknown[] = [], error?: Error): HRReaderPool {
 }
 
 // ============================================================
-// Global: Enable HR_AI_ENABLED for retrieval tests
+// Global: Enable HR_AI_ENABLED and HR_NOTION_SYNC_ENABLED for tests
 // ============================================================
 
 const savedAIEnabled = process.env.HR_AI_ENABLED;
-beforeEach(() => { process.env.HR_AI_ENABLED = 'true'; });
+const savedSyncEnabledGlobal = process.env.HR_NOTION_SYNC_ENABLED;
+beforeEach(() => {
+  process.env.HR_AI_ENABLED = 'true';
+  process.env.HR_NOTION_SYNC_ENABLED = 'true';
+});
 afterEach(() => {
   if (savedAIEnabled !== undefined) process.env.HR_AI_ENABLED = savedAIEnabled;
   else delete process.env.HR_AI_ENABLED;
+  if (savedSyncEnabledGlobal !== undefined) process.env.HR_NOTION_SYNC_ENABLED = savedSyncEnabledGlobal;
+  else delete process.env.HR_NOTION_SYNC_ENABLED;
 });
 
 // ============================================================
@@ -832,6 +839,105 @@ describe('Security Hardening', () => {
     const content = fs.readFileSync(new URL('../notion/retrieval.ts', import.meta.url).pathname, 'utf-8');
     expect(content).toContain('isRetrievalEnabled()');
     expect(content).toContain("HR_AI_ENABLED");
+  });
+});
+
+// ============================================================
+// Notion Sync Kill Switch (C8X-32)
+// ============================================================
+
+describe('Notion Sync Kill Switch', () => {
+  const savedSyncEnabled = process.env.HR_NOTION_SYNC_ENABLED;
+
+  afterEach(() => {
+    if (savedSyncEnabled !== undefined) process.env.HR_NOTION_SYNC_ENABLED = savedSyncEnabled;
+    else delete process.env.HR_NOTION_SYNC_ENABLED;
+  });
+
+  it('KS1. isNotionSyncEnabled() returns false when HR_NOTION_SYNC_ENABLED is unset', () => {
+    delete process.env.HR_NOTION_SYNC_ENABLED;
+    expect(isNotionSyncEnabled()).toBe(false);
+  });
+
+  it('KS2. isNotionSyncEnabled() returns false when HR_NOTION_SYNC_ENABLED=false', () => {
+    process.env.HR_NOTION_SYNC_ENABLED = 'false';
+    expect(isNotionSyncEnabled()).toBe(false);
+  });
+
+  it('KS3. isNotionSyncEnabled() returns true when HR_NOTION_SYNC_ENABLED=true', () => {
+    process.env.HR_NOTION_SYNC_ENABLED = 'true';
+    expect(isNotionSyncEnabled()).toBe(true);
+  });
+
+  it('KS4. isNotionSyncEnabled() is case-insensitive', () => {
+    process.env.HR_NOTION_SYNC_ENABLED = 'TRUE';
+    expect(isNotionSyncEnabled()).toBe(true);
+    process.env.HR_NOTION_SYNC_ENABLED = 'True';
+    expect(isNotionSyncEnabled()).toBe(true);
+  });
+
+  it('KS5. fullDiscovery returns sync_disabled when flag is off', async () => {
+    delete process.env.HR_NOTION_SYNC_ENABLED;
+    const db = mockDb();
+    const result = await fullDiscovery(db, 'conn-1', 'token', [EMPLOYEE_ROOT]);
+    expect(result.error).toBe('sync_disabled');
+    expect(result.pagesDiscovered).toBe(0);
+    expect(result.pagesUpdated).toBe(0);
+    expect(result.pagesRevoked).toBe(0);
+    expect(result.pagesExcluded).toBe(0);
+    // No Notion API calls — db.from should never be called
+    expect(db.from).not.toHaveBeenCalled();
+  });
+
+  it('KS6. incrementalVerification returns sync_disabled when flag is off', async () => {
+    delete process.env.HR_NOTION_SYNC_ENABLED;
+    const db = mockDb();
+    const result = await incrementalVerification(db, 'conn-1', 'token', [EMPLOYEE_ROOT]);
+    expect(result.error).toBe('sync_disabled');
+    expect(result.pagesDiscovered).toBe(0);
+    // No database reads
+    expect(db.from).not.toHaveBeenCalled();
+  });
+
+  it('KS7. syncPageContent returns immediately when flag is off', async () => {
+    delete process.env.HR_NOTION_SYNC_ENABLED;
+    const db = mockDb();
+    await syncPageContent(db, 'page-1', 'conn-1', 'token', 'notion-page-1');
+    // No Notion API calls, no database writes
+    expect(db.from).not.toHaveBeenCalled();
+  });
+
+  it('KS8. routeWebhookEvent returns sync_disabled when flag is off', () => {
+    delete process.env.HR_NOTION_SYNC_ENABLED;
+    const ids = new Set<string>();
+    const result = routeWebhookEvent(
+      { id: 'evt-ks8', type: 'page.content_updated', timestamp: '', data: { page_id: 'p1' } },
+      ids
+    );
+    expect(result.action).toBe('sync_disabled');
+    expect(result.pageId).toBeNull();
+    // Dedup set should NOT be mutated
+    expect(ids.size).toBe(0);
+  });
+
+  it('KS9. routeWebhookEvent processes events when flag is on', () => {
+    process.env.HR_NOTION_SYNC_ENABLED = 'true';
+    const ids = new Set<string>();
+    const result = routeWebhookEvent(
+      { id: 'evt-ks9', type: 'page.content_updated', timestamp: '', data: { page_id: 'p1' } },
+      ids
+    );
+    expect(result.action).toBe('processed');
+    expect(result.pageId).toBe('p1');
+    expect(ids.has('evt-ks9')).toBe(true);
+  });
+
+  it('KS10. HR_AI_ENABLED and HR_LLM_ENABLED flags are unaffected by sync kill switch', () => {
+    delete process.env.HR_NOTION_SYNC_ENABLED;
+    // AI and LLM flags should still reflect their own env vars
+    process.env.HR_AI_ENABLED = 'true';
+    expect(isNotionSyncEnabled()).toBe(false);
+    expect(process.env.HR_AI_ENABLED).toBe('true');
   });
 });
 

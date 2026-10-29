@@ -3,6 +3,10 @@
  *
  * Handles full discovery, incremental verification, and webhook-triggered
  * re-syncs. Uses approved-root verification and structural exclusion.
+ *
+ * Kill switch: All synchronization entry points check HR_NOTION_SYNC_ENABLED
+ * before any Notion API call or database mutation. When disabled, functions
+ * return immediately with a distinguishable disabled result.
  */
 
 import { createHash } from 'crypto';
@@ -15,6 +19,7 @@ import {
   classifyWithVerifiedPath, resolveAncestry,
   type ApprovedRoot,
 } from './classifier.js';
+import { isNotionSyncEnabled } from '../config/hr-controls.js';
 
 export interface SyncResult {
   pagesDiscovered: number;
@@ -24,8 +29,11 @@ export interface SyncResult {
   error: string | null;
 }
 
+const SYNC_DISABLED_ERROR = 'sync_disabled';
+
 /**
  * Full discovery — complete cursor-safe pagination, then reconcile.
+ * Blocked when HR_NOTION_SYNC_ENABLED != 'true'.
  */
 export async function fullDiscovery(
   db: SupabaseClient,
@@ -33,6 +41,10 @@ export async function fullDiscovery(
   token: string,
   approvedRoots: ApprovedRoot[]
 ): Promise<SyncResult> {
+  if (!isNotionSyncEnabled()) {
+    return { pagesDiscovered: 0, pagesUpdated: 0, pagesRevoked: 0, pagesExcluded: 0, error: SYNC_DISABLED_ERROR };
+  }
+
   const result: SyncResult = { pagesDiscovered: 0, pagesUpdated: 0, pagesRevoked: 0, pagesExcluded: 0, error: null };
 
   try {
@@ -142,6 +154,7 @@ export async function fullDiscovery(
 
 /**
  * Incremental verification — re-check all indexed pages.
+ * Blocked when HR_NOTION_SYNC_ENABLED != 'true'.
  */
 export async function incrementalVerification(
   db: SupabaseClient,
@@ -149,6 +162,10 @@ export async function incrementalVerification(
   token: string,
   approvedRoots: ApprovedRoot[]
 ): Promise<SyncResult> {
+  if (!isNotionSyncEnabled()) {
+    return { pagesDiscovered: 0, pagesUpdated: 0, pagesRevoked: 0, pagesExcluded: 0, error: SYNC_DISABLED_ERROR };
+  }
+
   const result: SyncResult = { pagesDiscovered: 0, pagesUpdated: 0, pagesRevoked: 0, pagesExcluded: 0, error: null };
 
   try {
@@ -227,6 +244,7 @@ export async function incrementalVerification(
 
 /**
  * Sync a single page's content — extract text, chunk, and store.
+ * Blocked when HR_NOTION_SYNC_ENABLED != 'true'.
  */
 export async function syncPageContent(
   db: SupabaseClient,
@@ -235,6 +253,8 @@ export async function syncPageContent(
   token: string,
   notionPageId: string
 ): Promise<void> {
+  if (!isNotionSyncEnabled()) return;
+
   const { text, blocks } = await fetchPageBlocks(connectionId, token, notionPageId);
   const newHash = createHash('sha256').update(text, 'utf8').digest('hex');
 

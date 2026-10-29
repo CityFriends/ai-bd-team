@@ -15,13 +15,23 @@ export interface HRControls {
   isSyntheticOnly(): boolean;
 }
 
+/**
+ * Check whether Notion synchronization is enabled at runtime.
+ * Reads the environment variable on every call — never cached —
+ * so that the kill switch takes effect immediately.
+ *
+ * Canonical implementation: sync-engine and webhook-handler import this.
+ */
+export function isNotionSyncEnabled(): boolean {
+  return process.env.HR_NOTION_SYNC_ENABLED?.toLowerCase() === 'true';
+}
+
 export function createHRControls(env: HREnvConfig): HRControls {
   return {
     isSlackEnabled: () => env.slackEnabled,
     isAIEnabled: () => env.aiEnabled,
     isLLMEnabled: () => env.llmEnabled,
-    isNotionSyncEnabled: () =>
-      process.env.HR_NOTION_SYNC_ENABLED?.toLowerCase() === 'true',
+    isNotionSyncEnabled,
     isSyntheticOnly: () => true,
   };
 }
