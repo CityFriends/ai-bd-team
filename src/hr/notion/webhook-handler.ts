@@ -8,6 +8,7 @@
  */
 
 import { createHmac, timingSafeEqual } from 'crypto';
+import { isNotionSyncEnabled } from '../config/hr-controls.js';
 
 export interface WebhookEvent {
   id: string;
@@ -26,7 +27,7 @@ export interface WebhookResult {
   status: number;
   connectionId: string | null;
   eventType: string | null;
-  action: 'processed' | 'duplicate' | 'invalid_signature' | 'no_page_id' | 'unknown_event';
+  action: 'processed' | 'duplicate' | 'invalid_signature' | 'no_page_id' | 'unknown_event' | 'sync_disabled';
 }
 
 /**
@@ -68,12 +69,20 @@ export function verifyWebhookSignature(
 /**
  * Process a verified webhook event. Returns the action taken.
  *
+ * Kill switch: returns 'sync_disabled' when HR_NOTION_SYNC_ENABLED != 'true',
+ * before any deduplication state mutation or sync routing.
+ *
  * Idempotency: duplicate event IDs return 'duplicate' with no processing.
  */
 export function routeWebhookEvent(
   event: WebhookEvent,
   processedEventIds: Set<string>
 ): { action: WebhookResult['action']; pageId: string | null } {
+  // Kill switch: block before dedup state is mutated
+  if (!isNotionSyncEnabled()) {
+    return { action: 'sync_disabled', pageId: null };
+  }
+
   // Idempotency check
   if (processedEventIds.has(event.id)) {
     return { action: 'duplicate', pageId: null };
