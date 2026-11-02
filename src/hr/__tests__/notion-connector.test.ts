@@ -507,7 +507,7 @@ describe('Citations, Rate Limiting, Isolation', () => {
     await retrieveForUser(pool, TEST_SIGNING_SECRET, 'test', 'UEMP1');
     // Verify the query includes the identity token (base64.hex format)
     const queryArgs = (pool.query as any).mock.calls[0];
-    expect(queryArgs[0]).toContain('hr_retrieve_knowledge');
+    expect(queryArgs[0]).toContain('hr_retrieve_knowledge_v2');
     const token = queryArgs[1][0] as string;
     expect(token).toContain('.'); // base64.hex format
   });
@@ -538,6 +538,170 @@ describe('Citations, Rate Limiting, Isolation', () => {
     expect(result.path).toEqual(['Grandparent', 'Parent', 'Deep Page']);
     expect(result.pathString).toBe('Grandparent / Parent / Deep Page');
     expect(getTitle).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ============================================================
+// Chunk ID Integration (C8X-57)
+// ============================================================
+
+describe('Chunk ID Integration', () => {
+  it('CID1. Valid UUID chunk_id maps to RetrievedChunk.chunkId', async () => {
+    const pool = mockReaderPool([{
+      chunk_id: '550e8400-e29b-41d4-a716-446655440000',
+      content_text: 'PTO policy text',
+      heading_path: ['Leave'],
+      first_block_id: 'block-1',
+      title: 'PTO Policy',
+      page_url: 'https://notion.so/pto',
+      notion_page_id: 'np-1',
+      last_verified_at: '2026-10-29T12:00:00Z',
+    }]);
+    const result = await retrieveForUser(pool, TEST_SIGNING_SECRET, 'pto', 'UEMP1');
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0].chunkId).toBe('550e8400-e29b-41d4-a716-446655440000');
+    expect(result.chunks[0].contentText).toBe('PTO policy text');
+    expect(result.chunks[0].citation.title).toBe('PTO Policy');
+  });
+
+  it('CID2. Multiple chunks retain respective UUIDs', async () => {
+    const pool = mockReaderPool([
+      {
+        chunk_id: 'aaaaaaaa-1111-2222-3333-444444444444',
+        content_text: 'First chunk',
+        heading_path: ['Section A'],
+        first_block_id: null,
+        title: 'Page A',
+        page_url: 'https://notion.so/a',
+        notion_page_id: 'np-a',
+        last_verified_at: '2026-10-29T12:00:00Z',
+      },
+      {
+        chunk_id: 'bbbbbbbb-5555-6666-7777-888888888888',
+        content_text: 'Second chunk',
+        heading_path: ['Section B'],
+        first_block_id: 'block-b',
+        title: 'Page B',
+        page_url: 'https://notion.so/b',
+        notion_page_id: 'np-b',
+        last_verified_at: '2026-10-29T12:00:00Z',
+      },
+    ]);
+    const result = await retrieveForUser(pool, TEST_SIGNING_SECRET, 'test', 'UEMP1');
+    expect(result.chunks).toHaveLength(2);
+    expect(result.chunks[0].chunkId).toBe('aaaaaaaa-1111-2222-3333-444444444444');
+    expect(result.chunks[1].chunkId).toBe('bbbbbbbb-5555-6666-7777-888888888888');
+  });
+
+  it('CID3. Missing chunk_id fails closed', async () => {
+    const pool = mockReaderPool([{
+      content_text: 'No chunk ID here',
+      heading_path: [],
+      first_block_id: null,
+      title: 'Orphan',
+      page_url: 'https://notion.so/orphan',
+      notion_page_id: 'np-orphan',
+      last_verified_at: '2026-10-29T12:00:00Z',
+      // chunk_id deliberately omitted
+    }]);
+    const result = await retrieveForUser(pool, TEST_SIGNING_SECRET, 'test', 'UEMP1');
+    expect(result.chunks).toHaveLength(0);
+    expect(result.error).toBe('Invalid chunk identifier in retrieval result');
+  });
+
+  it('CID4. Null chunk_id fails closed', async () => {
+    const pool = mockReaderPool([{
+      chunk_id: null,
+      content_text: 'Null chunk ID',
+      heading_path: [],
+      first_block_id: null,
+      title: 'Null',
+      page_url: 'https://notion.so/null',
+      notion_page_id: 'np-null',
+      last_verified_at: '2026-10-29T12:00:00Z',
+    }]);
+    const result = await retrieveForUser(pool, TEST_SIGNING_SECRET, 'test', 'UEMP1');
+    expect(result.chunks).toHaveLength(0);
+    expect(result.error).toBe('Invalid chunk identifier in retrieval result');
+  });
+
+  it('CID5. Malformed chunk_id fails closed', async () => {
+    const pool = mockReaderPool([{
+      chunk_id: 'not-a-uuid',
+      content_text: 'Bad ID',
+      heading_path: [],
+      first_block_id: null,
+      title: 'Bad',
+      page_url: 'https://notion.so/bad',
+      notion_page_id: 'np-bad',
+      last_verified_at: '2026-10-29T12:00:00Z',
+    }]);
+    const result = await retrieveForUser(pool, TEST_SIGNING_SECRET, 'test', 'UEMP1');
+    expect(result.chunks).toHaveLength(0);
+    expect(result.error).toBe('Invalid chunk identifier in retrieval result');
+  });
+
+  it('CID6. No synthetic chunk IDs generated for missing values', async () => {
+    // If chunk_id is empty string, fail closed — don't fabricate
+    const pool = mockReaderPool([{
+      chunk_id: '',
+      content_text: 'Empty ID',
+      heading_path: [],
+      first_block_id: null,
+      title: 'Empty',
+      page_url: 'https://notion.so/empty',
+      notion_page_id: 'np-empty',
+      last_verified_at: '2026-10-29T12:00:00Z',
+    }]);
+    const result = await retrieveForUser(pool, TEST_SIGNING_SECRET, 'test', 'UEMP1');
+    expect(result.chunks).toHaveLength(0);
+    expect(result.error).toBe('Invalid chunk identifier in retrieval result');
+  });
+
+  it('CID7. Retrieval calls hr_retrieve_knowledge_v2', async () => {
+    const pool = mockReaderPool([]);
+    await retrieveForUser(pool, TEST_SIGNING_SECRET, 'test', 'UEMP1');
+    const queryArgs = (pool.query as any).mock.calls[0];
+    expect(queryArgs[0]).toBe('SELECT * FROM hr_retrieve_knowledge_v2($1, $2, $3, $4)');
+  });
+
+  it('CID8. Citation metadata unchanged with chunk_id present', async () => {
+    const pool = mockReaderPool([{
+      chunk_id: 'cccccccc-9999-aaaa-bbbb-cccccccccccc',
+      content_text: 'Benefits text',
+      heading_path: ['Benefits', 'Health'],
+      first_block_id: 'blk-123',
+      title: 'Benefits Guide',
+      page_url: 'https://notion.so/benefits',
+      notion_page_id: 'np-benefits',
+      last_verified_at: '2026-10-29T12:00:00Z',
+    }]);
+    const result = await retrieveForUser(pool, TEST_SIGNING_SECRET, 'benefits', 'UEMP1');
+    expect(result.chunks).toHaveLength(1);
+    const c = result.chunks[0];
+    expect(c.citation.title).toBe('Benefits Guide');
+    expect(c.citation.url).toBe('https://notion.so/benefits#blk123');
+    expect(c.citation.heading).toBe('Benefits > Health');
+    expect(c.citation.verifiedAt).toBe('2026-10-29T12:00:00Z');
+  });
+
+  it('CID9. Feature-disabled behavior unchanged', async () => {
+    process.env.HR_AI_ENABLED = 'false';
+    const pool = mockReaderPool([{
+      chunk_id: 'dddddddd-1111-2222-3333-444444444444',
+      content_text: 'Should not appear',
+    }]);
+    const result = await retrieveForUser(pool, TEST_SIGNING_SECRET, 'test', 'UEMP1');
+    expect(result.chunks).toHaveLength(0);
+    expect(result.error).toBeNull();
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  it('CID10. Reader pool error handling unchanged', async () => {
+    const pool = mockReaderPool([], new Error('connection refused'));
+    const result = await retrieveForUser(pool, TEST_SIGNING_SECRET, 'test', 'UEMP1');
+    expect(result.chunks).toHaveLength(0);
+    expect(result.error).toContain('connection refused');
   });
 });
 
@@ -574,7 +738,7 @@ describe('Security Regression — Roots', () => {
     const fs = await import('fs');
     const content = fs.readFileSync(new URL('../notion/retrieval.ts', import.meta.url).pathname, 'utf-8');
     expect(content).not.toContain('retrieveDirect');
-    expect(content).toContain('hr_retrieve_knowledge');
+    expect(content).toContain('hr_retrieve_knowledge_v2');
     expect(content).toContain('createIdentityToken');
     expect(content).not.toContain('service_role'); // Uses hr_reader, not service_role
   });
