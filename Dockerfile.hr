@@ -10,5 +10,6 @@ RUN npm run build
 
 RUN npm prune --omit=dev --legacy-peer-deps
 
-# HR service entry point — independent of BD run-all.ts
-CMD ["node", "--import", "tsx", "src/hr/index.ts"]
+# HR service entry point — uses compiled ESM output (tsx is a devDependency,
+# removed by npm prune --omit=dev; must use compiled JavaScript here)
+CMD ["node", "dist/hr/index.js"]
