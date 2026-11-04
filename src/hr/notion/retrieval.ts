@@ -33,6 +33,7 @@ export interface RetrievalResult {
 }
 
 export interface RetrievedChunk {
+  chunkId: string;
   contentText: string;
   headingPath: string[];
   citation: Citation;
@@ -66,24 +67,36 @@ export async function retrieveForUser(
   try {
     token = createIdentityToken(slackUserId, signingSecret);
   } catch (err) {
-    console.error('[HR Retrieval] Token creation failed:', err instanceof Error ? err.message : err);
+    console.error(
+      '[HR Retrieval] Token creation failed:',
+      err instanceof Error ? err.message : err
+    );
     return { chunks: [], error: 'Token creation failed' };
   }
 
-  // 2. Query via least-privilege reader pool
+  // 2. Query via least-privilege reader pool (v2 returns chunk_id)
   const sanitized = sanitizeQuery(queryText);
   try {
     const result = await readerPool.query(
-      'SELECT * FROM hr_retrieve_knowledge($1, $2, $3, $4)',
+      'SELECT * FROM hr_retrieve_knowledge_v2($1, $2, $3, $4)',
       [token, sanitized, 30, 5]
     );
 
-    // 3. Build citations with block-level deep links
-    const chunks: RetrievedChunk[] = (result.rows || []).map((row) => ({
-      contentText: row.content_text as string,
-      headingPath: (row.heading_path as string[]) || [],
-      citation: buildCitation(row),
-    }));
+    // 3. Validate chunk IDs and build citations with block-level deep links
+    const chunks: RetrievedChunk[] = [];
+    for (const row of result.rows || []) {
+      const rawChunkId = row.chunk_id;
+      if (typeof rawChunkId !== 'string' || !isValidUUID(rawChunkId)) {
+        // Fail closed: chunk without a valid UUID is not returnable
+        return { chunks: [], error: 'Invalid chunk identifier in retrieval result' };
+      }
+      chunks.push({
+        chunkId: rawChunkId,
+        contentText: row.content_text as string,
+        headingPath: (row.heading_path as string[]) || [],
+        citation: buildCitation(row),
+      });
+    }
 
     return { chunks, error: null };
   } catch (err) {
@@ -94,9 +107,16 @@ export async function retrieveForUser(
   }
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isValidUUID(value: string): boolean {
+  return UUID_RE.test(value);
+}
+
 function buildCitation(row: Record<string, unknown>): Citation {
-  const pageUrl = (row.page_url as string) ||
-    `https://notion.so/${(row.notion_page_id as string || '').replace(/-/g, '')}`;
+  const pageUrl =
+    (row.page_url as string) ||
+    `https://notion.so/${((row.notion_page_id as string) || '').replace(/-/g, '')}`;
   const blockId = row.first_block_id as string | null;
   const url = blockId ? `${pageUrl}#${blockId.replace(/-/g, '')}` : pageUrl;
 

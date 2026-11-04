@@ -5,7 +5,7 @@
     "dockerfilePath": "Dockerfile.hr"
   },
   "deploy": {
-    "startCommand": "npx tsx src/hr/index.ts",
+    "startCommand": "node dist/hr/index.js",
     "healthcheckPath": "/health",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10

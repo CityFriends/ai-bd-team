@@ -15,6 +15,9 @@ import { createHRClient, createHRReaderPool, type HRReaderPool } from './databas
 import { createHRAuth } from './auth/hr-auth.js';
 import { isKnownSlackUser, syncBootstrapAdmins } from './database/employees.js';
 import { createHRSlackApp, type HRSlackApp } from './slack/hr-slack-app.js';
+import { createAnthropicTransport } from './llm/anthropic-transport.js';
+import { retrieveForUser } from './notion/retrieval.js';
+import type { HRPipelineConfig } from './llm/hr-answer-pipeline.js';
 
 async function main(): Promise<void> {
   console.log('[HR Service] Starting FFTC HR AI Employee...');
@@ -56,7 +59,9 @@ async function main(): Promise<void> {
       if (syncResult.error) {
         console.error(`[HR Service] Bootstrap admin sync failed: ${syncResult.error}`);
       } else {
-        console.log(`[HR Service] Bootstrap admins synced: added=${syncResult.added} removed=${syncResult.removed}`);
+        console.log(
+          `[HR Service] Bootstrap admins synced: added=${syncResult.added} removed=${syncResult.removed}`
+        );
       }
     }
   } else {
@@ -76,6 +81,35 @@ async function main(): Promise<void> {
     console.log('[HR Service] Reader pool: not configured (HR_READER_DATABASE_URL not set)');
   }
 
+  // 3c. Build AI pipeline configuration if all dependencies are available
+  //     The Anthropic SDK constructor is side-effect-free (no API call).
+  //     Pipeline config is optional — when absent, the pilot path is inactive.
+  let pipelineConfig: HRPipelineConfig | undefined;
+  if (
+    env.aiEnabled &&
+    env.llmEnabled &&
+    env.anthropicApiKey &&
+    readerPool &&
+    env.identitySigningSecret
+  ) {
+    try {
+      const { default: Anthropic } = await import('@anthropic-ai/sdk');
+      const anthropicClient = new Anthropic({ apiKey: env.anthropicApiKey });
+      const transport = createAnthropicTransport(anthropicClient.messages);
+      pipelineConfig = {
+        readerPool,
+        signingSecret: env.identitySigningSecret,
+        llmConfig: { transport },
+        retrieveFn: retrieveForUser,
+      };
+      console.log('[HR Service] Pipeline: configured (transport + retrieval)');
+    } catch {
+      console.log('[HR Service] Pipeline: @anthropic-ai/sdk not available — AI pipeline inactive');
+    }
+  } else {
+    console.log('[HR Service] Pipeline: not configured (missing AI dependencies)');
+  }
+
   // 4. Initialize authorization
   const auth = createHRAuth(
     env.authorizedAdmins,
@@ -87,7 +121,14 @@ async function main(): Promise<void> {
   let slackConnected: boolean | null = null;
   if (controls.isSlackEnabled()) {
     try {
-      slackApp = createHRSlackApp(env, auth, env.expectedTeamId ?? undefined, readerPool, env.identitySigningSecret);
+      slackApp = createHRSlackApp(
+        env,
+        auth,
+        env.expectedTeamId ?? undefined,
+        readerPool,
+        env.identitySigningSecret,
+        pipelineConfig
+      );
       await slackApp.start();
       slackConnected = true;
       console.log('[HR Service] Slack: connected');
@@ -131,10 +172,18 @@ async function main(): Promise<void> {
     console.log(`[HR Service] Received ${signal}, shutting down...`);
     server.close();
     if (readerPool) {
-      try { await readerPool.end(); } catch { /* best effort */ }
+      try {
+        await readerPool.end();
+      } catch {
+        /* best effort */
+      }
     }
     if (slackApp) {
-      try { await slackApp.stop(); } catch { /* best effort */ }
+      try {
+        await slackApp.stop();
+      } catch {
+        /* best effort */
+      }
     }
     process.exit(0);
   };
