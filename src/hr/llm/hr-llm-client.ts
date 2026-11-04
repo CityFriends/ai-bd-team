@@ -54,15 +54,18 @@ export type HRLLMResult =
  * Tests inject a fake; production supplies the real SDK.
  */
 export interface HRLLMTransport {
-  createMessage(params: {
-    model: string;
-    max_tokens: number;
-    system: string;
-    messages: Array<{ role: 'user'; content: string }>;
-  }, options: {
-    timeout: number;
-    signal: AbortSignal;
-  }): Promise<{
+  createMessage(
+    params: {
+      model: string;
+      max_tokens: number;
+      system: string;
+      messages: Array<{ role: 'user'; content: string }>;
+    },
+    options: {
+      timeout: number;
+      signal: AbortSignal;
+    }
+  ): Promise<{
     content: Array<{ type: string; text?: string }>;
   }>;
 }
@@ -89,22 +92,26 @@ function classifyError(err: unknown): HRLLMResult {
   if (err instanceof Error) {
     // Check for abort/timeout — the SDK throws APIConnectionTimeoutError
     // or APIUserAbortError when the signal fires or timeout is exceeded.
-    if (err.name === 'APIConnectionTimeoutError' ||
-        err.name === 'APIUserAbortError' ||
-        err.name === 'AbortError') {
+    if (
+      err.name === 'APIConnectionTimeoutError' ||
+      err.name === 'APIUserAbortError' ||
+      err.name === 'AbortError'
+    ) {
       return { ok: false, code: 'timeout' };
     }
     if (err.name === 'RateLimitError') {
       return { ok: false, code: 'rate_limited' };
     }
     // All other SDK/provider errors
-    if (err.name === 'APIError' ||
-        err.name === 'APIConnectionError' ||
-        err.name === 'AuthenticationError' ||
-        err.name === 'BadRequestError' ||
-        err.name === 'InternalServerError' ||
-        err.name === 'NotFoundError' ||
-        err.name === 'ConflictError') {
+    if (
+      err.name === 'APIError' ||
+      err.name === 'APIConnectionError' ||
+      err.name === 'AuthenticationError' ||
+      err.name === 'BadRequestError' ||
+      err.name === 'InternalServerError' ||
+      err.name === 'NotFoundError' ||
+      err.name === 'ConflictError'
+    ) {
       return { ok: false, code: 'provider_error' };
     }
   }
@@ -147,9 +154,13 @@ export function createHRLLMClient(config: HRLLMClientConfig) {
       }
 
       // Validate request shape
-      if (!request ||
-          typeof request.systemPrompt !== 'string' || request.systemPrompt.length === 0 ||
-          typeof request.userContent !== 'string' || request.userContent.length === 0) {
+      if (
+        !request ||
+        typeof request.systemPrompt !== 'string' ||
+        request.systemPrompt.length === 0 ||
+        typeof request.userContent !== 'string' ||
+        request.userContent.length === 0
+      ) {
         return { ok: false, code: 'invalid_request' };
       }
 

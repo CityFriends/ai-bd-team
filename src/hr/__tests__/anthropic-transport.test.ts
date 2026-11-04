@@ -44,7 +44,7 @@ describe('createAnthropicTransport', () => {
       {
         timeout: 20000,
         signal: defaultOptions.signal,
-      },
+      }
     );
   });
 
@@ -65,9 +65,7 @@ describe('createAnthropicTransport', () => {
 
   it('handles tool_use blocks without text', async () => {
     const msgs = mockMessages({
-      content: [
-        { type: 'tool_use', id: 't1', name: 'fn', input: {} },
-      ],
+      content: [{ type: 'tool_use', id: 't1', name: 'fn', input: {} }],
     });
     const transport = createAnthropicTransport(msgs);
     const result = await transport.createMessage(defaultParams, defaultOptions);
@@ -96,7 +94,9 @@ describe('createAnthropicTransport', () => {
     err.name = 'APIError';
     const msgs = mockMessagesError(err);
     const transport = createAnthropicTransport(msgs);
-    await expect(transport.createMessage(defaultParams, defaultOptions)).rejects.toThrow('API error');
+    await expect(transport.createMessage(defaultParams, defaultOptions)).rejects.toThrow(
+      'API error'
+    );
   });
 
   it('propagates timeout/abort errors', async () => {
@@ -104,6 +104,8 @@ describe('createAnthropicTransport', () => {
     err.name = 'APIConnectionTimeoutError';
     const msgs = mockMessagesError(err);
     const transport = createAnthropicTransport(msgs);
-    await expect(transport.createMessage(defaultParams, defaultOptions)).rejects.toThrow('Request timed out');
+    await expect(transport.createMessage(defaultParams, defaultOptions)).rejects.toThrow(
+      'Request timed out'
+    );
   });
 });

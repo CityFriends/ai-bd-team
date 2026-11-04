@@ -32,7 +32,7 @@ export interface AnthropicMessagesClient {
     options?: {
       timeout?: number;
       signal?: AbortSignal | null;
-    },
+    }
   ): Promise<{
     content: Array<{ type: string; text?: string }>;
   }>;
@@ -46,9 +46,7 @@ export interface AnthropicMessagesClient {
  *   const client = new Anthropic({ apiKey: process.env.HR_ANTHROPIC_API_KEY });
  *   const transport = createAnthropicTransport(client.messages);
  */
-export function createAnthropicTransport(
-  messages: AnthropicMessagesClient,
-): HRLLMTransport {
+export function createAnthropicTransport(messages: AnthropicMessagesClient): HRLLMTransport {
   return {
     async createMessage(params, options) {
       const response = await messages.create(
@@ -61,7 +59,7 @@ export function createAnthropicTransport(
         {
           timeout: options.timeout,
           signal: options.signal,
-        },
+        }
       );
 
       return {

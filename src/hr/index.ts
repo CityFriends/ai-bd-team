@@ -59,7 +59,9 @@ async function main(): Promise<void> {
       if (syncResult.error) {
         console.error(`[HR Service] Bootstrap admin sync failed: ${syncResult.error}`);
       } else {
-        console.log(`[HR Service] Bootstrap admins synced: added=${syncResult.added} removed=${syncResult.removed}`);
+        console.log(
+          `[HR Service] Bootstrap admins synced: added=${syncResult.added} removed=${syncResult.removed}`
+        );
       }
     }
   } else {
@@ -83,7 +85,13 @@ async function main(): Promise<void> {
   //     The Anthropic SDK constructor is side-effect-free (no API call).
   //     Pipeline config is optional — when absent, the pilot path is inactive.
   let pipelineConfig: HRPipelineConfig | undefined;
-  if (env.aiEnabled && env.llmEnabled && env.anthropicApiKey && readerPool && env.identitySigningSecret) {
+  if (
+    env.aiEnabled &&
+    env.llmEnabled &&
+    env.anthropicApiKey &&
+    readerPool &&
+    env.identitySigningSecret
+  ) {
     try {
       const { default: Anthropic } = await import('@anthropic-ai/sdk');
       const anthropicClient = new Anthropic({ apiKey: env.anthropicApiKey });
@@ -113,7 +121,14 @@ async function main(): Promise<void> {
   let slackConnected: boolean | null = null;
   if (controls.isSlackEnabled()) {
     try {
-      slackApp = createHRSlackApp(env, auth, env.expectedTeamId ?? undefined, readerPool, env.identitySigningSecret, pipelineConfig);
+      slackApp = createHRSlackApp(
+        env,
+        auth,
+        env.expectedTeamId ?? undefined,
+        readerPool,
+        env.identitySigningSecret,
+        pipelineConfig
+      );
       await slackApp.start();
       slackConnected = true;
       console.log('[HR Service] Slack: connected');
@@ -157,10 +172,18 @@ async function main(): Promise<void> {
     console.log(`[HR Service] Received ${signal}, shutting down...`);
     server.close();
     if (readerPool) {
-      try { await readerPool.end(); } catch { /* best effort */ }
+      try {
+        await readerPool.end();
+      } catch {
+        /* best effort */
+      }
     }
     if (slackApp) {
-      try { await slackApp.stop(); } catch { /* best effort */ }
+      try {
+        await slackApp.stop();
+      } catch {
+        /* best effort */
+      }
     }
     process.exit(0);
   };

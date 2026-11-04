@@ -56,12 +56,7 @@ export type HRAnswerParseResult =
   | { ok: true; answer: HRModelAnswer }
   | {
       ok: false;
-      code:
-        | 'invalid_json'
-        | 'invalid_schema'
-        | 'empty_text'
-        | 'invalid_citations'
-        | 'oversized';
+      code: 'invalid_json' | 'invalid_schema' | 'empty_text' | 'invalid_citations' | 'oversized';
     };
 
 export type HRAnswerResult =
@@ -100,7 +95,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * Fails closed on missing or malformed chunk IDs.
  */
 export function bridgeToAuthorizedChunks(
-  chunks: readonly RetrievedChunk[],
+  chunks: readonly RetrievedChunk[]
 ): AuthorizedChunk[] | null {
   if (!Array.isArray(chunks) || chunks.length === 0) {
     return null;
@@ -172,7 +167,7 @@ export type PromptResult =
  */
 export function assemblePrompt(
   question: unknown,
-  retrievedChunks: readonly RetrievedChunk[],
+  retrievedChunks: readonly RetrievedChunk[]
 ): PromptResult {
   // 1. Validate the employee question
   const qResult = validateHRQuestion(question);
@@ -195,9 +190,8 @@ export function assemblePrompt(
       continue;
     }
     // Bound each excerpt to prevent oversized prompts
-    const text = typeof chunk.contentText === 'string'
-      ? chunk.contentText.slice(0, MAX_EXCERPT_CHARS)
-      : '';
+    const text =
+      typeof chunk.contentText === 'string' ? chunk.contentText.slice(0, MAX_EXCERPT_CHARS) : '';
     if (text.length === 0) continue;
 
     const heading = chunk.citation?.title || 'Untitled';
@@ -321,7 +315,7 @@ export function parseModelAnswer(raw: string): HRAnswerParseResult {
  */
 export function finalizeAnswer(
   rawLLMResponse: string,
-  authorizedChunks: readonly AuthorizedChunk[],
+  authorizedChunks: readonly AuthorizedChunk[]
 ): HRAnswerResult {
   // 1. Parse the model's structured answer
   const parsed = parseModelAnswer(rawLLMResponse);
@@ -349,7 +343,7 @@ export function finalizeAnswer(
   // 3. Validate citations against the authorized chunk set
   const citationResult: HRCitationValidationResult = validateCitations(
     { text, citedChunkIds },
-    authorizedChunks,
+    authorizedChunks
   );
 
   if (!citationResult.ok) {

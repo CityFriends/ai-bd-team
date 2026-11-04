@@ -6,11 +6,25 @@
  */
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import {
-  classifyPage, classifyWithVerifiedPath, findApprovedRootFromAncestry,
-  shouldQuarantine, resolveAncestry, type ApprovedRoot,
+  classifyPage,
+  classifyWithVerifiedPath,
+  findApprovedRootFromAncestry,
+  shouldQuarantine,
+  resolveAncestry,
+  type ApprovedRoot,
 } from '../notion/classifier.js';
-import { verifyWebhookSignature, routeWebhookEvent, type WebhookConnection } from '../notion/webhook-handler.js';
-import { deactivateConnection, revokePage, fullDiscovery, incrementalVerification, syncPageContent } from '../notion/sync-engine.js';
+import {
+  verifyWebhookSignature,
+  routeWebhookEvent,
+  type WebhookConnection,
+} from '../notion/webhook-handler.js';
+import {
+  deactivateConnection,
+  revokePage,
+  fullDiscovery,
+  incrementalVerification,
+  syncPageContent,
+} from '../notion/sync-engine.js';
 import { isNotionSyncEnabled } from '../config/hr-controls.js';
 import { retrieveForUser } from '../notion/retrieval.js';
 import { createHRAuth } from '../auth/hr-auth.js';
@@ -22,26 +36,39 @@ import { createHmac } from 'crypto';
 // ============================================================
 
 const EMPLOYEE_ROOT: ApprovedRoot = {
-  id: 'root-emp-1', connectionId: 'conn-emp', notionPageId: 'page-hq-wiki',
-  accessClassification: 'employee_safe', isActive: true,
+  id: 'root-emp-1',
+  connectionId: 'conn-emp',
+  notionPageId: 'page-hq-wiki',
+  accessClassification: 'employee_safe',
+  isActive: true,
 };
 const ADMIN_ROOT: ApprovedRoot = {
-  id: 'root-admin-1', connectionId: 'conn-admin', notionPageId: 'page-bizops',
-  accessClassification: 'hr_restricted', isActive: true,
+  id: 'root-admin-1',
+  connectionId: 'conn-admin',
+  notionPageId: 'page-bizops',
+  accessClassification: 'hr_restricted',
+  isActive: true,
 };
 const ONBOARDING_ROOT: ApprovedRoot = {
-  id: 'root-onb-1', connectionId: 'conn-onb', notionPageId: 'page-onb-hub',
-  accessClassification: 'personalized', isActive: true,
+  id: 'root-onb-1',
+  connectionId: 'conn-onb',
+  notionPageId: 'page-onb-hub',
+  accessClassification: 'personalized',
+  isActive: true,
 };
 const DEACTIVATED_ROOT: ApprovedRoot = {
-  ...EMPLOYEE_ROOT, id: 'root-deactivated', isActive: false,
+  ...EMPLOYEE_ROOT,
+  id: 'root-deactivated',
+  isActive: false,
 };
 
 function makePage(id: string, parentPageId: string | null, title = 'Test Page'): any {
   return {
-    id, url: `https://notion.so/${id}`,
+    id,
+    url: `https://notion.so/${id}`,
     parent: parentPageId ? { type: 'page_id', page_id: parentPageId } : { type: 'workspace' },
-    last_edited_time: '2026-10-23T12:00:00Z', created_time: '2026-10-20T12:00:00Z',
+    last_edited_time: '2026-10-23T12:00:00Z',
+    created_time: '2026-10-20T12:00:00Z',
     properties: { title: { type: 'title', title: [{ plain_text: title }] } },
     in_trash: false,
   };
@@ -49,9 +76,11 @@ function makePage(id: string, parentPageId: string | null, title = 'Test Page'):
 
 function makeWikiPage(id: string, parentDatabaseId: string, title = 'Wiki Page'): any {
   return {
-    id, url: `https://notion.so/${id}`,
+    id,
+    url: `https://notion.so/${id}`,
     parent: { type: 'database_id', database_id: parentDatabaseId },
-    last_edited_time: '2026-10-23T12:00:00Z', created_time: '2026-10-20T12:00:00Z',
+    last_edited_time: '2026-10-23T12:00:00Z',
+    created_time: '2026-10-20T12:00:00Z',
     properties: { title: { type: 'title', title: [{ plain_text: title }] } },
     in_trash: false,
   };
@@ -72,9 +101,7 @@ function mockDb(rpcResult?: unknown, rpcError?: { message: string }) {
 const TEST_SIGNING_SECRET = 'test-signing-secret-for-unit-tests';
 
 function mockReaderPool(rows: unknown[] = [], error?: Error): HRReaderPool {
-  const queryFn = error
-    ? vi.fn().mockRejectedValue(error)
-    : vi.fn().mockResolvedValue({ rows });
+  const queryFn = error ? vi.fn().mockRejectedValue(error) : vi.fn().mockResolvedValue({ rows });
   return {
     pool: {} as any,
     query: queryFn,
@@ -95,7 +122,8 @@ beforeEach(() => {
 afterEach(() => {
   if (savedAIEnabled !== undefined) process.env.HR_AI_ENABLED = savedAIEnabled;
   else delete process.env.HR_AI_ENABLED;
-  if (savedSyncEnabledGlobal !== undefined) process.env.HR_NOTION_SYNC_ENABLED = savedSyncEnabledGlobal;
+  if (savedSyncEnabledGlobal !== undefined)
+    process.env.HR_NOTION_SYNC_ENABLED = savedSyncEnabledGlobal;
   else delete process.env.HR_NOTION_SYNC_ENABLED;
 });
 
@@ -151,23 +179,43 @@ describe('Retrieval Activation Gate', () => {
 
 describe('Retrieval Authorization', () => {
   it('1. Employee retrieves approved HQ Wiki content', () => {
-    const result = classifyWithVerifiedPath('p1', 'Remote Work Policy',
-      'HQ Wiki / Remote Work Policy', ['page-hq-wiki'], [EMPLOYEE_ROOT]);
+    const result = classifyWithVerifiedPath(
+      'p1',
+      'Remote Work Policy',
+      'HQ Wiki / Remote Work Policy',
+      ['page-hq-wiki'],
+      [EMPLOYEE_ROOT]
+    );
     expect(result.accessClassification).toBe('employee_safe');
     expect(result.isExcluded).toBe(false);
   });
 
   it('2. Employee cannot retrieve BizOps content', () => {
-    const result = classifyWithVerifiedPath('p2', 'Employee Escalations',
-      'BizOps / Employee Escalations', ['page-bizops'], [ADMIN_ROOT]);
+    const result = classifyWithVerifiedPath(
+      'p2',
+      'Employee Escalations',
+      'BizOps / Employee Escalations',
+      ['page-bizops'],
+      [ADMIN_ROOT]
+    );
     expect(result.accessClassification).toBe('hr_restricted');
   });
 
   it('3. Admin retrieves both scopes', () => {
-    const emp = classifyWithVerifiedPath('p3a', 'PTO',
-      'HQ Wiki / PTO', ['page-hq-wiki'], [EMPLOYEE_ROOT]);
-    const adm = classifyWithVerifiedPath('p3b', 'Hiring Playbook',
-      'BizOps / Hiring', ['page-bizops'], [ADMIN_ROOT]);
+    const emp = classifyWithVerifiedPath(
+      'p3a',
+      'PTO',
+      'HQ Wiki / PTO',
+      ['page-hq-wiki'],
+      [EMPLOYEE_ROOT]
+    );
+    const adm = classifyWithVerifiedPath(
+      'p3b',
+      'Hiring Playbook',
+      'BizOps / Hiring',
+      ['page-bizops'],
+      [ADMIN_ROOT]
+    );
     expect(emp.accessClassification).toBe('employee_safe');
     expect(adm.accessClassification).toBe('hr_restricted');
   });
@@ -180,16 +228,26 @@ describe('Retrieval Authorization', () => {
   });
 
   it('4b. Personalized onboarding page classified under onboarding root', () => {
-    const result = classifyWithVerifiedPath('p-onb', 'Alice Onboarding Board',
-      'Onboarding Hub / Alice Onboarding Board', ['page-onb-hub'], [ONBOARDING_ROOT]);
+    const result = classifyWithVerifiedPath(
+      'p-onb',
+      'Alice Onboarding Board',
+      'Onboarding Hub / Alice Onboarding Board',
+      ['page-onb-hub'],
+      [ONBOARDING_ROOT]
+    );
     expect(result.accessClassification).toBe('personalized');
     expect(result.isExcluded).toBe(false);
     expect(result.approvedRoot?.id).toBe('root-onb-1');
   });
 
   it('4c. Personalized page not under any approved root is excluded', () => {
-    const result = classifyWithVerifiedPath('p-orphan', 'Some Page',
-      'Some Page', [], [ONBOARDING_ROOT, EMPLOYEE_ROOT]);
+    const result = classifyWithVerifiedPath(
+      'p-orphan',
+      'Some Page',
+      'Some Page',
+      [],
+      [ONBOARDING_ROOT, EMPLOYEE_ROOT]
+    );
     expect(result.isExcluded).toBe(true);
     expect(result.exclusionReason).toBe('not_under_approved_root');
   });
@@ -201,16 +259,22 @@ describe('Retrieval Authorization', () => {
 
 describe('Wiki Database Ancestry', () => {
   const HQ_WIKI_ROOT: ApprovedRoot = {
-    id: 'root-hq-wiki', connectionId: 'conn-emp',
+    id: 'root-hq-wiki',
+    connectionId: 'conn-emp',
     notionPageId: '2b107a79-51ff-806e-97f2-ec216a0b2126',
-    accessClassification: 'employee_safe', isActive: true,
+    accessClassification: 'employee_safe',
+    isActive: true,
   };
 
   it('W1. Wiki page with database_id parent resolves to wiki root', () => {
     // Page → parent.database_id = wiki DB → approved root
-    const result = classifyWithVerifiedPath('wiki-p1', 'PTO Policy',
+    const result = classifyWithVerifiedPath(
+      'wiki-p1',
+      'PTO Policy',
       'HQ Wiki / PTO Policy',
-      ['2b107a79-51ff-806e-97f2-ec216a0b2126'], [HQ_WIKI_ROOT]);
+      ['2b107a79-51ff-806e-97f2-ec216a0b2126'],
+      [HQ_WIKI_ROOT]
+    );
     expect(result.accessClassification).toBe('employee_safe');
     expect(result.isExcluded).toBe(false);
     expect(result.approvedRoot?.id).toBe('root-hq-wiki');
@@ -218,10 +282,13 @@ describe('Wiki Database Ancestry', () => {
 
   it('W2. Nested wiki page resolves through intermediate DB to root', () => {
     // Page → inline DB → page → intermediate → wiki DB
-    const result = classifyWithVerifiedPath('wiki-p2', 'Compensation Bands & Step Increases',
+    const result = classifyWithVerifiedPath(
+      'wiki-p2',
+      'Compensation Bands & Step Increases',
       'HQ Wiki / Career Development / Compensation Bands & Step Increases',
       ['db-career-dev', 'page-career', 'page-intermediate', '2b107a79-51ff-806e-97f2-ec216a0b2126'],
-      [HQ_WIKI_ROOT]);
+      [HQ_WIKI_ROOT]
+    );
     expect(result.accessClassification).toBe('employee_safe');
     expect(result.isExcluded).toBe(false);
   });
@@ -242,7 +309,8 @@ describe('Wiki Database Ancestry', () => {
 
   it('W5. resolveAncestry handles database_id parent type', async () => {
     const wikiPage = makeWikiPage('wiki-p5', 'db-parent-id', 'Wiki Child');
-    const getTitle = vi.fn()
+    const getTitle = vi
+      .fn()
       .mockResolvedValueOnce({ id: 'db-parent-id', title: 'Parent DB', parentPageId: null });
     const ancestry = await resolveAncestry(wikiPage, 'Wiki Child', getTitle);
     expect(ancestry.path).toEqual(['Parent DB', 'Wiki Child']);
@@ -251,7 +319,8 @@ describe('Wiki Database Ancestry', () => {
 
   it('W6. resolveAncestry detects cycles and terminates', async () => {
     const cyclePage = makePage('cycle-a', 'cycle-b', 'Cycle A');
-    const getTitle = vi.fn()
+    const getTitle = vi
+      .fn()
       .mockResolvedValueOnce({ id: 'cycle-b', title: 'B', parentPageId: 'cycle-a' })
       .mockResolvedValueOnce({ id: 'cycle-a', title: 'A', parentPageId: 'cycle-b' });
     const ancestry = await resolveAncestry(cyclePage, 'Cycle A', getTitle);
@@ -262,19 +331,25 @@ describe('Wiki Database Ancestry', () => {
 
   it('W7. Old Friends HQ page excluded (not under new HQ Wiki root)', () => {
     // Old HQ page ID is not the new HQ Wiki ID
-    const result = classifyWithVerifiedPath('old-hq-page', 'PTO Policy',
+    const result = classifyWithVerifiedPath(
+      'old-hq-page',
+      'PTO Policy',
       'Friends HQ / PTO Policy',
-      ['687cafd6-b54e-4613-bb07-bfc7dbbb161b'], [HQ_WIKI_ROOT]);
+      ['687cafd6-b54e-4613-bb07-bfc7dbbb161b'],
+      [HQ_WIKI_ROOT]
+    );
     expect(result.isExcluded).toBe(true);
     expect(result.exclusionReason).toBe('not_under_approved_root');
   });
 
   it('W8. Compensation Bands under new HQ Wiki is employee_safe', () => {
     const result = classifyWithVerifiedPath(
-      '36407a79-51ff-8097-9cb2-e0c6884c9377', 'Compensation Bands & Step Increases',
+      '36407a79-51ff-8097-9cb2-e0c6884c9377',
+      'Compensation Bands & Step Increases',
       'HQ Wiki / Career Development / Compensation Bands & Step Increases',
       ['db-career', 'page-career-dev', '2b107a79-51ff-806e-97f2-ec216a0b2126'],
-      [HQ_WIKI_ROOT]);
+      [HQ_WIKI_ROOT]
+    );
     expect(result.accessClassification).toBe('employee_safe');
     expect(result.isExcluded).toBe(false);
   });
@@ -300,23 +375,36 @@ describe('Wiki Database Ancestry', () => {
   });
 
   it('W12. Old Friends HQ legacy onboarding pages excluded by root', () => {
-    const result = classifyWithVerifiedPath('old-onb-page', 'Joshua Han',
+    const result = classifyWithVerifiedPath(
+      'old-onb-page',
+      'Joshua Han',
       'Friends HQ / Onboarding Hub / New Hire Onboarding Hub / Joshua Han',
-      ['62e0a340-1029-4940-bc81-501e2fc78316', 'ab49cc75-8f7f-4ccb-ba17-7b0bdc4e84c2',
-       '687cafd6-b54e-4613-bb07-bfc7dbbb161b'],
-      [HQ_WIKI_ROOT]);
+      [
+        '62e0a340-1029-4940-bc81-501e2fc78316',
+        'ab49cc75-8f7f-4ccb-ba17-7b0bdc4e84c2',
+        '687cafd6-b54e-4613-bb07-bfc7dbbb161b',
+      ],
+      [HQ_WIKI_ROOT]
+    );
     expect(result.isExcluded).toBe(true);
     expect(result.exclusionReason).toBe('not_under_approved_root');
   });
 
   it('W13. Future onboarding board under separate root is personalized', () => {
     const ONB_ROOT: ApprovedRoot = {
-      id: 'root-new-onb', connectionId: 'conn-onb', notionPageId: 'new-onb-root-id',
-      accessClassification: 'personalized', isActive: true,
+      id: 'root-new-onb',
+      connectionId: 'conn-onb',
+      notionPageId: 'new-onb-root-id',
+      accessClassification: 'personalized',
+      isActive: true,
     };
-    const result = classifyWithVerifiedPath('future-onb', 'Alice Board',
+    const result = classifyWithVerifiedPath(
+      'future-onb',
+      'Alice Board',
       'Onboarding Boards / Alice Board',
-      ['new-onb-root-id'], [HQ_WIKI_ROOT, ONB_ROOT]);
+      ['new-onb-root-id'],
+      [HQ_WIKI_ROOT, ONB_ROOT]
+    );
     expect(result.accessClassification).toBe('personalized');
     expect(result.isExcluded).toBe(false);
     expect(result.approvedRoot?.id).toBe('root-new-onb');
@@ -324,9 +412,11 @@ describe('Wiki Database Ancestry', () => {
 
   it('W9. Page with neither page_id nor database_id parent excluded', () => {
     const workspacePage = {
-      id: 'ws-page', url: 'https://notion.so/ws-page',
+      id: 'ws-page',
+      url: 'https://notion.so/ws-page',
       parent: { type: 'workspace', workspace: true },
-      last_edited_time: '2026-10-23T12:00:00Z', created_time: '2026-10-20T12:00:00Z',
+      last_edited_time: '2026-10-23T12:00:00Z',
+      created_time: '2026-10-20T12:00:00Z',
       properties: { title: { type: 'title', title: [{ plain_text: 'Root Page' }] } },
       in_trash: false,
     };
@@ -342,9 +432,13 @@ describe('Wiki Database Ancestry', () => {
 
 describe('Sync Discovery', () => {
   it('5. Confidential descendant under employee root excluded via verified path', () => {
-    const result = classifyWithVerifiedPath('p5', 'Day 1 Tasks',
+    const result = classifyWithVerifiedPath(
+      'p5',
+      'Day 1 Tasks',
       'HQ Wiki / Onboarding Hub / New Hire Onboarding Hub / Joshua Han / 30-60-90 Day Plan / Day 1 Tasks',
-      ['page-plan', 'page-josh', 'page-onboard-hub', 'page-hq-wiki'], [EMPLOYEE_ROOT]);
+      ['page-plan', 'page-josh', 'page-onboard-hub', 'page-hq-wiki'],
+      [EMPLOYEE_ROOT]
+    );
     expect(result.isExcluded).toBe(true);
     expect(result.exclusionReason).toContain('structural');
   });
@@ -352,24 +446,38 @@ describe('Sync Discovery', () => {
   it('5b. Innocuously titled page under employee onboarding hub is excluded', () => {
     // This is the exact scenario the audit identified: "Equipment Setup" nested
     // under an individual employee's onboarding hub
-    const result = classifyWithVerifiedPath('p5b', 'Equipment Setup',
+    const result = classifyWithVerifiedPath(
+      'p5b',
+      'Equipment Setup',
       'HQ Wiki / Onboarding Hub / New Hire Onboarding Hub / Maria Garcia / 30-60-90 Day Plan',
-      ['page-plan', 'page-maria', 'page-onboard-hub', 'page-hq-wiki'], [EMPLOYEE_ROOT]);
+      ['page-plan', 'page-maria', 'page-onboard-hub', 'page-hq-wiki'],
+      [EMPLOYEE_ROOT]
+    );
     expect(result.isExcluded).toBe(true);
     expect(result.exclusionReason).toContain('30-60-90');
   });
 
   it('6. Page not under any approved root is skipped', () => {
-    const result = classifyWithVerifiedPath('p6', 'Software Integrations',
-      'Software Integrations', [], [EMPLOYEE_ROOT, ADMIN_ROOT]);
+    const result = classifyWithVerifiedPath(
+      'p6',
+      'Software Integrations',
+      'Software Integrations',
+      [],
+      [EMPLOYEE_ROOT, ADMIN_ROOT]
+    );
     expect(result.approvedRoot).toBeNull();
     expect(result.isExcluded).toBe(true);
     expect(result.exclusionReason).toBe('not_under_approved_root');
   });
 
   it('7. New eligible page classified by root via ancestry', () => {
-    const result = classifyWithVerifiedPath('p7', 'New Benefits Info',
-      'HQ Wiki / Benefits / New Benefits Info', ['page-benefits', 'page-hq-wiki'], [EMPLOYEE_ROOT]);
+    const result = classifyWithVerifiedPath(
+      'p7',
+      'New Benefits Info',
+      'HQ Wiki / Benefits / New Benefits Info',
+      ['page-benefits', 'page-hq-wiki'],
+      [EMPLOYEE_ROOT]
+    );
     expect(result.accessClassification).toBe('employee_safe');
     expect(result.isExcluded).toBe(false);
     expect(result.approvedRoot?.id).toBe('root-emp-1');
@@ -391,23 +499,34 @@ describe('Webhook Handling', () => {
   const processedIds = new Set<string>();
 
   it('9. page.moved triggers root re-verification', () => {
-    const r = routeWebhookEvent({ id: 'evt-9', type: 'page.moved', timestamp: '', data: { page_id: 'p1' } }, processedIds);
+    const r = routeWebhookEvent(
+      { id: 'evt-9', type: 'page.moved', timestamp: '', data: { page_id: 'p1' } },
+      processedIds
+    );
     expect(r.action).toBe('processed');
     expect(r.pageId).toBe('p1');
   });
 
   it('10. page.deleted revokes immediately', () => {
-    const r = routeWebhookEvent({ id: 'evt-10', type: 'page.deleted', timestamp: '', data: { page_id: 'p2' } }, processedIds);
+    const r = routeWebhookEvent(
+      { id: 'evt-10', type: 'page.deleted', timestamp: '', data: { page_id: 'p2' } },
+      processedIds
+    );
     expect(r.action).toBe('processed');
   });
 
   it('11. page.created triggers discovery', () => {
-    const r = routeWebhookEvent({ id: 'evt-11', type: 'page.created', timestamp: '', data: { page_id: 'p3' } }, processedIds);
+    const r = routeWebhookEvent(
+      { id: 'evt-11', type: 'page.created', timestamp: '', data: { page_id: 'p3' } },
+      processedIds
+    );
     expect(r.action).toBe('processed');
   });
 
   it('12. Invalid webhook signature rejected', () => {
-    const conns: WebhookConnection[] = [{ id: 'c1', webhookSecretEnv: 'HR_WH_SEC_12', scope: 'employee' }];
+    const conns: WebhookConnection[] = [
+      { id: 'c1', webhookSecretEnv: 'HR_WH_SEC_12', scope: 'employee' },
+    ];
     process.env.HR_WH_SEC_12 = 'test-secret';
     const result = verifyWebhookSignature('{"test":"data"}', 'invalid', conns);
     expect(result).toBeNull();
@@ -416,7 +535,10 @@ describe('Webhook Handling', () => {
 
   it('13. Duplicate event ID is no-op', () => {
     const ids = new Set(['evt-dup']);
-    const r = routeWebhookEvent({ id: 'evt-dup', type: 'page.content_updated', timestamp: '', data: { page_id: 'p1' } }, ids);
+    const r = routeWebhookEvent(
+      { id: 'evt-dup', type: 'page.content_updated', timestamp: '', data: { page_id: 'p1' } },
+      ids
+    );
     expect(r.action).toBe('duplicate');
   });
 });
@@ -478,15 +600,26 @@ describe('Source Approval and Deduplication', () => {
   it('19. Content hash prevents unnecessary re-chunking', () => {
     const { createHash } = require('crypto');
     const text = 'Same content';
-    expect(createHash('sha256').update(text).digest('hex'))
-      .toBe(createHash('sha256').update(text).digest('hex'));
+    expect(createHash('sha256').update(text).digest('hex')).toBe(
+      createHash('sha256').update(text).digest('hex')
+    );
   });
 
   it('20. Duplicate pages across roots classified independently', () => {
-    const emp = classifyWithVerifiedPath('p-d1', 'Compensation',
-      'HQ Wiki / Compensation', ['page-hq-wiki'], [EMPLOYEE_ROOT]);
-    const adm = classifyWithVerifiedPath('p-d2', 'Compensation',
-      'BizOps / Compensation', ['page-bizops'], [ADMIN_ROOT]);
+    const emp = classifyWithVerifiedPath(
+      'p-d1',
+      'Compensation',
+      'HQ Wiki / Compensation',
+      ['page-hq-wiki'],
+      [EMPLOYEE_ROOT]
+    );
+    const adm = classifyWithVerifiedPath(
+      'p-d2',
+      'Compensation',
+      'BizOps / Compensation',
+      ['page-bizops'],
+      [ADMIN_ROOT]
+    );
     expect(emp.accessClassification).toBe('employee_safe');
     expect(adm.accessClassification).toBe('hr_restricted');
   });
@@ -521,7 +654,13 @@ describe('Citations, Rate Limiting, Isolation', () => {
 
   it('24. BD isolation — zero BD imports in connector modules', async () => {
     const fs = await import('fs');
-    for (const f of ['api-client.ts', 'sync-engine.ts', 'webhook-handler.ts', 'retrieval.ts', 'classifier.ts']) {
+    for (const f of [
+      'api-client.ts',
+      'sync-engine.ts',
+      'webhook-handler.ts',
+      'retrieval.ts',
+      'classifier.ts',
+    ]) {
       const content = fs.readFileSync(new URL(`../notion/${f}`, import.meta.url).pathname, 'utf-8');
       expect(content).not.toContain('src/integrations/');
       expect(content).not.toContain('NOTION_API_KEY');
@@ -531,7 +670,8 @@ describe('Citations, Rate Limiting, Isolation', () => {
 
   it('25. Ancestry resolution uses parent chain, not title', async () => {
     const page = makePage('p-deep', 'parent-1', 'Deep Page');
-    const getTitle = vi.fn()
+    const getTitle = vi
+      .fn()
       .mockResolvedValueOnce({ id: 'parent-1', title: 'Parent', parentPageId: 'grandparent-1' })
       .mockResolvedValueOnce({ id: 'grandparent-1', title: 'Grandparent', parentPageId: null });
     const result = await resolveAncestry(page, 'Deep Page', getTitle);
@@ -547,16 +687,18 @@ describe('Citations, Rate Limiting, Isolation', () => {
 
 describe('Chunk ID Integration', () => {
   it('CID1. Valid UUID chunk_id maps to RetrievedChunk.chunkId', async () => {
-    const pool = mockReaderPool([{
-      chunk_id: '550e8400-e29b-41d4-a716-446655440000',
-      content_text: 'PTO policy text',
-      heading_path: ['Leave'],
-      first_block_id: 'block-1',
-      title: 'PTO Policy',
-      page_url: 'https://notion.so/pto',
-      notion_page_id: 'np-1',
-      last_verified_at: '2026-10-29T12:00:00Z',
-    }]);
+    const pool = mockReaderPool([
+      {
+        chunk_id: '550e8400-e29b-41d4-a716-446655440000',
+        content_text: 'PTO policy text',
+        heading_path: ['Leave'],
+        first_block_id: 'block-1',
+        title: 'PTO Policy',
+        page_url: 'https://notion.so/pto',
+        notion_page_id: 'np-1',
+        last_verified_at: '2026-10-29T12:00:00Z',
+      },
+    ]);
     const result = await retrieveForUser(pool, TEST_SIGNING_SECRET, 'pto', 'UEMP1');
     expect(result.chunks).toHaveLength(1);
     expect(result.chunks[0].chunkId).toBe('550e8400-e29b-41d4-a716-446655440000');
@@ -594,48 +736,54 @@ describe('Chunk ID Integration', () => {
   });
 
   it('CID3. Missing chunk_id fails closed', async () => {
-    const pool = mockReaderPool([{
-      content_text: 'No chunk ID here',
-      heading_path: [],
-      first_block_id: null,
-      title: 'Orphan',
-      page_url: 'https://notion.so/orphan',
-      notion_page_id: 'np-orphan',
-      last_verified_at: '2026-10-29T12:00:00Z',
-      // chunk_id deliberately omitted
-    }]);
+    const pool = mockReaderPool([
+      {
+        content_text: 'No chunk ID here',
+        heading_path: [],
+        first_block_id: null,
+        title: 'Orphan',
+        page_url: 'https://notion.so/orphan',
+        notion_page_id: 'np-orphan',
+        last_verified_at: '2026-10-29T12:00:00Z',
+        // chunk_id deliberately omitted
+      },
+    ]);
     const result = await retrieveForUser(pool, TEST_SIGNING_SECRET, 'test', 'UEMP1');
     expect(result.chunks).toHaveLength(0);
     expect(result.error).toBe('Invalid chunk identifier in retrieval result');
   });
 
   it('CID4. Null chunk_id fails closed', async () => {
-    const pool = mockReaderPool([{
-      chunk_id: null,
-      content_text: 'Null chunk ID',
-      heading_path: [],
-      first_block_id: null,
-      title: 'Null',
-      page_url: 'https://notion.so/null',
-      notion_page_id: 'np-null',
-      last_verified_at: '2026-10-29T12:00:00Z',
-    }]);
+    const pool = mockReaderPool([
+      {
+        chunk_id: null,
+        content_text: 'Null chunk ID',
+        heading_path: [],
+        first_block_id: null,
+        title: 'Null',
+        page_url: 'https://notion.so/null',
+        notion_page_id: 'np-null',
+        last_verified_at: '2026-10-29T12:00:00Z',
+      },
+    ]);
     const result = await retrieveForUser(pool, TEST_SIGNING_SECRET, 'test', 'UEMP1');
     expect(result.chunks).toHaveLength(0);
     expect(result.error).toBe('Invalid chunk identifier in retrieval result');
   });
 
   it('CID5. Malformed chunk_id fails closed', async () => {
-    const pool = mockReaderPool([{
-      chunk_id: 'not-a-uuid',
-      content_text: 'Bad ID',
-      heading_path: [],
-      first_block_id: null,
-      title: 'Bad',
-      page_url: 'https://notion.so/bad',
-      notion_page_id: 'np-bad',
-      last_verified_at: '2026-10-29T12:00:00Z',
-    }]);
+    const pool = mockReaderPool([
+      {
+        chunk_id: 'not-a-uuid',
+        content_text: 'Bad ID',
+        heading_path: [],
+        first_block_id: null,
+        title: 'Bad',
+        page_url: 'https://notion.so/bad',
+        notion_page_id: 'np-bad',
+        last_verified_at: '2026-10-29T12:00:00Z',
+      },
+    ]);
     const result = await retrieveForUser(pool, TEST_SIGNING_SECRET, 'test', 'UEMP1');
     expect(result.chunks).toHaveLength(0);
     expect(result.error).toBe('Invalid chunk identifier in retrieval result');
@@ -643,16 +791,18 @@ describe('Chunk ID Integration', () => {
 
   it('CID6. No synthetic chunk IDs generated for missing values', async () => {
     // If chunk_id is empty string, fail closed — don't fabricate
-    const pool = mockReaderPool([{
-      chunk_id: '',
-      content_text: 'Empty ID',
-      heading_path: [],
-      first_block_id: null,
-      title: 'Empty',
-      page_url: 'https://notion.so/empty',
-      notion_page_id: 'np-empty',
-      last_verified_at: '2026-10-29T12:00:00Z',
-    }]);
+    const pool = mockReaderPool([
+      {
+        chunk_id: '',
+        content_text: 'Empty ID',
+        heading_path: [],
+        first_block_id: null,
+        title: 'Empty',
+        page_url: 'https://notion.so/empty',
+        notion_page_id: 'np-empty',
+        last_verified_at: '2026-10-29T12:00:00Z',
+      },
+    ]);
     const result = await retrieveForUser(pool, TEST_SIGNING_SECRET, 'test', 'UEMP1');
     expect(result.chunks).toHaveLength(0);
     expect(result.error).toBe('Invalid chunk identifier in retrieval result');
@@ -666,16 +816,18 @@ describe('Chunk ID Integration', () => {
   });
 
   it('CID8. Citation metadata unchanged with chunk_id present', async () => {
-    const pool = mockReaderPool([{
-      chunk_id: 'cccccccc-9999-aaaa-bbbb-cccccccccccc',
-      content_text: 'Benefits text',
-      heading_path: ['Benefits', 'Health'],
-      first_block_id: 'blk-123',
-      title: 'Benefits Guide',
-      page_url: 'https://notion.so/benefits',
-      notion_page_id: 'np-benefits',
-      last_verified_at: '2026-10-29T12:00:00Z',
-    }]);
+    const pool = mockReaderPool([
+      {
+        chunk_id: 'cccccccc-9999-aaaa-bbbb-cccccccccccc',
+        content_text: 'Benefits text',
+        heading_path: ['Benefits', 'Health'],
+        first_block_id: 'blk-123',
+        title: 'Benefits Guide',
+        page_url: 'https://notion.so/benefits',
+        notion_page_id: 'np-benefits',
+        last_verified_at: '2026-10-29T12:00:00Z',
+      },
+    ]);
     const result = await retrieveForUser(pool, TEST_SIGNING_SECRET, 'benefits', 'UEMP1');
     expect(result.chunks).toHaveLength(1);
     const c = result.chunks[0];
@@ -687,10 +839,12 @@ describe('Chunk ID Integration', () => {
 
   it('CID9. Feature-disabled behavior unchanged', async () => {
     process.env.HR_AI_ENABLED = 'false';
-    const pool = mockReaderPool([{
-      chunk_id: 'dddddddd-1111-2222-3333-444444444444',
-      content_text: 'Should not appear',
-    }]);
+    const pool = mockReaderPool([
+      {
+        chunk_id: 'dddddddd-1111-2222-3333-444444444444',
+        content_text: 'Should not appear',
+      },
+    ]);
     const result = await retrieveForUser(pool, TEST_SIGNING_SECRET, 'test', 'UEMP1');
     expect(result.chunks).toHaveLength(0);
     expect(result.error).toBeNull();
@@ -711,16 +865,25 @@ describe('Chunk ID Integration', () => {
 
 describe('Security Regression — Roots', () => {
   it('26. Page visible to integration but not under approved root is excluded', () => {
-    const result = classifyWithVerifiedPath('p-orphan', 'Visible Page',
-      'Some Area / Visible Page', ['some-area-id'], [EMPLOYEE_ROOT]);
+    const result = classifyWithVerifiedPath(
+      'p-orphan',
+      'Visible Page',
+      'Some Area / Visible Page',
+      ['some-area-id'],
+      [EMPLOYEE_ROOT]
+    );
     expect(result.approvedRoot).toBeNull();
     expect(result.isExcluded).toBe(true);
   });
 
   it('27. Ambiguous descendant quarantined via possessive indicator', () => {
-    const result = classifyWithVerifiedPath('p-ambig', 'Staff Updates',
+    const result = classifyWithVerifiedPath(
+      'p-ambig',
+      'Staff Updates',
       "HQ Wiki / Company / Sarah Johnson's Notes / Staff Updates",
-      ['page-sarah', 'page-company', 'page-hq-wiki'], [EMPLOYEE_ROOT]);
+      ['page-sarah', 'page-company', 'page-hq-wiki'],
+      [EMPLOYEE_ROOT]
+    );
     expect(result.isExcluded).toBe(true);
     expect(result.exclusionReason).toContain('quarantined');
   });
@@ -736,7 +899,10 @@ describe('Security Regression — Roots', () => {
 
   it('29. Retrieval module has no insecure fallback path', async () => {
     const fs = await import('fs');
-    const content = fs.readFileSync(new URL('../notion/retrieval.ts', import.meta.url).pathname, 'utf-8');
+    const content = fs.readFileSync(
+      new URL('../notion/retrieval.ts', import.meta.url).pathname,
+      'utf-8'
+    );
     expect(content).not.toContain('retrieveDirect');
     expect(content).toContain('hr_retrieve_knowledge_v2');
     expect(content).toContain('createIdentityToken');
@@ -744,8 +910,13 @@ describe('Security Regression — Roots', () => {
   });
 
   it('30. Deactivated root blocks classification', () => {
-    const result = classifyWithVerifiedPath('p30', 'Policy',
-      'HQ Wiki / Policy', ['page-hq-wiki'], [DEACTIVATED_ROOT]);
+    const result = classifyWithVerifiedPath(
+      'p30',
+      'Policy',
+      'HQ Wiki / Policy',
+      ['page-hq-wiki'],
+      [DEACTIVATED_ROOT]
+    );
     expect(result.isExcluded).toBe(true);
     expect(result.exclusionReason).toBe('root_deactivated');
   });
@@ -754,7 +925,9 @@ describe('Security Regression — Roots', () => {
 describe('Security Regression — Webhook', () => {
   it('31. Invalid signature returns null', () => {
     process.env.HR_WH_31 = 'real-secret';
-    const r = verifyWebhookSignature('body', 'bad', [{ id: 'c1', webhookSecretEnv: 'HR_WH_31', scope: 'employee' }]);
+    const r = verifyWebhookSignature('body', 'bad', [
+      { id: 'c1', webhookSecretEnv: 'HR_WH_31', scope: 'employee' },
+    ]);
     expect(r).toBeNull();
     delete process.env.HR_WH_31;
   });
@@ -775,7 +948,12 @@ describe('Security Regression — Webhook', () => {
 
   it('33. Processing is idempotent', () => {
     const ids = new Set<string>();
-    const evt = { id: 'evt-33', type: 'page.content_updated', timestamp: '', data: { page_id: 'p1' } };
+    const evt = {
+      id: 'evt-33',
+      type: 'page.content_updated',
+      timestamp: '',
+      data: { page_id: 'p1' },
+    };
     expect(routeWebhookEvent(evt, ids).action).toBe('processed');
     expect(routeWebhookEvent(evt, ids).action).toBe('duplicate');
   });
@@ -824,7 +1002,10 @@ describe('Security Regression — Content Protection', () => {
 
   it('37. Sync engine logs contain no tokens or secrets', async () => {
     const fs = await import('fs');
-    const content = fs.readFileSync(new URL('../notion/sync-engine.ts', import.meta.url).pathname, 'utf-8');
+    const content = fs.readFileSync(
+      new URL('../notion/sync-engine.ts', import.meta.url).pathname,
+      'utf-8'
+    );
     const logLines = content.split('\n').filter((l: string) => l.includes('console.'));
     for (const line of logLines) {
       expect(line).not.toMatch(/\btoken\b/i);
@@ -841,16 +1022,26 @@ describe('Security Regression — Content Protection', () => {
     // Path only contains the page itself — no ancestors resolved
     expect(ancestry.path).toEqual(['Mystery Page']);
     // Classify with no ancestor IDs — should fail closed
-    const result = classifyWithVerifiedPath('p-unresolvable', 'Mystery Page',
-      'Mystery Page', [], [EMPLOYEE_ROOT]);
+    const result = classifyWithVerifiedPath(
+      'p-unresolvable',
+      'Mystery Page',
+      'Mystery Page',
+      [],
+      [EMPLOYEE_ROOT]
+    );
     expect(result.isExcluded).toBe(true);
     expect(result.exclusionReason).toBe('not_under_approved_root');
   });
 
   it('39. Mismatched root during verification revokes page', async () => {
     // Page previously under root-emp-1, now ancestry resolves to a different root
-    const result = classifyWithVerifiedPath('p-moved', 'Moved Policy',
-      'BizOps / Moved Policy', ['page-bizops'], [EMPLOYEE_ROOT, ADMIN_ROOT]);
+    const result = classifyWithVerifiedPath(
+      'p-moved',
+      'Moved Policy',
+      'BizOps / Moved Policy',
+      ['page-bizops'],
+      [EMPLOYEE_ROOT, ADMIN_ROOT]
+    );
     // Page is under admin root, not employee root
     expect(result.approvedRoot?.id).toBe('root-admin-1');
     expect(result.approvedRoot?.id).not.toBe('root-emp-1');
@@ -875,11 +1066,19 @@ describe('RPC Authorization Regression', () => {
     // a page that would be stored with connection_id='conn-admin'
     // The classifier finds the root by notionPageId, not connectionId
     const crossRoot: ApprovedRoot = {
-      id: 'root-cross', connectionId: 'conn-OTHER', notionPageId: 'page-hq-wiki',
-      accessClassification: 'employee_safe', isActive: true,
+      id: 'root-cross',
+      connectionId: 'conn-OTHER',
+      notionPageId: 'page-hq-wiki',
+      accessClassification: 'employee_safe',
+      isActive: true,
     };
-    const result = classifyWithVerifiedPath('p-cross', 'Policy',
-      'HQ Wiki / Policy', ['page-hq-wiki'], [crossRoot]);
+    const result = classifyWithVerifiedPath(
+      'p-cross',
+      'Policy',
+      'HQ Wiki / Policy',
+      ['page-hq-wiki'],
+      [crossRoot]
+    );
     // Classifier finds the root, but at the DB level:
     //   ar.connection_id = conn.id would fail if page.connection_id != root.connection_id
     // This is enforced by the RPC: AND ar.connection_id = conn.id
@@ -896,12 +1095,19 @@ describe('RPC Authorization Regression', () => {
     // Simulated: employee requests with ['employee_safe'], but the root
     // was changed to 'hr_restricted'. The classifier produces hr_restricted.
     const reclassifiedRoot: ApprovedRoot = {
-      id: 'root-reclass', connectionId: 'conn-emp', notionPageId: 'page-hq-wiki',
+      id: 'root-reclass',
+      connectionId: 'conn-emp',
+      notionPageId: 'page-hq-wiki',
       accessClassification: 'hr_restricted', // was employee_safe, now restricted
       isActive: true,
     };
-    const result = classifyWithVerifiedPath('p-reclass', 'Policy',
-      'HQ Wiki / Policy', ['page-hq-wiki'], [reclassifiedRoot]);
+    const result = classifyWithVerifiedPath(
+      'p-reclass',
+      'Policy',
+      'HQ Wiki / Policy',
+      ['page-hq-wiki'],
+      [reclassifiedRoot]
+    );
     // Classifier uses the root's CURRENT classification
     expect(result.accessClassification).toBe('hr_restricted');
     // An employee RPC call with ['employee_safe'] won't match 'hr_restricted'
@@ -923,9 +1129,13 @@ describe('RPC Authorization Regression', () => {
   });
 
   it('43. Valid employee page, root, and connection → allowed', () => {
-    const result = classifyWithVerifiedPath('p-valid-emp', 'PTO Policy',
+    const result = classifyWithVerifiedPath(
+      'p-valid-emp',
+      'PTO Policy',
       'HQ Wiki / Leave / PTO Policy',
-      ['page-leave', 'page-hq-wiki'], [EMPLOYEE_ROOT]);
+      ['page-leave', 'page-hq-wiki'],
+      [EMPLOYEE_ROOT]
+    );
     expect(result.isExcluded).toBe(false);
     expect(result.accessClassification).toBe('employee_safe');
     expect(result.approvedRoot?.connectionId).toBe('conn-emp');
@@ -933,9 +1143,13 @@ describe('RPC Authorization Regression', () => {
   });
 
   it('44. Valid admin-restricted page, root, and connection → allowed', () => {
-    const result = classifyWithVerifiedPath('p-valid-admin', 'LWOP Policy',
+    const result = classifyWithVerifiedPath(
+      'p-valid-admin',
+      'LWOP Policy',
       'BizOps / General HR Policies / LWOP Policy',
-      ['page-policies', 'page-bizops'], [ADMIN_ROOT]);
+      ['page-policies', 'page-bizops'],
+      [ADMIN_ROOT]
+    );
     expect(result.isExcluded).toBe(false);
     expect(result.accessClassification).toBe('hr_restricted');
     expect(result.approvedRoot?.connectionId).toBe('conn-admin');
@@ -957,7 +1171,10 @@ describe('RPC Authorization Regression', () => {
 describe('Security Hardening', () => {
   it('S1. Reader pool uses verified TLS with Supabase CA', async () => {
     const fs = await import('fs');
-    const content = fs.readFileSync(new URL('../database/hr-client.ts', import.meta.url).pathname, 'utf-8');
+    const content = fs.readFileSync(
+      new URL('../database/hr-client.ts', import.meta.url).pathname,
+      'utf-8'
+    );
     expect(content).toContain('rejectUnauthorized: true');
     expect(content).toContain('ca: SUPABASE_ROOT_CA');
     expect(content).not.toContain('rejectUnauthorized: false');
@@ -966,8 +1183,13 @@ describe('Security Hardening', () => {
   it('S1b. Embedded Supabase CA is a valid X509 certificate', () => {
     const { X509Certificate } = require('crypto');
     const fs = require('fs');
-    const src = fs.readFileSync(new URL('../database/hr-client.ts', import.meta.url).pathname, 'utf-8');
-    const match = src.match(/const SUPABASE_ROOT_CA = `(-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----)`/);
+    const src = fs.readFileSync(
+      new URL('../database/hr-client.ts', import.meta.url).pathname,
+      'utf-8'
+    );
+    const match = src.match(
+      /const SUPABASE_ROOT_CA = `(-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----)`/
+    );
     expect(match).not.toBeNull();
     const cert = new X509Certificate(match![1]);
     expect(cert.ca).toBe(true);
@@ -977,10 +1199,12 @@ describe('Security Hardening', () => {
 
   it('S2. Pool error handler sanitizes both postgresql:// and postgres:// URLs', () => {
     const regex = /postgres(?:ql)?:\/\/[^\s]+/gi;
-    expect('error at postgresql://user:secret@host/db rest'.replace(regex, 'postgresql://***'))
-      .toBe('error at postgresql://*** rest');
-    expect('error at postgres://user:p%40ss@host:5432/db rest'.replace(regex, 'postgresql://***'))
-      .toBe('error at postgresql://*** rest');
+    expect(
+      'error at postgresql://user:secret@host/db rest'.replace(regex, 'postgresql://***')
+    ).toBe('error at postgresql://*** rest');
+    expect(
+      'error at postgres://user:p%40ss@host:5432/db rest'.replace(regex, 'postgresql://***')
+    ).toBe('error at postgresql://*** rest');
     expect('no url here'.replace(regex, 'postgresql://***')).toBe('no url here');
   });
 
@@ -1000,9 +1224,12 @@ describe('Security Hardening', () => {
 
   it('S4. Retrieval module enforces HR_AI_ENABLED gate', async () => {
     const fs = await import('fs');
-    const content = fs.readFileSync(new URL('../notion/retrieval.ts', import.meta.url).pathname, 'utf-8');
+    const content = fs.readFileSync(
+      new URL('../notion/retrieval.ts', import.meta.url).pathname,
+      'utf-8'
+    );
     expect(content).toContain('isRetrievalEnabled()');
-    expect(content).toContain("HR_AI_ENABLED");
+    expect(content).toContain('HR_AI_ENABLED');
   });
 });
 

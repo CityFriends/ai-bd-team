@@ -140,7 +140,7 @@ function isValidSourceUrl(raw: string): boolean {
  */
 export function validateCitations(
   answer: unknown,
-  authorizedChunks: readonly AuthorizedChunk[],
+  authorizedChunks: readonly AuthorizedChunk[]
 ): HRCitationValidationResult {
   // ── Guard: authorized chunks ──────────────────────────────
 

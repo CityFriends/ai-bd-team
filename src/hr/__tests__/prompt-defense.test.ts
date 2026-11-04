@@ -29,7 +29,9 @@ describe('validateHRQuestion — valid input', () => {
   });
 
   it('accepts a multiline HR question', () => {
-    const result = validateHRQuestion('I have two questions:\n1. PTO balance\n2. Benefits enrollment');
+    const result = validateHRQuestion(
+      'I have two questions:\n1. PTO balance\n2. Benefits enrollment'
+    );
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.question).toContain('\n');
   });
@@ -41,7 +43,9 @@ describe('validateHRQuestion — valid input', () => {
   });
 
   it('does NOT reject legitimate text that resembles injection', () => {
-    const result = validateHRQuestion('My manager said "ignore previous instructions" in our meeting. Is that a policy?');
+    const result = validateHRQuestion(
+      'My manager said "ignore previous instructions" in our meeting. Is that a policy?'
+    );
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.question).toContain('ignore previous instructions');
   });
@@ -163,26 +167,30 @@ describe('validateHRQuestion — invalid input', () => {
 
 describe('validateHROutput — valid output', () => {
   it('accepts an ordinary HR policy answer', () => {
-    const answer = 'FFTC employees receive 15 days of PTO per year. Unused PTO rolls over up to 5 days.';
+    const answer =
+      'FFTC employees receive 15 days of PTO per year. Unused PTO rolls over up to 5 days.';
     const result = validateHROutput(answer);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.text).toBe(answer);
   });
 
   it('accepts answer with Slack mrkdwn formatting', () => {
-    const answer = '*PTO Policy*\n\n• 15 days per year\n• Roll over up to 5 days\n\n_Source: <https://notion.so/abc|Employee Handbook>_';
+    const answer =
+      '*PTO Policy*\n\n• 15 days per year\n• Roll over up to 5 days\n\n_Source: <https://notion.so/abc|Employee Handbook>_';
     const result = validateHROutput(answer);
     expect(result.ok).toBe(true);
   });
 
   it('does NOT false-positive on normal HR content mentioning systems', () => {
-    const answer = 'The benefits system processes enrollment annually. Contact the HR system administrator for access.';
+    const answer =
+      'The benefits system processes enrollment annually. Contact the HR system administrator for access.';
     const result = validateHROutput(answer);
     expect(result.ok).toBe(true);
   });
 
   it('does NOT false-positive on HR content with percentages and dollar signs', () => {
-    const answer = 'FFTC matches 401(k) contributions up to 4% of salary. The maximum is $23,500 for 2026.';
+    const answer =
+      'FFTC matches 401(k) contributions up to 4% of salary. The maximum is $23,500 for 2026.';
     const result = validateHROutput(answer);
     expect(result.ok).toBe(true);
   });
@@ -274,7 +282,9 @@ describe('Trust boundary types', () => {
   it('no export converts untrusted to trusted', async () => {
     // Dynamically verify the module does not export a promotion function
     const mod = await import('../llm/prompt-defense.js');
-    const fnNames = Object.keys(mod).filter(k => typeof (mod as Record<string, unknown>)[k] === 'function');
+    const fnNames = Object.keys(mod).filter(
+      (k) => typeof (mod as Record<string, unknown>)[k] === 'function'
+    );
     for (const name of fnNames) {
       expect(name).not.toMatch(/promote|trust|elevate|upgrade/i);
     }
@@ -294,7 +304,10 @@ describe('Security properties', () => {
   });
 
   it('invalid output result contains only error code, not content', () => {
-    const result = validateHROutput('x'.repeat(MAX_OUTPUT_CODE_POINTS + 1)) as { ok: false; code: string };
+    const result = validateHROutput('x'.repeat(MAX_OUTPUT_CODE_POINTS + 1)) as {
+      ok: false;
+      code: string;
+    };
     expect(result.ok).toBe(false);
     expect(Object.keys(result)).toEqual(['ok', 'code']);
   });

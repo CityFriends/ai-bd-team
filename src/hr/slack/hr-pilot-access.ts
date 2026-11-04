@@ -46,7 +46,10 @@ export function loadPilotConfig(): HRPilotConfig {
   // Parse user IDs
   const rawUsers = process.env.HR_PILOT_USER_IDS || '';
   const userIds = new Set<string>();
-  for (const id of rawUsers.split(',').map((s) => s.trim()).filter(Boolean)) {
+  for (const id of rawUsers
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)) {
     if (SLACK_USER_ID_RE.test(id)) {
       userIds.add(id);
     }
@@ -90,7 +93,7 @@ export function checkPilotAccess(
   config: HRPilotConfig,
   slackUserId: string,
   channelId: string,
-  channelType: string,
+  channelType: string
 ): PilotCheckResult {
   if (!config.enabled) {
     return { allowed: false, reason: 'pilot_disabled' };

@@ -67,7 +67,10 @@ export async function retrieveForUser(
   try {
     token = createIdentityToken(slackUserId, signingSecret);
   } catch (err) {
-    console.error('[HR Retrieval] Token creation failed:', err instanceof Error ? err.message : err);
+    console.error(
+      '[HR Retrieval] Token creation failed:',
+      err instanceof Error ? err.message : err
+    );
     return { chunks: [], error: 'Token creation failed' };
   }
 
@@ -111,8 +114,9 @@ function isValidUUID(value: string): boolean {
 }
 
 function buildCitation(row: Record<string, unknown>): Citation {
-  const pageUrl = (row.page_url as string) ||
-    `https://notion.so/${(row.notion_page_id as string || '').replace(/-/g, '')}`;
+  const pageUrl =
+    (row.page_url as string) ||
+    `https://notion.so/${((row.notion_page_id as string) || '').replace(/-/g, '')}`;
   const blockId = row.first_block_id as string | null;
   const url = blockId ? `${pageUrl}#${blockId.replace(/-/g, '')}` : pageUrl;
 

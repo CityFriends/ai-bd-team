@@ -30,7 +30,7 @@ import {
 // ── Pipeline Result ─────────────────────────────────────────
 
 export type HRPipelineResult =
-  | HRAnswerResult & { ok: true }
+  | (HRAnswerResult & { ok: true })
   | {
       ok: false;
       code:
@@ -48,14 +48,18 @@ export type HRPipelineResult =
     };
 
 const FALLBACK_DISABLED = 'HR AI assistance is not currently available.';
-const FALLBACK_RETRIEVAL = 'I was unable to look up HR information right now. Please try again later or contact your HR team.';
+const FALLBACK_RETRIEVAL =
+  'I was unable to look up HR information right now. Please try again later or contact your HR team.';
 const FALLBACK_NO_EVIDENCE = HR_ABSTENTION_MESSAGE;
-const FALLBACK_QUESTION = 'I couldn\'t understand that question. Please try rephrasing it in a shorter, simpler way.';
-const FALLBACK_LLM = 'I encountered an issue generating a response. Please try again later or contact your HR team.';
+const FALLBACK_QUESTION =
+  "I couldn't understand that question. Please try rephrasing it in a shorter, simpler way.";
+const FALLBACK_LLM =
+  'I encountered an issue generating a response. Please try again later or contact your HR team.';
 const FALLBACK_PARSE = FALLBACK_LLM;
 const FALLBACK_CITATION = FALLBACK_LLM;
 const FALLBACK_UNSAFE = FALLBACK_LLM;
-const FALLBACK_PROMPT = 'That question is too complex for me to process right now. Please try a shorter question or contact your HR team.';
+const FALLBACK_PROMPT =
+  'That question is too complex for me to process right now. Please try a shorter question or contact your HR team.';
 
 // ── Pipeline Dependencies ───────────────────────────────────
 
@@ -67,7 +71,7 @@ export type RetrievalFn = (
   readerPool: HRReaderPool,
   signingSecret: string,
   queryText: string,
-  slackUserId: string,
+  slackUserId: string
 ) => Promise<RetrievalResult>;
 
 export interface HRPipelineConfig {
@@ -99,7 +103,7 @@ export interface HRPipelineConfig {
 export async function executeHRPipeline(
   config: HRPipelineConfig,
   question: string,
-  slackUserId: string,
+  slackUserId: string
 ): Promise<HRPipelineResult> {
   // 1. Authorized retrieval (feature-gated internally by retrieveForUser)
   let retrieval: RetrievalResult;
@@ -108,7 +112,7 @@ export async function executeHRPipeline(
       config.readerPool,
       config.signingSecret,
       question,
-      slackUserId,
+      slackUserId
     );
   } catch {
     return { ok: false, code: 'retrieval_error', fallbackMessage: FALLBACK_RETRIEVAL };
@@ -121,11 +125,12 @@ export async function executeHRPipeline(
   // 2. Assemble prompt from validated question and authorized chunks
   const promptResult = assemblePrompt(question, retrieval.chunks);
   if (!promptResult.ok) {
-    const fallback = promptResult.code === 'no_evidence'
-      ? FALLBACK_NO_EVIDENCE
-      : promptResult.code === 'prompt_too_large'
-        ? FALLBACK_PROMPT
-        : FALLBACK_QUESTION;
+    const fallback =
+      promptResult.code === 'no_evidence'
+        ? FALLBACK_NO_EVIDENCE
+        : promptResult.code === 'prompt_too_large'
+          ? FALLBACK_PROMPT
+          : FALLBACK_QUESTION;
     return { ok: false, code: promptResult.code, fallbackMessage: fallback };
   }
 
@@ -141,17 +146,15 @@ export async function executeHRPipeline(
   }
 
   // 4. Validate and finalize the model's response
-  const answerResult = finalizeAnswer(
-    llmResult.text,
-    promptResult.authorizedChunks,
-  );
+  const answerResult = finalizeAnswer(llmResult.text, promptResult.authorizedChunks);
 
   if (!answerResult.ok) {
-    const fallback = answerResult.code === 'unsafe_output'
-      ? FALLBACK_UNSAFE
-      : answerResult.code === 'citation_error'
-        ? FALLBACK_CITATION
-        : FALLBACK_PARSE;
+    const fallback =
+      answerResult.code === 'unsafe_output'
+        ? FALLBACK_UNSAFE
+        : answerResult.code === 'citation_error'
+          ? FALLBACK_CITATION
+          : FALLBACK_PARSE;
     return { ok: false, code: answerResult.code, fallbackMessage: fallback };
   }
 

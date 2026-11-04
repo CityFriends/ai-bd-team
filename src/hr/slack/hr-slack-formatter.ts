@@ -24,12 +24,14 @@ const MAX_SLACK_MESSAGE_LENGTH = 3000;
  * Prevents the model from triggering @channel, @here, or @user pings.
  */
 function neutralizeMentions(text: string): string {
-  return text
-    .replace(/<!channel>/g, '@\u200Bchannel')
-    .replace(/<!here>/g, '@\u200Bhere')
-    .replace(/<!everyone>/g, '@\u200Beveryone')
-    // Neutralize user mention format <@U...>
-    .replace(/<@(U[A-Z0-9]+)>/g, '@\u200Buser');
+  return (
+    text
+      .replace(/<!channel>/g, '@\u200Bchannel')
+      .replace(/<!here>/g, '@\u200Bhere')
+      .replace(/<!everyone>/g, '@\u200Beveryone')
+      // Neutralize user mention format <@U...>
+      .replace(/<@(U[A-Z0-9]+)>/g, '@\u200Buser')
+  );
 }
 
 /**
@@ -37,10 +39,7 @@ function neutralizeMentions(text: string): string {
  * Used for citation titles that come from retrieval metadata.
  */
 function escapeSlackText(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /**

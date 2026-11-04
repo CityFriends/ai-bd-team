@@ -62,11 +62,7 @@ export type HRQuestionValidationResult =
   | { ok: true; question: string }
   | {
       ok: false;
-      code:
-        | 'invalid_type'
-        | 'empty_question'
-        | 'question_too_long'
-        | 'unsafe_control_character';
+      code: 'invalid_type' | 'empty_question' | 'question_too_long' | 'unsafe_control_character';
     };
 
 // Unsafe control characters: C0 controls except \t (\x09), \n (\x0a), \r (\x0d).
@@ -124,11 +120,11 @@ export type HROutputValidationResult =
 // false positives on normal HR content. These detect obvious artifacts,
 // not all possible secrets.
 const CREDENTIAL_PATTERNS = [
-  /\bsk-ant-api\w{2}-[A-Za-z0-9_-]{20,}/,     // Anthropic API key prefix
-  /\bxoxb-[0-9]+-[A-Za-z0-9]+/,                // Slack bot token
-  /\bxapp-[0-9]+-[A-Za-z0-9]+/,                // Slack app token
-  /\beyJhbGciOi[A-Za-z0-9_-]{20,}/,            // JWT (base64 "alg":"...)
-  /\bpostgresql:\/\/[^\s]{10,}/,                // Connection string
+  /\bsk-ant-api\w{2}-[A-Za-z0-9_-]{20,}/, // Anthropic API key prefix
+  /\bxoxb-[0-9]+-[A-Za-z0-9]+/, // Slack bot token
+  /\bxapp-[0-9]+-[A-Za-z0-9]+/, // Slack app token
+  /\beyJhbGciOi[A-Za-z0-9_-]{20,}/, // JWT (base64 "alg":"...)
+  /\bpostgresql:\/\/[^\s]{10,}/, // Connection string
 ];
 
 /**

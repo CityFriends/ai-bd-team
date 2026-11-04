@@ -37,9 +37,7 @@ function makeAnswer(overrides?: Partial<HRStructuredAnswer>): HRStructuredAnswer
   };
 }
 
-const defaultChunks: AuthorizedChunk[] = [
-  makeChunk({ chunkId: 'chunk-1' }),
-];
+const defaultChunks: AuthorizedChunk[] = [makeChunk({ chunkId: 'chunk-1' })];
 
 // ============================================================
 // 1. Valid Single Citation
@@ -62,7 +60,11 @@ describe('validateCitations — valid answers', () => {
   it('2. accepts valid multiple citations', () => {
     const chunks = [
       makeChunk({ chunkId: 'chunk-1' }),
-      makeChunk({ chunkId: 'chunk-2', title: 'Benefits', sourceUrl: 'https://notion.so/benefits-def456' }),
+      makeChunk({
+        chunkId: 'chunk-2',
+        title: 'Benefits',
+        sourceUrl: 'https://notion.so/benefits-def456',
+      }),
     ];
     const answer = makeAnswer({ citedChunkIds: ['chunk-1', 'chunk-2'] });
     const result = validateCitations(answer, chunks);
@@ -103,12 +105,17 @@ describe('validateCitations — valid answers', () => {
   // 28. Normal HR Policy Titles Accepted
   it('28. accepts normal HR policy titles', () => {
     const chunks = [
-      makeChunk({ chunkId: 'chunk-1', title: 'FFTC Employee Handbook — PTO & Leave Policy (2026)' }),
+      makeChunk({
+        chunkId: 'chunk-1',
+        title: 'FFTC Employee Handbook — PTO & Leave Policy (2026)',
+      }),
     ];
     const result = validateCitations(makeAnswer(), chunks);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.answer.citations[0].title).toBe('FFTC Employee Handbook — PTO & Leave Policy (2026)');
+      expect(result.answer.citations[0].title).toBe(
+        'FFTC Employee Handbook — PTO & Leave Policy (2026)'
+      );
     }
   });
 
@@ -263,7 +270,9 @@ describe('validateCitations — rejected answers', () => {
 
   // 16. URL with Embedded Credentials Rejected
   it('16. rejects URL with embedded credentials', () => {
-    const chunks = [makeChunk({ chunkId: 'chunk-1', sourceUrl: 'https://user:pass@notion.so/page' })];
+    const chunks = [
+      makeChunk({ chunkId: 'chunk-1', sourceUrl: 'https://user:pass@notion.so/page' }),
+    ];
     const result = validateCitations(makeAnswer(), chunks);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('invalid_source');
@@ -348,7 +357,9 @@ describe('validateCitations — rejected answers', () => {
 
   // 21. Synthetic Credential Artifact in Answer Rejected
   it('21. rejects answer containing credential artifact', () => {
-    const answer = makeAnswer({ text: 'Use key sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAA for access' });
+    const answer = makeAnswer({
+      text: 'Use key sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAA for access',
+    });
     const result = validateCitations(answer, defaultChunks);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('unsafe_output');
@@ -392,7 +403,9 @@ describe('validateCitations — limits', () => {
   // 23. Excessive Citation Count Rejected
   it('23. rejects excessive citation count', () => {
     const ids = Array.from({ length: MAX_CITED_CHUNKS + 1 }, (_, i) => `chunk-${i}`);
-    const chunks = ids.map((id) => makeChunk({ chunkId: id, sourceUrl: `https://notion.so/${id}` }));
+    const chunks = ids.map((id) =>
+      makeChunk({ chunkId: id, sourceUrl: `https://notion.so/${id}` })
+    );
     const answer = makeAnswer({ citedChunkIds: ids });
     const result = validateCitations(answer, chunks);
     expect(result.ok).toBe(false);
@@ -401,7 +414,9 @@ describe('validateCitations — limits', () => {
 
   it('23b. accepts exactly MAX_CITED_CHUNKS citations', () => {
     const ids = Array.from({ length: MAX_CITED_CHUNKS }, (_, i) => `chunk-${i}`);
-    const chunks = ids.map((id) => makeChunk({ chunkId: id, sourceUrl: `https://notion.so/${id}` }));
+    const chunks = ids.map((id) =>
+      makeChunk({ chunkId: id, sourceUrl: `https://notion.so/${id}` })
+    );
     const answer = makeAnswer({ citedChunkIds: ids });
     const result = validateCitations(answer, chunks);
     expect(result.ok).toBe(true);
@@ -413,7 +428,7 @@ describe('validateCitations — limits', () => {
   // 24. Excessive Authorized Chunk Count Rejected
   it('24. rejects excessive authorized chunk count', () => {
     const chunks = Array.from({ length: MAX_AUTHORIZED_CHUNKS + 1 }, (_, i) =>
-      makeChunk({ chunkId: `chunk-${i}`, sourceUrl: `https://notion.so/${i}` }),
+      makeChunk({ chunkId: `chunk-${i}`, sourceUrl: `https://notion.so/${i}` })
     );
     const answer = makeAnswer({ citedChunkIds: ['chunk-0'] });
     const result = validateCitations(answer, chunks);
@@ -423,7 +438,7 @@ describe('validateCitations — limits', () => {
 
   it('24b. accepts exactly MAX_AUTHORIZED_CHUNKS chunks', () => {
     const chunks = Array.from({ length: MAX_AUTHORIZED_CHUNKS }, (_, i) =>
-      makeChunk({ chunkId: `chunk-${i}`, sourceUrl: `https://notion.so/${i}` }),
+      makeChunk({ chunkId: `chunk-${i}`, sourceUrl: `https://notion.so/${i}` })
     );
     const answer = makeAnswer({ citedChunkIds: ['chunk-0'] });
     const result = validateCitations(answer, chunks);
@@ -544,7 +559,9 @@ describe('validateCitations — edge cases', () => {
   });
 
   it('rejects authorized chunk with non-string title', () => {
-    const chunks = [{ chunkId: 'chunk-1', title: 42, sourceUrl: 'https://notion.so/page' }] as unknown as AuthorizedChunk[];
+    const chunks = [
+      { chunkId: 'chunk-1', title: 42, sourceUrl: 'https://notion.so/page' },
+    ] as unknown as AuthorizedChunk[];
     const result = validateCitations(makeAnswer(), chunks);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('invalid_source');
@@ -566,9 +583,7 @@ describe('validateCitations — edge cases', () => {
   });
 
   it('partial invalid citation rejects entire answer', () => {
-    const chunks = [
-      makeChunk({ chunkId: 'chunk-1' }),
-    ];
+    const chunks = [makeChunk({ chunkId: 'chunk-1' })];
     const answer = makeAnswer({ citedChunkIds: ['chunk-1', 'chunk-missing'] });
     const result = validateCitations(answer, chunks);
     expect(result.ok).toBe(false);
@@ -577,7 +592,10 @@ describe('validateCitations — edge cases', () => {
 
   it('handles Notion deep-link URLs with fragment', () => {
     const chunks = [
-      makeChunk({ chunkId: 'chunk-1', sourceUrl: 'https://notion.so/pto-policy-abc123#block-def456' }),
+      makeChunk({
+        chunkId: 'chunk-1',
+        sourceUrl: 'https://notion.so/pto-policy-abc123#block-def456',
+      }),
     ];
     const result = validateCitations(makeAnswer(), chunks);
     expect(result.ok).toBe(true);
@@ -603,13 +621,17 @@ describe('validateCitations — edge cases', () => {
   });
 
   it('accepts URL with port number', () => {
-    const chunks = [makeChunk({ chunkId: 'chunk-1', sourceUrl: 'https://docs.example.com:8443/policy' })];
+    const chunks = [
+      makeChunk({ chunkId: 'chunk-1', sourceUrl: 'https://docs.example.com:8443/policy' }),
+    ];
     const result = validateCitations(makeAnswer(), chunks);
     expect(result.ok).toBe(true);
   });
 
   it('accepts URL with query parameters', () => {
-    const chunks = [makeChunk({ chunkId: 'chunk-1', sourceUrl: 'https://notion.so/page?v=abc123' })];
+    const chunks = [
+      makeChunk({ chunkId: 'chunk-1', sourceUrl: 'https://notion.so/page?v=abc123' }),
+    ];
     const result = validateCitations(makeAnswer(), chunks);
     expect(result.ok).toBe(true);
   });
@@ -661,11 +683,13 @@ describe('validateCitations — UUID chunk IDs', () => {
   it('UUID4. Notion deep-link URLs matching retrieval URL construction', () => {
     const uuid = '11111111-2222-3333-4444-555555555555';
     // URL shape matches buildCitation: pageUrl#blockIdWithoutDashes
-    const chunks = [makeChunk({
-      chunkId: uuid,
-      title: 'PTO Policy',
-      sourceUrl: 'https://notion.so/pto-policy-abc123def456#block789ghi',
-    })];
+    const chunks = [
+      makeChunk({
+        chunkId: uuid,
+        title: 'PTO Policy',
+        sourceUrl: 'https://notion.so/pto-policy-abc123def456#block789ghi',
+      }),
+    ];
     const answer = makeAnswer({ citedChunkIds: [uuid] });
     const result = validateCitations(answer, chunks);
     expect(result.ok).toBe(true);

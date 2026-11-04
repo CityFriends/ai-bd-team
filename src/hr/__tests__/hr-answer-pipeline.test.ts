@@ -5,7 +5,11 @@
  * No live API, database, or network calls.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { executeHRPipeline, type HRPipelineConfig, type RetrievalFn } from '../llm/hr-answer-pipeline.js';
+import {
+  executeHRPipeline,
+  type HRPipelineConfig,
+  type RetrievalFn,
+} from '../llm/hr-answer-pipeline.js';
 import { HR_ABSTENTION_MESSAGE } from '../llm/hr-answer-foundation.js';
 import type { HRLLMTransport } from '../llm/hr-llm-client.js';
 import type { HRReaderPool } from '../database/hr-client.js';
@@ -121,7 +125,15 @@ describe('executeHRPipeline — success', () => {
   it('returns multiple authorized citations', async () => {
     const chunks = [
       makeChunk(),
-      makeChunk({ chunkId: CHUNK_ID_2, citation: { title: 'Benefits', heading: 'B', url: 'https://notion.so/benefits', verifiedAt: null } }),
+      makeChunk({
+        chunkId: CHUNK_ID_2,
+        citation: {
+          title: 'Benefits',
+          heading: 'B',
+          url: 'https://notion.so/benefits',
+          verifiedAt: null,
+        },
+      }),
     ];
     const config = makeConfig({
       retrieveResult: { chunks, error: null },
@@ -296,7 +308,9 @@ describe('executeHRPipeline — invalid model output', () => {
   });
 
   it('rejects unsafe source URL in retrieval', async () => {
-    const badChunk = makeChunk({ citation: { title: 'Bad', heading: 'B', url: 'http://insecure.com', verifiedAt: null } });
+    const badChunk = makeChunk({
+      citation: { title: 'Bad', heading: 'B', url: 'http://insecure.com', verifiedAt: null },
+    });
     const config = makeConfig({
       retrieveResult: { chunks: [badChunk], error: null },
       llmResponse: validAnswer('Answer', [CHUNK_ID]),
@@ -364,7 +378,7 @@ describe('executeHRPipeline — security', () => {
       config.readerPool,
       'test-secret',
       'What is PTO?',
-      'UEMP001',
+      'UEMP001'
     );
   });
 

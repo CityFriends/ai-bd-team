@@ -18,11 +18,15 @@ import { PROMPT_DELIMITERS } from '../llm/prompt-defense.js';
 
 // ── Helpers ─────────────────────────────────────────────────
 
-function fakeTransport(response?: { content: Array<{ type: string; text?: string }> }): HRLLMTransport & { createMessage: ReturnType<typeof vi.fn> } {
+function fakeTransport(response?: {
+  content: Array<{ type: string; text?: string }>;
+}): HRLLMTransport & { createMessage: ReturnType<typeof vi.fn> } {
   return {
-    createMessage: vi.fn().mockResolvedValue(response ?? {
-      content: [{ type: 'text', text: 'FFTC employees receive 15 days of PTO per year.' }],
-    }),
+    createMessage: vi.fn().mockResolvedValue(
+      response ?? {
+        content: [{ type: 'text', text: 'FFTC employees receive 15 days of PTO per year.' }],
+      }
+    ),
   };
 }
 
@@ -35,7 +39,10 @@ function timeoutTransport(): HRLLMTransport & { createMessage: ReturnType<typeof
           err.name = 'APIConnectionTimeoutError';
           reject(err);
         };
-        if (options.signal.aborted) { onAbort(); return; }
+        if (options.signal.aborted) {
+          onAbort();
+          return;
+        }
         options.signal.addEventListener('abort', onAbort);
       });
     }),
