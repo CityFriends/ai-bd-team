@@ -78,6 +78,9 @@ export interface Citation {
   verifiedAt: string | null;
 }
 
+/** Maximum candidates requested from the RPC per search term. */
+const CANDIDATES_PER_TERM = 20;
+
 /** Maximum final chunks returned after scoring. */
 const MAX_RESULT_CHUNKS = 10;
 
@@ -128,7 +131,7 @@ export async function retrieveForUser(
     try {
       const result = await readerPool.query(
         'SELECT * FROM hr_retrieve_knowledge_v2($1, $2, $3, $4)',
-        [token, sanitized, freshness, 5]
+        [token, sanitized, freshness, CANDIDATES_PER_TERM]
       );
 
       for (const row of result.rows || []) {
