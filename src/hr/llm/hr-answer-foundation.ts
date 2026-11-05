@@ -144,7 +144,7 @@ OUTPUT FORMAT:
 Respond with ONLY a JSON object in this exact schema (no markdown fences, no commentary):
 {"text": "Your employee-facing answer here", "citedChunkIds": ["excerpt-id-1", "excerpt-id-2"]}
 
-- "text" must be a helpful, clear answer for the employee.
+- "text" must be a direct, clear answer for the employee. Start with the answer immediately — do not begin with filler like "I'd be happy to help" or "Great question".
 - "citedChunkIds" must list the IDs of every excerpt you relied on. Include at least one ID for any factual claim.
 - If you are abstaining because the excerpts are insufficient, use an empty citedChunkIds array: {"text": "I don't have enough information...", "citedChunkIds": []}`;
 

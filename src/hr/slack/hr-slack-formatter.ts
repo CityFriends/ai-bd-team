@@ -48,9 +48,17 @@ function escapeSlackText(text: string): string {
 export function formatAnswerForSlack(result: HRAnswerResult & { ok: true }): string {
   let text = neutralizeMentions(result.answer.text);
 
-  // Append citations if present
+  // Append deduplicated citations (multiple chunks from the same page → one source link)
   if (result.answer.citations.length > 0) {
-    const sources = result.answer.citations
+    const seen = new Set<string>();
+    const unique: Array<{ sourceUrl: string; title?: string }> = [];
+    for (const c of result.answer.citations) {
+      if (!seen.has(c.sourceUrl)) {
+        seen.add(c.sourceUrl);
+        unique.push(c);
+      }
+    }
+    const sources = unique
       .map((c) => {
         const title = escapeSlackText(c.title || 'Source');
         return `• <${c.sourceUrl}|${title}>`;
