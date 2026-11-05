@@ -229,6 +229,7 @@ function makeEnv(overrides: Partial<HREnvConfig> = {}): HREnvConfig {
     aiEnabled: false,
     llmEnabled: false,
     anthropicApiKey: null,
+    retrievalFreshnessMinutes: 30,
     ...overrides,
   };
 }

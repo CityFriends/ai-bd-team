@@ -35,6 +35,9 @@ export interface HREnvConfig {
   aiEnabled: boolean;
   llmEnabled: boolean;
   anthropicApiKey: string | null;
+
+  // Retrieval freshness (how long after last_verified_at pages remain retrievable)
+  retrievalFreshnessMinutes: number;
 }
 
 export class HREnvError extends Error {
@@ -150,6 +153,23 @@ export function loadHREnv(): HREnvConfig {
     throw new HREnvError('HR_LLM_ENABLED=true but HR_ANTHROPIC_API_KEY is missing.');
   }
 
+  // Retrieval freshness: how long (minutes) after last_verified_at pages remain retrievable.
+  // Validation logic mirrors parseRetrievalFreshness() in retrieval.ts exactly.
+  // Both reject invalid explicit values rather than silently falling back to 30.
+  const FRESHNESS_MAX = 43200;
+  const FRESHNESS_DEFAULT = 30;
+  let retrievalFreshnessMinutes = FRESHNESS_DEFAULT;
+  const rawFreshness = process.env.HR_RETRIEVAL_FRESHNESS_MINUTES;
+  if (rawFreshness !== undefined && rawFreshness !== '') {
+    const parsed = Number(rawFreshness);
+    if (!Number.isInteger(parsed) || parsed <= 0 || parsed > FRESHNESS_MAX) {
+      throw new HREnvError(
+        `HR_RETRIEVAL_FRESHNESS_MINUTES must be a positive integer up to ${FRESHNESS_MAX}. Got: ${rawFreshness}`
+      );
+    }
+    retrievalFreshnessMinutes = parsed;
+  }
+
   return {
     supabaseUrl,
     supabaseServiceKey,
@@ -165,5 +185,6 @@ export function loadHREnv(): HREnvConfig {
     aiEnabled,
     llmEnabled,
     anthropicApiKey,
+    retrievalFreshnessMinutes,
   };
 }
