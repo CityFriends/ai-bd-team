@@ -240,12 +240,11 @@ describe('parseModelAnswer', () => {
     if (!result.ok) expect(result.code).toBe('invalid_json');
   });
 
-  it('rejects clean code-fenced JSON', () => {
-    // C8X-76: code fences are rejected — model must produce raw JSON
+  it('accepts clean code-fenced JSON (newer models wrap in fences)', () => {
     const fenced = '```json\n{"text":"Hi","citedChunkIds":[]}\n```';
     const result = parseModelAnswer(fenced);
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.code).toBe('invalid_json');
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.answer.text).toBe('Hi');
   });
 
   it('rejects trailing commentary after JSON', () => {
@@ -603,16 +602,14 @@ describe('C8X-76 — application-controlled abstention', () => {
 // ============================================================
 
 describe('C8X-76 — strict JSON parsing', () => {
-  it('rejects ```json code fence', () => {
+  it('accepts ```json code fence (stripped before parsing)', () => {
     const result = parseModelAnswer('```json\n{"text":"Hi","citedChunkIds":[]}\n```');
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.code).toBe('invalid_json');
+    expect(result.ok).toBe(true);
   });
 
-  it('rejects ``` code fence without language', () => {
+  it('accepts ``` code fence without language (stripped before parsing)', () => {
     const result = parseModelAnswer('```\n{"text":"Hi","citedChunkIds":[]}\n```');
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.code).toBe('invalid_json');
+    expect(result.ok).toBe(true);
   });
 
   it('rejects code fence with trailing text', () => {

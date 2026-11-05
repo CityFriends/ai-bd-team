@@ -243,11 +243,11 @@ export function parseModelAnswer(raw: string): HRAnswerParseResult {
     return { ok: false, code: 'invalid_json' };
   }
 
-  const cleaned = raw.trim();
+  let cleaned = raw.trim();
 
-  // Reject code fences — model must produce raw JSON, not markdown
-  if (cleaned.startsWith('```') || cleaned.includes('```')) {
-    return { ok: false, code: 'invalid_json' };
+  // Strip code fences if present — newer models may wrap JSON in ```json ... ```
+  if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '').trim();
   }
 
   // The response must be exactly a JSON object: starts with { and ends with }

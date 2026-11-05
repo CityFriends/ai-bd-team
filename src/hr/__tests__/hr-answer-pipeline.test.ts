@@ -274,14 +274,14 @@ describe('executeHRPipeline — invalid model output', () => {
     if (!result.ok) expect(result.code).toBe('llm_parse_error');
   });
 
-  it('rejects code-fenced model output', async () => {
+  it('accepts code-fenced model output (fences stripped)', async () => {
     const config = makeConfig({
       llmResponse: '```json\n' + validAnswer('Hi', [CHUNK_ID]) + '\n```',
     });
     const result = await executeHRPipeline(config, 'What is PTO?', 'UEMP001');
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.code).toBe('llm_parse_error');
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.answer.text).toBe('Hi');
   });
 
   it('rejects unknown citation UUID', async () => {

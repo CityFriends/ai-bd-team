@@ -357,7 +357,7 @@ describe('handleMessage — pilot channel', () => {
     expect(reply.calls[0][1]).not.toContain('not JSON');
   });
 
-  it('code-fenced model output → safe error', async () => {
+  it('code-fenced model output → fences stripped, answer delivered', async () => {
     const reply = mockReply();
     await handleMessage(
       makeInput({
