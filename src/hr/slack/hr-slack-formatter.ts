@@ -43,19 +43,48 @@ function escapeSlackText(text: string): string {
 }
 
 /**
+ * Normalize markdown artifacts in model-generated text to Slack-compatible plain text.
+ * Catches formatting the model produces despite prompt instructions.
+ */
+function normalizeMarkdown(text: string): string {
+  return (
+    text
+      // Strip markdown headings (## Heading → Heading)
+      .replace(/^#{1,6}\s+/gm, '')
+      // Convert **bold** to Slack *bold*, handling nested emphasis safely.
+      // If the bold span contains inner * markers, strip them to avoid
+      // broken Slack mrkdwn (e.g. **15 days of *paid* time** → *15 days of paid time*).
+      .replace(/\*\*(.+?)\*\*/g, (_match, inner: string) => {
+        const cleaned = inner.replace(/\*/g, '');
+        return `*${cleaned}*`;
+      })
+      // Normalize dash/star list markers to bullet.
+      // Only match at line start with explicit whitespace after the marker
+      // to avoid corrupting Slack *bold* spans.
+      .replace(/^[\t ]*[-]\s+/gm, '• ')
+      .replace(/^[\t ]*\*\s+/gm, '• ')
+      // Normalize numbered list markers to bullet
+      .replace(/^[\t ]*\d+\.\s+/gm, '• ')
+  );
+}
+
+/**
  * Format a successful validated answer for Slack delivery.
  */
 export function formatAnswerForSlack(result: HRAnswerResult & { ok: true }): string {
-  let text = neutralizeMentions(result.answer.text);
+  let text = normalizeMarkdown(neutralizeMentions(result.answer.text));
 
   // Append deduplicated citations (multiple chunks from the same page → one source link)
+  // Dedup by page-level URL (strip block-level #fragment) so chunks from
+  // the same Notion page collapse into a single source link.
   if (result.answer.citations.length > 0) {
     const seen = new Set<string>();
     const unique: Array<{ sourceUrl: string; title?: string }> = [];
     for (const c of result.answer.citations) {
-      if (!seen.has(c.sourceUrl)) {
-        seen.add(c.sourceUrl);
-        unique.push(c);
+      const pageUrl = c.sourceUrl.replace(/#.*$/, '');
+      if (!seen.has(pageUrl)) {
+        seen.add(pageUrl);
+        unique.push({ sourceUrl: pageUrl, title: c.title });
       }
     }
     const sources = unique

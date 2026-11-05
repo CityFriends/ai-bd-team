@@ -16,6 +16,7 @@
 
 import type { HRReaderPool } from '../database/hr-client.js';
 import { createIdentityToken } from '../auth/identity-token.js';
+import { extractSearchTermsWithSource, type SearchTerm } from '../llm/keyword-extractor.js';
 
 /**
  * Retrieval is gated on HR_AI_ENABLED=true. This prevents knowledge
@@ -77,10 +78,17 @@ export interface Citation {
   verifiedAt: string | null;
 }
 
+/** Maximum final chunks returned after scoring. */
+const MAX_RESULT_CHUNKS = 10;
+
 /**
  * Retrieve knowledge chunks for a Slack user's query.
  * Creates a signed identity token and sends it through the
  * least-privilege reader pool to the SECURITY DEFINER RPC.
+ *
+ * Extracts keywords from natural-language questions, runs
+ * multiple ILIKE queries, scores candidates by relevance,
+ * and returns the top-ranked results.
  */
 export async function retrieveForUser(
   readerPool: HRReaderPool,
@@ -93,49 +101,138 @@ export async function retrieveForUser(
     return { chunks: [], error: null };
   }
 
-  // 1. Create signed identity token (30s lifetime)
-  let token: string;
-  try {
-    token = createIdentityToken(slackUserId, signingSecret);
-  } catch (err) {
-    console.error(
-      '[HR Retrieval] Token creation failed:',
-      err instanceof Error ? err.message : err
-    );
-    return { chunks: [], error: 'Token creation failed' };
+  // 1. Extract search keywords from the natural-language question
+  const searchTerms = extractSearchTermsWithSource(queryText);
+  if (searchTerms.length === 0) {
+    return { chunks: [], error: null };
   }
 
-  // 2. Query via least-privilege reader pool (v2 returns chunk_id)
-  const sanitized = sanitizeQuery(queryText);
-  try {
-    const result = await readerPool.query(
-      'SELECT * FROM hr_retrieve_knowledge_v2($1, $2, $3, $4)',
-      [token, sanitized, getRetrievalFreshnessMinutes(), 5]
-    );
+  // 2. Collect all candidates across all terms (no early exit)
+  const candidates = new Map<string, ScoredCandidate>();
+  const freshness = getRetrievalFreshnessMinutes();
 
-    // 3. Validate chunk IDs and build citations with block-level deep links
-    const chunks: RetrievedChunk[] = [];
-    for (const row of result.rows || []) {
-      const rawChunkId = row.chunk_id;
-      if (typeof rawChunkId !== 'string' || !isValidUUID(rawChunkId)) {
-        // Fail closed: chunk without a valid UUID is not returnable
-        return { chunks: [], error: 'Invalid chunk identifier in retrieval result' };
-      }
-      chunks.push({
-        chunkId: rawChunkId,
-        contentText: row.content_text as string,
-        headingPath: (row.heading_path as string[]) || [],
-        citation: buildCitation(row),
-      });
+  for (const term of searchTerms) {
+    // Each query gets a fresh signed token (30s lifetime)
+    let token: string;
+    try {
+      token = createIdentityToken(slackUserId, signingSecret);
+    } catch (err) {
+      console.error(
+        '[HR Retrieval] Token creation failed:',
+        err instanceof Error ? err.message : err
+      );
+      return { chunks: [], error: 'Token creation failed' };
     }
 
-    return { chunks, error: null };
-  } catch (err) {
-    // Fail closed — no fallback to a less-secure path
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error('[HR Retrieval] Reader pool query error (returning empty):', msg);
-    return { chunks: [], error: msg };
+    const sanitized = sanitizeQuery(term.text);
+    try {
+      const result = await readerPool.query(
+        'SELECT * FROM hr_retrieve_knowledge_v2($1, $2, $3, $4)',
+        [token, sanitized, freshness, 5]
+      );
+
+      for (const row of result.rows || []) {
+        const rawChunkId = row.chunk_id;
+        if (typeof rawChunkId !== 'string' || !isValidUUID(rawChunkId)) {
+          return { chunks: [], error: 'Invalid chunk identifier in retrieval result' };
+        }
+
+        const existing = candidates.get(rawChunkId);
+        if (existing) {
+          // Accumulate match signals for scoring
+          existing.matchedTerms.push(term);
+        } else {
+          candidates.set(rawChunkId, {
+            chunk: {
+              chunkId: rawChunkId,
+              contentText: row.content_text as string,
+              headingPath: (row.heading_path as string[]) || [],
+              citation: buildCitation(row),
+            },
+            title: (row.title as string) || '',
+            matchedTerms: [term],
+          });
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[HR Retrieval] Reader pool query error (returning empty):', msg);
+      return { chunks: [], error: msg };
+    }
   }
+
+  // 3. Score, rank, and select top candidates
+  const scored = Array.from(candidates.values()).map((c) => ({
+    ...c,
+    score: scoreCandidate(c, searchTerms),
+  }));
+
+  scored.sort((a, b) => b.score - a.score || a.chunk.chunkId.localeCompare(b.chunk.chunkId));
+
+  return {
+    chunks: scored.slice(0, MAX_RESULT_CHUNKS).map((c) => c.chunk),
+    error: null,
+  };
+}
+
+// ── Relevance Scoring ──────────────────────────────────────
+
+interface ScoredCandidate {
+  chunk: RetrievedChunk;
+  title: string;
+  matchedTerms: SearchTerm[];
+}
+
+/**
+ * Deterministic relevance score for a retrieved chunk candidate.
+ *
+ * Scoring signals (applied once per distinct match type):
+ *   +100  Title/heading contains an exact multi-word phrase from the query
+ *    +60  Chunk matched a multi-word phrase term
+ *    +40  Chunk matched a recognized synonym term
+ *    +15  Each additional distinct term match beyond the first
+ *     +5  Chunk matched a generic single-word term
+ *
+ * Scoring is separate from authorization. A high score does not
+ * bypass content-hash approval or freshness checks.
+ */
+function scoreCandidate(
+  candidate: ScoredCandidate,
+  _allTerms: readonly SearchTerm[]
+): number {
+  let score = 0;
+  const countedSources = new Set<string>();
+  const titleLower = candidate.title.toLowerCase();
+  const headingLower = candidate.chunk.headingPath.join(' ').toLowerCase();
+
+  for (const term of candidate.matchedTerms) {
+    // Avoid counting the same source type more than once per term text
+    const key = `${term.source}:${term.text}`;
+    if (countedSources.has(key)) continue;
+    countedSources.add(key);
+
+    // Title/heading match bonus (only for phrases)
+    if (term.source === 'phrase') {
+      if (titleLower.includes(term.text) || headingLower.includes(term.text)) {
+        score += 100;
+      } else {
+        score += 60;
+      }
+    } else if (term.source === 'synonym') {
+      score += 40;
+    } else {
+      // keyword (standalone word)
+      score += 5;
+    }
+  }
+
+  // Bonus for multiple distinct term matches
+  const distinctTerms = countedSources.size;
+  if (distinctTerms > 1) {
+    score += (distinctTerms - 1) * 15;
+  }
+
+  return score;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
