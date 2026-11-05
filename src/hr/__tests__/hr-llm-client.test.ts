@@ -7,7 +7,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   createHRLLMClient,
-  HR_DEFAULT_MODEL,
+  getHRModel,
   HR_MAX_OUTPUT_TOKENS,
   HR_REQUEST_TIMEOUT_MS,
   type HRLLMTransport,
@@ -207,7 +207,7 @@ describe('Successful request', () => {
     const client = createHRLLMClient({ transport: t });
     await client.complete(VALID_REQUEST);
     expect(t.createMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ model: HR_DEFAULT_MODEL }),
+      expect.objectContaining({ model: getHRModel() }),
       expect.any(Object)
     );
   });
@@ -338,9 +338,9 @@ describe('Credential isolation', () => {
     const client = createHRLLMClient({ transport: t });
     await client.complete(VALID_REQUEST);
 
-    // Model must be HR_DEFAULT_MODEL, never a BD model
+    // Model must be getHRModel(), never a BD model
     const params = t.createMessage.mock.calls[0][0];
-    expect(params.model).toBe(HR_DEFAULT_MODEL);
+    expect(params.model).toBe(getHRModel());
     expect(params.model).not.toContain('haiku');
   });
 });
@@ -401,9 +401,20 @@ describe('No real network calls', () => {
 // ============================================================
 
 describe('Configuration constants', () => {
-  it('HR_DEFAULT_MODEL is set', () => {
-    expect(HR_DEFAULT_MODEL).toBeTruthy();
-    expect(typeof HR_DEFAULT_MODEL).toBe('string');
+  it('getHRModel() returns default model', () => {
+    expect(getHRModel()).toBe('claude-sonnet-4-5-20250929');
+  });
+
+  it('getHRModel() respects HR_LLM_MODEL override', () => {
+    process.env.HR_LLM_MODEL = 'claude-haiku-4-5-20251001';
+    expect(getHRModel()).toBe('claude-haiku-4-5-20251001');
+    delete process.env.HR_LLM_MODEL;
+  });
+
+  it('getHRModel() rejects non-claude model', () => {
+    process.env.HR_LLM_MODEL = 'gpt-4';
+    expect(getHRModel()).toBe('claude-sonnet-4-5-20250929');
+    delete process.env.HR_LLM_MODEL;
   });
 
   it('HR_MAX_OUTPUT_TOKENS is 1024', () => {

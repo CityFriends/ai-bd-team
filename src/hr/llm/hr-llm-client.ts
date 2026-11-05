@@ -19,8 +19,16 @@ import { validateHROutput } from './prompt-defense.js';
 
 // ── Configuration ───────────────────────────────────────────
 
-/** Default model for HR answer generation. No BD fallback. */
-export const HR_DEFAULT_MODEL = 'claude-sonnet-4-20250514';
+/**
+ * HR model for answer generation. Configurable via HR_LLM_MODEL env var.
+ * Default: claude-sonnet-4-5-20250929 (Sonnet 4.5).
+ * Must start with 'claude-' to prevent misconfiguration.
+ */
+export function getHRModel(): string {
+  const override = process.env.HR_LLM_MODEL;
+  if (override && override.startsWith('claude-')) return override;
+  return 'claude-sonnet-4-5-20250929';
+}
 
 /** Maximum output tokens per request. */
 export const HR_MAX_OUTPUT_TOKENS = 1024;
@@ -171,7 +179,7 @@ export function createHRLLMClient(config: HRLLMClientConfig) {
       try {
         const response = await transport.createMessage(
           {
-            model: HR_DEFAULT_MODEL,
+            model: getHRModel(),
             max_tokens: HR_MAX_OUTPUT_TOKENS,
             system: request.systemPrompt,
             messages: [{ role: 'user', content: request.userContent }],
