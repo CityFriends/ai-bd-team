@@ -150,4 +150,57 @@ describe('HR Environment — loadHREnv', () => {
     expect(env.readerDatabaseUrl).toBeNull();
     expect(env.identitySigningSecret).toBeNull();
   });
+
+  // ── Retrieval freshness configuration ────────────────────
+
+  it('defaults retrieval freshness to 30 minutes when variable absent', async () => {
+    delete process.env.HR_RETRIEVAL_FRESHNESS_MINUTES;
+    const { loadHREnv } = await import('../config/hr-env.js');
+    const env = loadHREnv();
+    expect(env.retrievalFreshnessMinutes).toBe(30);
+  });
+
+  it('accepts HR_RETRIEVAL_FRESHNESS_MINUTES=43200 (30 days)', async () => {
+    process.env.HR_RETRIEVAL_FRESHNESS_MINUTES = '43200';
+    const { loadHREnv } = await import('../config/hr-env.js');
+    const env = loadHREnv();
+    expect(env.retrievalFreshnessMinutes).toBe(43200);
+  });
+
+  it('accepts HR_RETRIEVAL_FRESHNESS_MINUTES=60', async () => {
+    process.env.HR_RETRIEVAL_FRESHNESS_MINUTES = '60';
+    const { loadHREnv } = await import('../config/hr-env.js');
+    const env = loadHREnv();
+    expect(env.retrievalFreshnessMinutes).toBe(60);
+  });
+
+  it('rejects zero freshness', async () => {
+    process.env.HR_RETRIEVAL_FRESHNESS_MINUTES = '0';
+    const { loadHREnv } = await import('../config/hr-env.js');
+    expect(() => loadHREnv()).toThrow('HR_RETRIEVAL_FRESHNESS_MINUTES');
+  });
+
+  it('rejects negative freshness', async () => {
+    process.env.HR_RETRIEVAL_FRESHNESS_MINUTES = '-10';
+    const { loadHREnv } = await import('../config/hr-env.js');
+    expect(() => loadHREnv()).toThrow('HR_RETRIEVAL_FRESHNESS_MINUTES');
+  });
+
+  it('rejects fractional freshness', async () => {
+    process.env.HR_RETRIEVAL_FRESHNESS_MINUTES = '30.5';
+    const { loadHREnv } = await import('../config/hr-env.js');
+    expect(() => loadHREnv()).toThrow('HR_RETRIEVAL_FRESHNESS_MINUTES');
+  });
+
+  it('rejects nonnumeric freshness', async () => {
+    process.env.HR_RETRIEVAL_FRESHNESS_MINUTES = 'abc';
+    const { loadHREnv } = await import('../config/hr-env.js');
+    expect(() => loadHREnv()).toThrow('HR_RETRIEVAL_FRESHNESS_MINUTES');
+  });
+
+  it('rejects freshness greater than 43200', async () => {
+    process.env.HR_RETRIEVAL_FRESHNESS_MINUTES = '50000';
+    const { loadHREnv } = await import('../config/hr-env.js');
+    expect(() => loadHREnv()).toThrow('HR_RETRIEVAL_FRESHNESS_MINUTES');
+  });
 });

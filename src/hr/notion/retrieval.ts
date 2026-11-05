@@ -27,6 +27,37 @@ function isRetrievalEnabled(): boolean {
   return process.env.HR_AI_ENABLED?.toLowerCase() === 'true';
 }
 
+/** Maximum retrieval freshness window: 30 days. */
+const FRESHNESS_MAX = 43200;
+const FRESHNESS_DEFAULT = 30;
+
+/**
+ * Parse and validate HR_RETRIEVAL_FRESHNESS_MINUTES.
+ * Shared logic — identical rules at startup (loadHREnv) and runtime.
+ * Returns the validated value or throws for invalid explicit settings.
+ */
+export function parseRetrievalFreshness(raw: string | undefined): number {
+  if (raw === undefined || raw === '') return FRESHNESS_DEFAULT;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed <= 0 || parsed > FRESHNESS_MAX) {
+    throw new Error(
+      `HR_RETRIEVAL_FRESHNESS_MINUTES must be a positive integer up to ${FRESHNESS_MAX}. Got: ${raw}`
+    );
+  }
+  return parsed;
+}
+
+/**
+ * Retrieval freshness window in minutes. Read at call time so env-var
+ * changes take effect without restart (consistent with isRetrievalEnabled).
+ *
+ * Uses the same strict validation as loadHREnv. An invalid explicit
+ * setting throws rather than silently falling back to 30 minutes.
+ */
+function getRetrievalFreshnessMinutes(): number {
+  return parseRetrievalFreshness(process.env.HR_RETRIEVAL_FRESHNESS_MINUTES);
+}
+
 export interface RetrievalResult {
   chunks: RetrievedChunk[];
   error: string | null;
@@ -79,7 +110,7 @@ export async function retrieveForUser(
   try {
     const result = await readerPool.query(
       'SELECT * FROM hr_retrieve_knowledge_v2($1, $2, $3, $4)',
-      [token, sanitized, 30, 5]
+      [token, sanitized, getRetrievalFreshnessMinutes(), 5]
     );
 
     // 3. Validate chunk IDs and build citations with block-level deep links
