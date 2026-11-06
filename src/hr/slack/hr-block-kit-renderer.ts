@@ -98,14 +98,69 @@ interface TopicMatch {
   label: string;
 }
 
-function detectTopic(text: string, citations: Array<{ title?: string }>): TopicMatch {
-  const searchText = text + ' ' + citations.map((c) => c.title || '').join(' ');
+/**
+ * Broad-topic keywords that indicate the question's primary subject
+ * is a general category, not a specific sub-policy mentioned within it.
+ *
+ * Example: "What benefits do we offer, including parental leave?"
+ * → primary subject is "benefits", not "parental leave"
+ */
+const BROAD_TOPIC_INDICATORS: Array<{ pattern: RegExp; emoji: string; label: string }> = [
+  { pattern: /\bbenefit/i, emoji: '💼', label: 'Employee Benefits' },
+];
+
+/**
+ * Detect the primary topic for header display.
+ *
+ * Decision hierarchy:
+ * 1. Broad-topic indicator in the question (e.g., "benefits" dominates
+ *    over incidental sub-topic mentions like "parental leave").
+ * 2. Specific topic match in the question text.
+ * 3. Citation title match (source policy identity).
+ * 4. Answer text match (weakest — may mention multiple topics).
+ *
+ * This prevents incidental mentions (e.g., "18 Days Accrued PTO" in a
+ * benefits answer) from overriding the actual topic.
+ */
+function detectTopic(
+  answerText: string,
+  citations: Array<{ title?: string }>,
+  messageText: string = ''
+): TopicMatch {
+  if (messageText) {
+    // 1. Check for broad-topic indicators first (overrides sub-topic matches)
+    for (const { pattern, emoji, label } of BROAD_TOPIC_INDICATORS) {
+      if (pattern.test(messageText)) {
+        return { emoji, label };
+      }
+    }
+
+    // 2. Specific topic match in question
+    const questionMatch = matchTopic(messageText);
+    if (questionMatch) return questionMatch;
+  }
+
+  // 3. Match against citation titles (source policy identity)
+  const citationText = citations.map((c) => c.title || '').join(' ');
+  if (citationText.trim()) {
+    const citationMatch = matchTopic(citationText);
+    if (citationMatch) return citationMatch;
+  }
+
+  // 4. Fall back to answer text (weakest signal)
+  const answerMatch = matchTopic(answerText);
+  if (answerMatch) return answerMatch;
+
+  return { emoji: '📖', label: 'HR Policy' };
+}
+
+function matchTopic(text: string): TopicMatch | null {
   for (const { pattern, emoji, label } of TOPIC_EMOJIS) {
-    if (pattern.test(searchText)) {
+    if (pattern.test(text)) {
       return { emoji, label };
     }
   }
-  return { emoji: '📖', label: 'HR Policy' };
+  return null;
 }
 
 // ── Block Builders ─────────────────────────────────────────
@@ -264,8 +319,8 @@ export function renderAnswerAsBlocks(
   const { employeeName = null, messageText = '' } = options;
   const { text: answerText, citations } = result.answer;
 
-  // Detect topic for header emoji
-  const topic = detectTopic(answerText, citations);
+  // Detect topic for header emoji (question text → citation titles → answer text)
+  const topic = detectTopic(answerText, citations, messageText);
 
   // Build blocks
   const blocks: KnownBlock[] = [];

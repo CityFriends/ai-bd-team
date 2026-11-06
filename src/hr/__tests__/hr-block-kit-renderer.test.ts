@@ -179,14 +179,15 @@ describe('renderAnswerAsBlocks — structure', () => {
     expect(payload.truncated).toBe(false);
   });
 
-  it('detects PTO topic emoji', () => {
-    const payload = renderAnswerAsBlocks(PTO_SHORT);
+  it('detects PTO topic from question', () => {
+    const payload = renderAnswerAsBlocks(PTO_SHORT, { messageText: 'How many PTO days do I get?' });
     const header = payload.blocks[0] as { text: { text: string } };
     expect(header.text.text).toContain('🏖️');
+    expect(header.text.text).toContain('Paid Time Off');
   });
 
-  it('detects cybersecurity topic emoji', () => {
-    const payload = renderAnswerAsBlocks(CYBERSECURITY);
+  it('detects cybersecurity topic from question', () => {
+    const payload = renderAnswerAsBlocks(CYBERSECURITY, { messageText: 'What is our cybersecurity policy?' });
     const header = payload.blocks[0] as { text: { text: string } };
     expect(header.text.text).toContain('🛡️');
   });
@@ -204,6 +205,130 @@ describe('renderAnswerAsBlocks — structure', () => {
     });
     const sections = allSectionTexts(payload);
     expect(sections.some((t) => t.includes('Hey Lapedra!'))).toBe(true);
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// Topic Classification (C8X-104)
+// ════════════════════════════════════════════════════════════
+
+describe('renderAnswerAsBlocks — topic classification', () => {
+  function getHeaderText(payload: BlockKitPayload): string {
+    return (payload.blocks[0] as { text: { text: string } }).text.text;
+  }
+
+  // Benefits questions — must show 💼 even when answer mentions PTO
+  it('general benefits question → Employee Benefits header', () => {
+    const header = getHeaderText(renderAnswerAsBlocks(BENEFITS, {
+      messageText: 'What benefits do we offer?',
+    }));
+    expect(header).toContain('💼');
+    expect(header).toContain('Employee Benefits');
+  });
+
+  it('benefits with insurance/retirement/parental → Employee Benefits header', () => {
+    const header = getHeaderText(renderAnswerAsBlocks(BENEFITS, {
+      messageText: 'What employee benefits does FFTC offer, including health insurance, retirement, and parental leave?',
+    }));
+    expect(header).toContain('💼');
+    expect(header).toContain('Employee Benefits');
+  });
+
+  it('benefits answer containing incidental PTO → Employee Benefits (not PTO)', () => {
+    // The BENEFITS fixture mentions "18 days accrued PTO" — must not override topic
+    const header = getHeaderText(renderAnswerAsBlocks(BENEFITS, {
+      messageText: 'What benefits do we offer?',
+    }));
+    expect(header).not.toContain('🏖️');
+    expect(header).toContain('💼');
+  });
+
+  // PTO questions — must show 🏖️
+  it('PTO accrual question → Paid Time Off header', () => {
+    const header = getHeaderText(renderAnswerAsBlocks(PTO_SHORT, {
+      messageText: 'How many PTO days do I get?',
+    }));
+    expect(header).toContain('🏖️');
+    expect(header).toContain('Paid Time Off');
+  });
+
+  it('PTO rollover question → Paid Time Off header', () => {
+    const header = getHeaderText(renderAnswerAsBlocks(PTO_DETAILED, {
+      messageText: 'How many PTO days do I get, and can I roll them over?',
+    }));
+    expect(header).toContain('🏖️');
+  });
+
+  // Parental leave — must show 👶 even when answer mentions PTO
+  it('parental leave question → Parental Leave header', () => {
+    const header = getHeaderText(renderAnswerAsBlocks(PARENTAL_LEAVE, {
+      messageText: 'How does parental leave work?',
+    }));
+    expect(header).toContain('👶');
+    expect(header).toContain('Parental Leave');
+  });
+
+  it('parental leave answer mentioning PTO → Parental Leave (not PTO)', () => {
+    const answerWithPTO = makeResult(
+      'Parental leave is 12 weeks. You may also use accrued PTO to extend your leave.',
+      [{ chunkId: 'a', sourceUrl: 'https://notion.so/parental', title: 'Parental Leave' }]
+    );
+    const header = getHeaderText(renderAnswerAsBlocks(answerWithPTO, {
+      messageText: 'How does parental leave work?',
+    }));
+    expect(header).toContain('👶');
+    expect(header).not.toContain('🏖️');
+  });
+
+  // Sick leave
+  it('sick leave question → Sick Leave header', () => {
+    const header = getHeaderText(renderAnswerAsBlocks(SICK_LEAVE, {
+      messageText: 'How do I report sick leave?',
+    }));
+    expect(header).toContain('🤒');
+  });
+
+  // Cybersecurity
+  it('cybersecurity question → Cybersecurity header', () => {
+    const header = getHeaderText(renderAnswerAsBlocks(CYBERSECURITY, {
+      messageText: 'What is our cybersecurity policy?',
+    }));
+    expect(header).toContain('🛡️');
+  });
+
+  // Ambiguous multi-policy: question mentions multiple topics
+  it('ambiguous question with "benefits" and "PTO" → Employee Benefits', () => {
+    const header = getHeaderText(renderAnswerAsBlocks(BENEFITS, {
+      messageText: 'What benefits and PTO do we offer?',
+    }));
+    // "benefits" is a broad-topic indicator → overrides specific "PTO" match
+    expect(header).toContain('💼');
+  });
+
+  // Greeting agrees with header topic
+  it('greeting topic matches header for benefits question', () => {
+    const payload = renderAnswerAsBlocks(BENEFITS, {
+      employeeName: 'Lapedra',
+      messageText: 'Hi, what benefits do we offer?',
+    });
+    const header = getHeaderText(payload);
+    expect(header).toContain('Employee Benefits');
+    const sections = allSectionTexts(payload);
+    const greeting = sections.find((t) => t.includes('Hey Lapedra'));
+    if (greeting) {
+      expect(greeting).toContain('Employee Benefits');
+    }
+  });
+
+  // Falls back to citation title when question has no topic keywords
+  it('generic question uses citation title for topic', () => {
+    const result = makeResult('Here is the policy information.', [
+      { chunkId: 'a', sourceUrl: 'https://notion.so/cyber', title: 'Cybersecurity Policy' },
+    ]);
+    const header = getHeaderText(renderAnswerAsBlocks(result, {
+      messageText: 'Tell me about that',
+    }));
+    expect(header).toContain('🛡️');
   });
 });
 
