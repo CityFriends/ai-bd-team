@@ -12,6 +12,7 @@ import type { HREnvConfig } from '../config/hr-env.js';
 import type { HRAuthProvider } from '../auth/hr-auth.js';
 import type { HRReaderPool } from '../database/hr-client.js';
 import type { HRPipelineConfig } from '../llm/hr-answer-pipeline.js';
+import type { EmployeeNameFn } from './dm-handler.js';
 import { registerLeadershipChannel } from './leadership-channel.js';
 import { registerMessageHandler } from './dm-handler.js';
 import { loadPilotConfig } from './hr-pilot-access.js';
@@ -28,6 +29,7 @@ export interface HRSlackAppOptions {
   readerPool?: HRReaderPool | null;
   signingSecret?: string | null;
   pipelineConfig?: HRPipelineConfig;
+  getEmployeeName?: EmployeeNameFn;
 }
 
 export function createHRSlackApp(
@@ -36,7 +38,8 @@ export function createHRSlackApp(
   expectedTeamId?: string,
   readerPool?: HRReaderPool | null,
   signingSecret?: string | null,
-  pipelineConfig?: HRPipelineConfig
+  pipelineConfig?: HRPipelineConfig,
+  getEmployeeName?: EmployeeNameFn
 ): HRSlackApp {
   if (!env.botToken || !env.appToken) {
     throw new Error('HR Slack app requires HR_BOT_TOKEN and HR_APP_TOKEN.');
@@ -69,6 +72,7 @@ export function createHRSlackApp(
     signingSecret: signingSecret ?? undefined,
     pilotConfig,
     pipelineConfig,
+    getEmployeeName,
   });
 
   return {

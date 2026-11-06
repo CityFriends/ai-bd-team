@@ -306,6 +306,41 @@ export async function isKnownSlackUser(
   return data !== null;
 }
 
+/**
+ * Get the preferred display name for a Slack user.
+ * Returns preferred_name if set, otherwise the first word of full_name.
+ * Returns null if the user is not found or has no name.
+ *
+ * Minimal data exposure: returns only a first-name string, not a record.
+ * Does not require admin authorization — scoped to greeting personalization only.
+ */
+export async function getEmployeeFirstName(
+  db: SupabaseClient,
+  slackUserId: string
+): Promise<string | null> {
+  const { data } = await db
+    .from('hr_employees')
+    .select('preferred_name, full_name')
+    .eq('slack_user_id', slackUserId)
+    .eq('employment_status', 'active')
+    .single();
+
+  if (!data) return null;
+
+  // Prefer explicit preferred_name
+  const preferred = data.preferred_name as string | null;
+  if (preferred?.trim()) return preferred.trim();
+
+  // Fall back to first word of full_name
+  const full = data.full_name as string | null;
+  if (full?.trim()) {
+    const first = full.trim().split(/\s+/)[0];
+    return first || null;
+  }
+
+  return null;
+}
+
 export async function updateEmployee(
   db: SupabaseClient,
   employeeId: string,

@@ -65,10 +65,10 @@ function mockAuth(known = true): HRAuthProvider {
   };
 }
 
-function mockReply(): SlackReplyFn & { calls: Array<[string, string]> } {
-  const calls: Array<[string, string]> = [];
-  const fn = vi.fn(async (ch: string, text: string) => {
-    calls.push([ch, text]);
+function mockReply(): SlackReplyFn & { calls: Array<[string, string, unknown?]> } {
+  const calls: Array<[string, string, unknown?]> = [];
+  const fn = vi.fn(async (ch: string, text: string, blocks?: unknown) => {
+    calls.push([ch, text, blocks]);
   }) as any;
   fn.calls = calls;
   return fn;
@@ -260,9 +260,12 @@ describe('handleMessage — pilot channel', () => {
     await handleMessage(makeInput({ reply }));
     expect(reply).toHaveBeenCalledOnce();
     const msg = reply.calls[0][1];
+    const blocks = reply.calls[0][2];
     expect(msg).toContain('PTO is 15 days.');
-    expect(msg).toContain('https://notion.so/pto-policy');
-    expect(msg).toContain('PTO Policy');
+    // Citations appear in Block Kit blocks (not plain-text fallback)
+    const blockJson = JSON.stringify(blocks);
+    expect(blockJson).toContain('https://notion.so/pto-policy');
+    expect(blockJson).toContain('PTO Policy');
   });
 
   it('zero-citation model output → fixed abstention', async () => {

@@ -13,7 +13,7 @@ import { loadHREnv, HREnvError } from './config/hr-env.js';
 import { createHRControls, markStarted, getHealthStatus } from './config/hr-controls.js';
 import { createHRClient, createHRReaderPool, type HRReaderPool } from './database/hr-client.js';
 import { createHRAuth } from './auth/hr-auth.js';
-import { isKnownSlackUser, syncBootstrapAdmins } from './database/employees.js';
+import { isKnownSlackUser, getEmployeeFirstName, syncBootstrapAdmins } from './database/employees.js';
 import { createHRSlackApp, type HRSlackApp } from './slack/hr-slack-app.js';
 import { createAnthropicTransport } from './llm/anthropic-transport.js';
 import { retrieveForUser } from './notion/retrieval.js';
@@ -127,7 +127,8 @@ async function main(): Promise<void> {
         env.expectedTeamId ?? undefined,
         readerPool,
         env.identitySigningSecret,
-        pipelineConfig
+        pipelineConfig,
+        dbClient ? (slackId) => getEmployeeFirstName(dbClient!.client, slackId) : undefined
       );
       await slackApp.start();
       slackConnected = true;
