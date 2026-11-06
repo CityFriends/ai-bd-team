@@ -38,6 +38,9 @@ export interface HREnvConfig {
 
   // Retrieval freshness (how long after last_verified_at pages remain retrievable)
   retrievalFreshnessMinutes: number;
+
+  // Approval workflow (disabled by default)
+  approvalOwnerSlackId: string | null;
 }
 
 export class HREnvError extends Error {
@@ -170,6 +173,25 @@ export function loadHREnv(): HREnvConfig {
     retrievalFreshnessMinutes = parsed;
   }
 
+  // Approval workflow owner (explicit, not derived from admin list order)
+  const approvalOwnerSlackId = process.env.HR_APPROVAL_OWNER_SLACK_ID || null;
+  if (approvalOwnerSlackId && !approvalOwnerSlackId.startsWith('U')) {
+    throw new HREnvError(`HR_APPROVAL_OWNER_SLACK_ID must be a valid Slack user ID starting with 'U'. Got: ${approvalOwnerSlackId}`);
+  }
+  if (approvalOwnerSlackId && authorizedAdmins.length > 0 && !authorizedAdmins.includes(approvalOwnerSlackId)) {
+    throw new HREnvError(`HR_APPROVAL_OWNER_SLACK_ID (${approvalOwnerSlackId}) must be included in HR_AUTHORIZED_ADMINS.`);
+  }
+
+  // Fail visibly if approval features enabled but owner not configured
+  const approvalActionsEnabled = process.env.HR_APPROVAL_ACTIONS_ENABLED?.toLowerCase() === 'true';
+  const approvalNotificationsEnabled = process.env.HR_APPROVAL_NOTIFICATIONS_ENABLED?.toLowerCase() === 'true';
+  if ((approvalActionsEnabled || approvalNotificationsEnabled) && !approvalOwnerSlackId) {
+    throw new HREnvError('HR_APPROVAL_OWNER_SLACK_ID is required when HR_APPROVAL_ACTIONS_ENABLED or HR_APPROVAL_NOTIFICATIONS_ENABLED is true.');
+  }
+  if ((approvalActionsEnabled || approvalNotificationsEnabled) && !expectedTeamId) {
+    throw new HREnvError('HR_EXPECTED_TEAM_ID is required when approval features are enabled.');
+  }
+
   return {
     supabaseUrl,
     supabaseServiceKey,
@@ -186,5 +208,6 @@ export function loadHREnv(): HREnvConfig {
     llmEnabled,
     anthropicApiKey,
     retrievalFreshnessMinutes,
+    approvalOwnerSlackId,
   };
 }

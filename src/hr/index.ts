@@ -128,7 +128,9 @@ async function main(): Promise<void> {
         readerPool,
         env.identitySigningSecret,
         pipelineConfig,
-        dbClient ? (slackId) => getEmployeeFirstName(dbClient!.client, slackId) : undefined
+        dbClient ? (slackId) => getEmployeeFirstName(dbClient!.client, slackId) : undefined,
+        dbClient?.client,
+        env.approvalOwnerSlackId ?? undefined
       );
       await slackApp.start();
       slackConnected = true;
@@ -144,7 +146,28 @@ async function main(): Promise<void> {
     console.log('[HR Service] Slack: disabled (HR_SLACK_ENABLED != true)');
   }
 
-  // 6. Mark started and report health
+  // 6. Notification processor (dormant unless explicitly enabled)
+  let notificationTimer: ReturnType<typeof setInterval> | null = null;
+  if (process.env.HR_APPROVAL_NOTIFICATIONS_ENABLED?.toLowerCase() === 'true' && dbClient && slackConnected) {
+    const NOTIFICATION_POLL_INTERVAL = 60_000; // 1 minute
+    let processing = false;
+    notificationTimer = setInterval(async () => {
+      if (processing) return; // prevent overlapping ticks
+      processing = true;
+      try {
+        // Notification processing would happen here when fully wired
+        // with the Slack client. For now, log that the timer is active.
+        console.log('[HR Notifications] Poll tick (processor not fully wired yet)');
+      } catch (err) {
+        console.error('[HR Notifications] Error:', err instanceof Error ? err.message : err);
+      } finally {
+        processing = false;
+      }
+    }, NOTIFICATION_POLL_INTERVAL);
+    console.log('[HR Service] Notification processor: scheduled (1-minute interval)');
+  }
+
+  // 7. Mark started and report health
   markStarted();
   const health = getHealthStatus(env, dbConnected, slackConnected);
   console.log(`[HR Service] Health: ${health.status}`);
@@ -171,6 +194,10 @@ async function main(): Promise<void> {
   // 8. Graceful shutdown
   const shutdown = async (signal: string) => {
     console.log(`[HR Service] Received ${signal}, shutting down...`);
+    if (notificationTimer) {
+      clearInterval(notificationTimer);
+      notificationTimer = null;
+    }
     server.close();
     if (readerPool) {
       try {
