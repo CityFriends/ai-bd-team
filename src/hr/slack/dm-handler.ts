@@ -17,16 +17,25 @@
  */
 
 import type { App } from '@slack/bolt';
+import type { KnownBlock } from '@slack/types';
 import type { HRAuthProvider } from '../auth/hr-auth.js';
 import type { HRReaderPool } from '../database/hr-client.js';
 import { checkPilotAccess, type HRPilotConfig } from './hr-pilot-access.js';
 import { executeHRPipeline, type HRPipelineConfig } from '../llm/hr-answer-pipeline.js';
 import { formatPipelineResultForSlack } from './hr-slack-formatter.js';
+import { renderPipelineResultAsBlocks } from './hr-block-kit-renderer.js';
 
 const processedEvents = new Set<string>();
 
-/** Reply function type — injected for testability. */
-export type SlackReplyFn = (channel: string, text: string) => Promise<void>;
+/** Reply function type — injected for testability. Supports optional Block Kit. */
+export type SlackReplyFn = (
+  channel: string,
+  text: string,
+  blocks?: KnownBlock[]
+) => Promise<void>;
+
+/** Optional function to resolve an employee's preferred first name for greeting. */
+export type EmployeeNameFn = (slackUserId: string) => Promise<string | null>;
 
 export interface DMHandlerConfig {
   app: App;
@@ -36,6 +45,7 @@ export interface DMHandlerConfig {
   signingSecret?: string;
   pilotConfig?: HRPilotConfig;
   pipelineConfig?: HRPipelineConfig;
+  getEmployeeName?: EmployeeNameFn;
 }
 
 export function registerDMHandler(
@@ -67,9 +77,9 @@ export function registerMessageHandler(config: DMHandlerConfig): void {
     const userId = event.user;
     const channelId = event.channel;
 
-    // Build reply function from the live client
-    const reply: SlackReplyFn = async (ch, text) => {
-      await client.chat.postMessage({ channel: ch, text });
+    // Build reply function from the live client (supports Block Kit)
+    const reply: SlackReplyFn = async (ch, text, blocks?) => {
+      await client.chat.postMessage({ channel: ch, text, ...(blocks ? { blocks } : {}) });
     };
 
     await handleMessage({
@@ -83,6 +93,7 @@ export function registerMessageHandler(config: DMHandlerConfig): void {
       signingSecret: config.signingSecret,
       pilotConfig: config.pilotConfig,
       pipelineConfig: config.pipelineConfig,
+      getEmployeeName: config.getEmployeeName,
       reply,
     });
   });
@@ -101,6 +112,7 @@ export interface HandleMessageInput {
   signingSecret?: string;
   pilotConfig?: HRPilotConfig;
   pipelineConfig?: HRPipelineConfig;
+  getEmployeeName?: EmployeeNameFn;
   reply: SlackReplyFn;
 }
 
@@ -118,6 +130,7 @@ export async function handleMessage(input: HandleMessageInput): Promise<void> {
     auth,
     pilotConfig,
     pipelineConfig,
+    getEmployeeName,
     reply,
   } = input;
 
@@ -161,7 +174,28 @@ export async function handleMessage(input: HandleMessageInput): Promise<void> {
 
     try {
       const result = await executeHRPipeline(pipelineConfig, text, userId);
-      await reply(channelId, formatPipelineResultForSlack(result));
+
+      // Resolve employee name for personalization (best-effort, non-blocking)
+      let employeeName: string | null = null;
+      if (getEmployeeName) {
+        try {
+          employeeName = await getEmployeeName(userId);
+        } catch {
+          // Name lookup failure is non-critical — proceed without personalization
+        }
+      }
+
+      // Render as Block Kit with plain-text fallback
+      const payload = renderPipelineResultAsBlocks(result, {
+        employeeName,
+        messageText: text,
+      });
+      try {
+        await reply(channelId, payload.text, payload.blocks);
+      } catch {
+        // Block Kit rejected by Slack — fall back to plain text
+        await reply(channelId, formatPipelineResultForSlack(result));
+      }
     } catch {
       // Pipeline or reply failure — do not expose internal details to Slack
       try {
