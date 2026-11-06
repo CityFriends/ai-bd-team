@@ -14,6 +14,10 @@
  *      configured, questions go through the validated answer pipeline
  *      (retrieval → LLM → citation validation → safe formatting).
  *      Raw retrieval chunks and raw model text are never sent to Slack.
+ *
+ * Processing indicator: Posts a temporary "Looking up FFTC policies..."
+ *      message immediately after authorization, then updates it in-place
+ *      with the final Block Kit answer via chat.update.
  */
 
 import type { App } from '@slack/bolt';
@@ -27,7 +31,32 @@ import { renderPipelineResultAsBlocks } from './hr-block-kit-renderer.js';
 
 const processedEvents = new Set<string>();
 
-/** Reply function type — injected for testability. Supports optional Block Kit. */
+// ── Processing Indicator ───────────────────────────────────
+
+/** Neutral acknowledgement text. Contains no employee data or policy content. */
+export const PROCESSING_INDICATOR_TEXT = '🔍 Looking up FFTC policies…';
+
+// ── Slack Abstractions ─────────────────────────────────────
+
+/** Post a message, returning its timestamp for later updates. */
+export type SlackPostFn = (
+  channel: string,
+  text: string,
+  blocks?: KnownBlock[]
+) => Promise<{ ts: string | undefined }>;
+
+/** Update an existing bot message by timestamp. */
+export type SlackUpdateFn = (
+  channel: string,
+  ts: string,
+  text: string,
+  blocks?: KnownBlock[]
+) => Promise<void>;
+
+/**
+ * Legacy reply function type — kept for backward compatibility with
+ * DM path and tests that don't need acknowledgement timestamps.
+ */
 export type SlackReplyFn = (
   channel: string,
   text: string,
@@ -77,9 +106,28 @@ export function registerMessageHandler(config: DMHandlerConfig): void {
     const userId = event.user;
     const channelId = event.channel;
 
-    // Build reply function from the live client (supports Block Kit)
+    // Build Slack operation functions from the live client
+    const post: SlackPostFn = async (ch, text, blocks?) => {
+      const resp = await client.chat.postMessage({
+        channel: ch,
+        text,
+        ...(blocks ? { blocks } : {}),
+      });
+      return { ts: resp.ts };
+    };
+
+    const update: SlackUpdateFn = async (ch, ts, text, blocks?) => {
+      await client.chat.update({
+        channel: ch,
+        ts,
+        text,
+        ...(blocks ? { blocks } : {}),
+      });
+    };
+
+    // Legacy reply (for DM path)
     const reply: SlackReplyFn = async (ch, text, blocks?) => {
-      await client.chat.postMessage({ channel: ch, text, ...(blocks ? { blocks } : {}) });
+      await post(ch, text, blocks);
     };
 
     await handleMessage({
@@ -94,6 +142,8 @@ export function registerMessageHandler(config: DMHandlerConfig): void {
       pilotConfig: config.pilotConfig,
       pipelineConfig: config.pipelineConfig,
       getEmployeeName: config.getEmployeeName,
+      post,
+      update,
       reply,
     });
   });
@@ -113,12 +163,17 @@ export interface HandleMessageInput {
   pilotConfig?: HRPilotConfig;
   pipelineConfig?: HRPipelineConfig;
   getEmployeeName?: EmployeeNameFn;
+  /** Post a message and return its timestamp. Used for ack + update flow. */
+  post?: SlackPostFn;
+  /** Update an existing message by timestamp. */
+  update?: SlackUpdateFn;
+  /** Legacy reply (fire-and-forget). Used for DM path and backward compat. */
   reply: SlackReplyFn;
 }
 
 /**
  * Core message-handling logic, extracted for testability.
- * All Slack I/O goes through the injected reply function.
+ * All Slack I/O goes through the injected reply/post/update functions.
  */
 export async function handleMessage(input: HandleMessageInput): Promise<void> {
   const {
@@ -131,6 +186,8 @@ export async function handleMessage(input: HandleMessageInput): Promise<void> {
     pilotConfig,
     pipelineConfig,
     getEmployeeName,
+    post,
+    update,
     reply,
   } = input;
 
@@ -172,39 +229,82 @@ export async function handleMessage(input: HandleMessageInput): Promise<void> {
 
     if (!text.trim()) return;
 
-    try {
-      const result = await executeHRPipeline(pipelineConfig, text, userId);
+    const t0 = performance.now();
 
-      // Resolve employee name for personalization (best-effort, non-blocking)
-      let employeeName: string | null = null;
-      if (getEmployeeName) {
-        try {
-          employeeName = await getEmployeeName(userId);
-        } catch {
-          // Name lookup failure is non-critical — proceed without personalization
-        }
+    // ── Post processing indicator ─────────────────────────
+    // Only posted after all authorization checks pass.
+    // Contains no employee data, question text, or policy content.
+    let ackTs: string | undefined;
+    if (post) {
+      try {
+        const ackResult = await post(channelId, PROCESSING_INDICATOR_TEXT);
+        ackTs = ackResult.ts;
+      } catch {
+        // Acknowledgement failed — continue without it.
+        // The employee won't see a loading indicator, but the answer
+        // will still be delivered as a new message via reply().
       }
+    }
+
+    const tAck = performance.now();
+
+    try {
+      // Run pipeline and name lookup concurrently
+      const [result, employeeName] = await Promise.all([
+        executeHRPipeline(pipelineConfig, text, userId),
+        getEmployeeName
+          ? getEmployeeName(userId).catch(() => null as string | null)
+          : Promise.resolve(null as string | null),
+      ]);
+
+      const tPipeline = performance.now();
 
       // Render as Block Kit with plain-text fallback
       const payload = renderPipelineResultAsBlocks(result, {
         employeeName,
         messageText: text,
       });
-      try {
-        await reply(channelId, payload.text, payload.blocks);
-      } catch {
-        // Block Kit rejected by Slack — fall back to plain text
-        await reply(channelId, formatPipelineResultForSlack(result));
+
+      // ── Deliver final answer ──────────────────────────
+      if (ackTs && update) {
+        // Update the acknowledgement message in-place
+        try {
+          await update(channelId, ackTs, payload.text, payload.blocks);
+        } catch {
+          // Block Kit update rejected — try plain-text update
+          try {
+            await update(channelId, ackTs, formatPipelineResultForSlack(result));
+          } catch {
+            // Update failed entirely — do NOT post a duplicate message.
+            // The employee still sees the processing indicator.
+            // This is a rare edge case (Slack down after initial post).
+          }
+        }
+      } else {
+        // No acknowledgement — deliver as new message (legacy path)
+        try {
+          await reply(channelId, payload.text, payload.blocks);
+        } catch {
+          await reply(channelId, formatPipelineResultForSlack(result));
+        }
       }
+
+      const tDone = performance.now();
+      console.log(
+        `[HR Pipeline] ack=${(tAck - t0).toFixed(0)}ms pipeline=${(tPipeline - tAck).toFixed(0)}ms total=${(tDone - t0).toFixed(0)}ms`
+      );
     } catch {
-      // Pipeline or reply failure — do not expose internal details to Slack
+      // Pipeline or delivery failure
+      const errorMsg =
+        'I encountered an issue processing your question. Please try again later or contact your HR team.';
       try {
-        await reply(
-          channelId,
-          'I encountered an issue processing your question. Please try again later or contact your HR team.'
-        );
+        if (ackTs && update) {
+          await update(channelId, ackTs, errorMsg);
+        } else {
+          await reply(channelId, errorMsg);
+        }
       } catch {
-        // Reply itself failed — cannot safely send anything
+        // Cannot safely send anything
       }
     }
     return;

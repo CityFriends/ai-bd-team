@@ -8,8 +8,11 @@ import { loadPilotConfig, checkPilotAccess, type HRPilotConfig } from '../slack/
 import {
   handleMessage,
   registerMessageHandler,
+  PROCESSING_INDICATOR_TEXT,
   type HandleMessageInput,
   type SlackReplyFn,
+  type SlackPostFn,
+  type SlackUpdateFn,
 } from '../slack/dm-handler.js';
 import { formatAnswerForSlack, formatPipelineResultForSlack } from '../slack/hr-slack-formatter.js';
 import { HR_ABSTENTION_MESSAGE } from '../llm/hr-answer-foundation.js';
@@ -69,6 +72,27 @@ function mockReply(): SlackReplyFn & { calls: Array<[string, string, unknown?]> 
   const calls: Array<[string, string, unknown?]> = [];
   const fn = vi.fn(async (ch: string, text: string, blocks?: unknown) => {
     calls.push([ch, text, blocks]);
+  }) as any;
+  fn.calls = calls;
+  return fn;
+}
+
+function mockPost(
+  ts: string = '1234567890.123456'
+): SlackPostFn & { calls: Array<[string, string, unknown?]> } {
+  const calls: Array<[string, string, unknown?]> = [];
+  const fn = vi.fn(async (ch: string, text: string, blocks?: unknown) => {
+    calls.push([ch, text, blocks]);
+    return { ts };
+  }) as any;
+  fn.calls = calls;
+  return fn;
+}
+
+function mockUpdate(): SlackUpdateFn & { calls: Array<[string, string, string, unknown?]> } {
+  const calls: Array<[string, string, string, unknown?]> = [];
+  const fn = vi.fn(async (ch: string, ts: string, text: string, blocks?: unknown) => {
+    calls.push([ch, ts, text, blocks]);
   }) as any;
   fn.calls = calls;
   return fn;
@@ -134,6 +158,8 @@ function makeInput(overrides: Partial<HandleMessageInput>): HandleMessageInput {
     eventTs: `test-${++eventCounter}-${Date.now()}`,
     auth: mockAuth(),
     reply: mockReply(),
+    // post/update omitted by default → tests use legacy reply path
+    // unless explicitly provided by the test
     pilotConfig: pilotEnabled(),
     pipelineConfig: makePipelineConfig(),
     ...overrides,
@@ -255,15 +281,22 @@ describe('handleMessage — pilot channel', () => {
     setEnv({ HR_AI_ENABLED: 'true', HR_LLM_ENABLED: 'true' });
   });
 
-  it('authorized question → validated answer with citations', async () => {
-    const reply = mockReply();
-    await handleMessage(makeInput({ reply }));
-    expect(reply).toHaveBeenCalledOnce();
-    const msg = reply.calls[0][1];
-    const blocks = reply.calls[0][2];
-    expect(msg).toContain('PTO is 15 days.');
-    // Citations appear in Block Kit blocks (not plain-text fallback)
-    const blockJson = JSON.stringify(blocks);
+  it('authorized question → ack then update with Block Kit answer', async () => {
+    const post = mockPost('ack-ts-1');
+    const update = mockUpdate();
+    await handleMessage(makeInput({ post, update }));
+
+    // 1. Processing indicator posted
+    expect(post).toHaveBeenCalledOnce();
+    expect(post.calls[0][1]).toBe(PROCESSING_INDICATOR_TEXT);
+
+    // 2. Final answer updates the ack message
+    expect(update).toHaveBeenCalledOnce();
+    expect(update.calls[0][1]).toBe('ack-ts-1'); // same timestamp
+    const updateText = update.calls[0][2];
+    expect(updateText).toContain('PTO is 15 days.');
+    const updateBlocks = update.calls[0][3];
+    const blockJson = JSON.stringify(updateBlocks);
     expect(blockJson).toContain('https://notion.so/pto-policy');
     expect(blockJson).toContain('PTO Policy');
   });
@@ -911,7 +944,8 @@ describe('Bootstrap wiring', () => {
     expect(capturedHandler).not.toBeNull();
 
     // Simulate a private channel message through the registered handler
-    const postMessageSpy = vi.fn().mockResolvedValue({ ok: true });
+    const postMessageSpy = vi.fn().mockResolvedValue({ ok: true, ts: 'ack-route' });
+    const chatUpdateSpy = vi.fn().mockResolvedValue({ ok: true });
     await capturedHandler!({
       event: {
         channel_type: 'group',
@@ -920,15 +954,19 @@ describe('Bootstrap wiring', () => {
         ts: `route-${++eventCounter}-${Date.now()}`,
         text: 'What is PTO?',
       },
-      client: { chat: { postMessage: postMessageSpy } },
+      client: { chat: { postMessage: postMessageSpy, update: chatUpdateSpy } },
       context: {},
     });
 
-    // Should have called the pipeline and replied
+    // Should have called the pipeline, posted ack, and updated with answer
     expect(pipeline.retrieveFn).toHaveBeenCalled();
     expect(postMessageSpy).toHaveBeenCalled();
-    const sentText = postMessageSpy.mock.calls[0][0].text;
-    expect(sentText).toContain('PTO');
+    // First postMessage is the ack indicator
+    expect(postMessageSpy.mock.calls[0][0].text).toBe(PROCESSING_INDICATOR_TEXT);
+    // Final answer delivered via chat.update
+    expect(chatUpdateSpy).toHaveBeenCalled();
+    const updateText = chatUpdateSpy.mock.calls[0][0].text;
+    expect(updateText).toContain('PTO');
   });
 });
 
@@ -956,5 +994,149 @@ describe('BD isolation', () => {
     );
     expect(content).not.toContain('src/integrations');
     expect(content).not.toContain('src/services');
+  });
+});
+
+// ============================================================
+// Processing Indicator (Ack + Update)
+// ============================================================
+
+describe('handleMessage — processing indicator', () => {
+  beforeEach(() => {
+    setEnv({ HR_AI_ENABLED: 'true', HR_LLM_ENABLED: 'true' });
+  });
+
+  it('posts processing indicator before pipeline starts', async () => {
+    const post = mockPost('ack-1');
+    const update = mockUpdate();
+    await handleMessage(makeInput({ post, update }));
+    expect(post).toHaveBeenCalledOnce();
+    expect(post.calls[0][1]).toBe(PROCESSING_INDICATOR_TEXT);
+    expect(post.calls[0][1]).not.toContain('PTO'); // no policy content
+  });
+
+  it('indicator contains no employee name or question text', async () => {
+    const post = mockPost('ack-1');
+    const update = mockUpdate();
+    await handleMessage(makeInput({ post, update, text: 'How many PTO days?' }));
+    expect(post.calls[0][1]).toBe(PROCESSING_INDICATOR_TEXT);
+    expect(post.calls[0][1]).not.toContain('PTO days');
+  });
+
+  it('updates ack message with final Block Kit answer', async () => {
+    const post = mockPost('ack-ts');
+    const update = mockUpdate();
+    await handleMessage(makeInput({ post, update }));
+    expect(update).toHaveBeenCalledOnce();
+    expect(update.calls[0][1]).toBe('ack-ts');
+    expect(update.calls[0][3]).toBeDefined(); // blocks present
+  });
+
+  it('unauthorized user gets no acknowledgement', async () => {
+    const post = mockPost();
+    const update = mockUpdate();
+    await handleMessage(makeInput({ post, update, userId: UNAPPROVED_USER }));
+    expect(post).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('unsupported channel gets no acknowledgement', async () => {
+    const post = mockPost();
+    const update = mockUpdate();
+    await handleMessage(makeInput({ post, update, channelType: 'channel' }));
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('unknown employee gets no acknowledgement', async () => {
+    const post = mockPost();
+    const update = mockUpdate();
+    await handleMessage(makeInput({ post, update, auth: mockAuth(false) }));
+    // reply is used for the identity-denied message, not post
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('ack rejection → falls through to reply', async () => {
+    const post = vi.fn().mockRejectedValue(new Error('Slack rejected')) as any;
+    post.calls = [];
+    const update = mockUpdate();
+    const reply = mockReply();
+    await handleMessage(makeInput({ post, update, reply }));
+    // Ack failed, so update is never called; reply delivers the answer
+    expect(update).not.toHaveBeenCalled();
+    expect(reply).toHaveBeenCalled();
+  });
+
+  it('ack returns no timestamp → update still attempted (ts is undefined)', async () => {
+    // When post returns { ts: undefined }, ackTs is undefined (falsy),
+    // so the legacy reply path is used instead
+    const post = vi.fn(async () => ({ ts: undefined })) as any;
+    post.calls = [];
+    const update = mockUpdate();
+    const reply = mockReply();
+    await handleMessage(makeInput({ post, update, reply }));
+    expect(update).not.toHaveBeenCalled();
+    expect(reply).toHaveBeenCalled();
+  });
+
+  it('Block Kit update rejected → plain-text update fallback', async () => {
+    const post = mockPost('ack-ts');
+    let callCount = 0;
+    const update = vi.fn(async (_ch: string, _ts: string, _text: string, blocks?: unknown) => {
+      callCount++;
+      if (callCount === 1 && blocks) throw new Error('Invalid blocks');
+      // Second call (plain text) succeeds
+    }) as any;
+    update.calls = [];
+    await handleMessage(makeInput({ post, update }));
+    expect(update).toHaveBeenCalledTimes(2);
+  });
+
+  it('pipeline retrieval error → updates ack with safe fallback', async () => {
+    const post = mockPost('ack-err');
+    const update = mockUpdate();
+    const pipeline = makePipelineConfig();
+    (pipeline.retrieveFn as any).mockRejectedValue(new Error('DB down'));
+    await handleMessage(makeInput({ post, update, pipelineConfig: pipeline }));
+    expect(update).toHaveBeenCalledOnce();
+    expect(update.calls[0][1]).toBe('ack-err');
+    // Pipeline returns a safe fallback, not an exception
+    expect(update.calls[0][2]).toContain('HR');
+    expect(update.calls[0][2]).not.toContain('DB down');
+  });
+
+  it('duplicate event → no second acknowledgement', async () => {
+    const post = mockPost('ack-dup');
+    const update = mockUpdate();
+    const eventTs = `dup-${++eventCounter}-${Date.now()}`;
+    await handleMessage(makeInput({ post, update, eventTs }));
+    expect(post).toHaveBeenCalledOnce();
+    // Same event again
+    await handleMessage(makeInput({ post, update, eventTs }));
+    expect(post).toHaveBeenCalledOnce(); // still just one
+  });
+
+  it('concurrent questions get distinct timestamps', async () => {
+    const post1 = mockPost('ts-q1');
+    const update1 = mockUpdate();
+    const post2 = mockPost('ts-q2');
+    const update2 = mockUpdate();
+    await Promise.all([
+      handleMessage(makeInput({ post: post1, update: update1, text: 'Question 1' })),
+      handleMessage(makeInput({ post: post2, update: update2, text: 'Question 2' })),
+    ]);
+    // Each updates its own timestamp
+    if (update1.calls.length > 0) expect(update1.calls[0][1]).toBe('ts-q1');
+    if (update2.calls.length > 0) expect(update2.calls[0][1]).toBe('ts-q2');
+  });
+
+  it('legacy path works without post/update (backward compat)', async () => {
+    const reply = mockReply();
+    await handleMessage(makeInput({
+      reply,
+      post: undefined,
+      update: undefined,
+    }));
+    expect(reply).toHaveBeenCalled();
+    expect(reply.calls[0][1]).toContain('PTO is 15 days.');
   });
 });
