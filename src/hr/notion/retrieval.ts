@@ -85,13 +85,26 @@ const CANDIDATES_PER_TERM = 20;
 const MAX_RESULT_CHUNKS = 10;
 
 /**
+ * Maximum concurrent RPC calls. Bounded to avoid exhausting the
+ * PostgreSQL connection pool (max: 3). With 3 concurrent queries,
+ * 4-6 terms complete in ~2 batches instead of 4-6 sequential calls.
+ */
+const MAX_CONCURRENT_RPCS = 3;
+
+/** Result from a single term's RPC call. */
+interface TermResult {
+  term: SearchTerm;
+  rows: Array<Record<string, unknown>>;
+}
+
+/**
  * Retrieve knowledge chunks for a Slack user's query.
  * Creates a signed identity token and sends it through the
  * least-privilege reader pool to the SECURITY DEFINER RPC.
  *
  * Extracts keywords from natural-language questions, runs
- * multiple ILIKE queries, scores candidates by relevance,
- * and returns the top-ranked results.
+ * parallel ILIKE queries (bounded by connection pool size),
+ * scores candidates by relevance, and returns the top-ranked results.
  */
 export async function retrieveForUser(
   readerPool: HRReaderPool,
@@ -110,15 +123,14 @@ export async function retrieveForUser(
     return { chunks: [], error: null };
   }
 
-  // 2. Collect all candidates across all terms (no early exit)
-  const candidates = new Map<string, ScoredCandidate>();
+  // 2. Create tokens and prepare queries (synchronous, <1ms total)
   const freshness = getRetrievalFreshnessMinutes();
+  const queries: Array<{ term: SearchTerm; token: string; sanitized: string }> = [];
 
   for (const term of searchTerms) {
-    // Each query gets a fresh signed token (30s lifetime)
-    let token: string;
     try {
-      token = createIdentityToken(slackUserId, signingSecret);
+      const token = createIdentityToken(slackUserId, signingSecret);
+      queries.push({ term, token, sanitized: sanitizeQuery(term.text) });
     } catch (err) {
       console.error(
         '[HR Retrieval] Token creation failed:',
@@ -126,45 +138,49 @@ export async function retrieveForUser(
       );
       return { chunks: [], error: 'Token creation failed' };
     }
+  }
 
-    const sanitized = sanitizeQuery(term.text);
-    try {
-      const result = await readerPool.query(
-        'SELECT * FROM hr_retrieve_knowledge_v2($1, $2, $3, $4)',
-        [token, sanitized, freshness, CANDIDATES_PER_TERM]
-      );
+  // 3. Execute RPCs in parallel, bounded by pool size
+  const t0 = performance.now();
+  let allResults: TermResult[];
+  try {
+    allResults = await executeParallelRPCs(readerPool, queries, freshness);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[HR Retrieval] Reader pool query error (returning empty):', msg);
+    return { chunks: [], error: msg };
+  }
+  const tRetrieval = performance.now();
 
-      for (const row of result.rows || []) {
-        const rawChunkId = row.chunk_id;
-        if (typeof rawChunkId !== 'string' || !isValidUUID(rawChunkId)) {
-          return { chunks: [], error: 'Invalid chunk identifier in retrieval result' };
-        }
+  // 4. Merge candidates from all terms
+  const candidates = new Map<string, ScoredCandidate>();
 
-        const existing = candidates.get(rawChunkId);
-        if (existing) {
-          // Accumulate match signals for scoring
-          existing.matchedTerms.push(term);
-        } else {
-          candidates.set(rawChunkId, {
-            chunk: {
-              chunkId: rawChunkId,
-              contentText: row.content_text as string,
-              headingPath: (row.heading_path as string[]) || [],
-              citation: buildCitation(row),
-            },
-            title: (row.title as string) || '',
-            matchedTerms: [term],
-          });
-        }
+  for (const { term, rows } of allResults) {
+    for (const row of rows) {
+      const rawChunkId = row.chunk_id;
+      if (typeof rawChunkId !== 'string' || !isValidUUID(rawChunkId as string)) {
+        return { chunks: [], error: 'Invalid chunk identifier in retrieval result' };
       }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error('[HR Retrieval] Reader pool query error (returning empty):', msg);
-      return { chunks: [], error: msg };
+
+      const existing = candidates.get(rawChunkId as string);
+      if (existing) {
+        existing.matchedTerms.push(term);
+      } else {
+        candidates.set(rawChunkId as string, {
+          chunk: {
+            chunkId: rawChunkId as string,
+            contentText: row.content_text as string,
+            headingPath: (row.heading_path as string[]) || [],
+            citation: buildCitation(row),
+          },
+          title: (row.title as string) || '',
+          matchedTerms: [term],
+        });
+      }
     }
   }
 
-  // 3. Score, rank, and select top candidates
+  // 5. Score, rank, and select top candidates
   const scored = Array.from(candidates.values()).map((c) => ({
     ...c,
     score: scoreCandidate(c, searchTerms),
@@ -172,10 +188,52 @@ export async function retrieveForUser(
 
   scored.sort((a, b) => b.score - a.score || a.chunk.chunkId.localeCompare(b.chunk.chunkId));
 
+  console.log(
+    `[HR Retrieval] terms=${queries.length} candidates=${candidates.size} selected=${Math.min(scored.length, MAX_RESULT_CHUNKS)} retrieval=${(tRetrieval - t0).toFixed(0)}ms`
+  );
+
   return {
     chunks: scored.slice(0, MAX_RESULT_CHUNKS).map((c) => c.chunk),
     error: null,
   };
+}
+
+// ── Parallel RPC Execution ─────────────────────────────────
+
+/**
+ * Execute retrieval RPCs in parallel with bounded concurrency.
+ *
+ * Processes queries in batches of MAX_CONCURRENT_RPCS to avoid
+ * exhausting the PostgreSQL connection pool (max: 3 connections).
+ *
+ * Fail-closed: if ANY individual RPC throws, the entire batch fails
+ * and no partial results are returned. This prevents incomplete
+ * retrieval from being misrepresented as comprehensive.
+ */
+async function executeParallelRPCs(
+  readerPool: HRReaderPool,
+  queries: Array<{ term: SearchTerm; token: string; sanitized: string }>,
+  freshness: number
+): Promise<TermResult[]> {
+  const allResults: TermResult[] = [];
+
+  for (let i = 0; i < queries.length; i += MAX_CONCURRENT_RPCS) {
+    const batch = queries.slice(i, i + MAX_CONCURRENT_RPCS);
+
+    const batchResults = await Promise.all(
+      batch.map(async ({ term, token, sanitized }): Promise<TermResult> => {
+        const result = await readerPool.query(
+          'SELECT * FROM hr_retrieve_knowledge_v2($1, $2, $3, $4)',
+          [token, sanitized, freshness, CANDIDATES_PER_TERM]
+        );
+        return { term, rows: result.rows || [] };
+      })
+    );
+
+    allResults.push(...batchResults);
+  }
+
+  return allResults;
 }
 
 // ── Relevance Scoring ──────────────────────────────────────
