@@ -13,9 +13,11 @@ import type { HRAuthProvider } from '../auth/hr-auth.js';
 import type { HRReaderPool } from '../database/hr-client.js';
 import type { HRPipelineConfig } from '../llm/hr-answer-pipeline.js';
 import type { EmployeeNameFn } from './dm-handler.js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { registerLeadershipChannel } from './leadership-channel.js';
 import { registerMessageHandler } from './dm-handler.js';
 import { loadPilotConfig } from './hr-pilot-access.js';
+import { registerApprovalActions, isApprovalActionsEnabled } from './approval-actions.js';
 
 export interface HRSlackApp {
   start(): Promise<void>;
@@ -30,6 +32,10 @@ export interface HRSlackAppOptions {
   signingSecret?: string | null;
   pipelineConfig?: HRPipelineConfig;
   getEmployeeName?: EmployeeNameFn;
+  /** Supabase admin client for approval actions. */
+  dbClient?: SupabaseClient;
+  /** Authorized owner Slack user ID for approvals. */
+  approvalOwnerSlackId?: string;
 }
 
 export function createHRSlackApp(
@@ -39,7 +45,9 @@ export function createHRSlackApp(
   readerPool?: HRReaderPool | null,
   signingSecret?: string | null,
   pipelineConfig?: HRPipelineConfig,
-  getEmployeeName?: EmployeeNameFn
+  getEmployeeName?: EmployeeNameFn,
+  dbClient?: SupabaseClient,
+  approvalOwnerSlackId?: string
 ): HRSlackApp {
   if (!env.botToken || !env.appToken) {
     throw new Error('HR Slack app requires HR_BOT_TOKEN and HR_APP_TOKEN.');
@@ -74,6 +82,17 @@ export function createHRSlackApp(
     pipelineConfig,
     getEmployeeName,
   });
+
+  // Register owner-only approval action handlers.
+  // Only active when HR_APPROVAL_ACTIONS_ENABLED=true AND owner is configured.
+  if (isApprovalActionsEnabled() && dbClient && approvalOwnerSlackId) {
+    registerApprovalActions(app, {
+      ownerSlackId: approvalOwnerSlackId,
+      expectedTeamId,
+      db: dbClient,
+    });
+    console.log('[HR Slack] Approval actions registered for owner:', approvalOwnerSlackId);
+  }
 
   return {
     async start() {

@@ -209,6 +209,19 @@ export async function fetchPageBlocks(
         `/blocks/${blockId}/children${cursor ? `?start_cursor=${cursor}` : ''}`);
       const result = data as NotionBlockChildren;
       for (const block of result.results) {
+        // Handle table blocks specially — extract as Markdown table
+        if (block.type === 'table') {
+          const tableResult = await extractTableBlock(connectionId, token, block);
+          if (tableResult) {
+            allBlocks.push({ id: block.id, type: 'table', text: tableResult.text });
+          } else {
+            // Table extraction failed — record as empty for completeness tracking
+            allBlocks.push({ id: block.id, type: 'table', text: '' });
+          }
+          // Don't recurse into table children (already fetched by extractTableBlock)
+          continue;
+        }
+
         const text = extractBlockText(block);
         const heading = isHeading(block) ? text : undefined;
         if (text) allBlocks.push({ id: block.id, type: block.type, text, heading });
@@ -231,4 +244,88 @@ function extractBlockText(block: NotionBlock): string {
 
 function isHeading(block: NotionBlock): boolean {
   return block.type.startsWith('heading_');
+}
+
+// ── Table Extraction ───────────────────────────────────────
+
+/**
+ * Extract a Notion table block into a Markdown-formatted table string.
+ *
+ * Fetches all table_row children via pagination, preserves row/column
+ * order and header semantics, and produces a deterministic representation
+ * suitable for retrieval and citation.
+ *
+ * @param connectionId Notion connection ID
+ * @param token Notion API token
+ * @param tableBlock The table block (type='table')
+ * @returns Markdown table string, or null if extraction fails
+ */
+export async function extractTableBlock(
+  connectionId: string,
+  token: string,
+  tableBlock: NotionBlock
+): Promise<{ text: string; rowCount: number } | null> {
+  const tableData = tableBlock.table as {
+    has_column_header?: boolean;
+    has_row_header?: boolean;
+    table_width?: number;
+  } | undefined;
+
+  if (!tableData) return null;
+
+  const hasColumnHeader = tableData.has_column_header ?? false;
+  const columnCount = tableData.table_width ?? 0;
+
+  // Fetch all table_row children with pagination
+  const rows: Array<{ cells: string[][] }> = [];
+  let cursor: string | null = null;
+
+  do {
+    const { data } = await notionRequest(connectionId, token, 'GET',
+      `/blocks/${tableBlock.id}/children${cursor ? `?start_cursor=${cursor}` : ''}`);
+    const result = data as NotionBlockChildren;
+
+    for (const row of result.results) {
+      if (row.type !== 'table_row') continue;
+      const rowData = row.table_row as { cells?: Array<Array<{ plain_text: string }>> } | undefined;
+      if (!rowData?.cells) continue;
+
+      rows.push({
+        cells: rowData.cells.map((cell) =>
+          cell.map((t) => t.plain_text)
+        ),
+      });
+    }
+    cursor = result.next_cursor;
+  } while (cursor);
+
+  if (rows.length === 0) return null;
+
+  // Build Markdown table
+  const lines: string[] = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const cells = rows[i].cells.map((cell) => {
+      const text = cell.join('');
+      // Escape pipes and newlines for Markdown table safety
+      return text.replace(/\|/g, '\\|').replace(/\n/g, ' ');
+    });
+
+    // Pad to column count
+    while (cells.length < columnCount) cells.push('');
+
+    lines.push(`| ${cells.join(' | ')} |`);
+
+    // Add separator after header row
+    if (i === 0 && hasColumnHeader) {
+      lines.push(`| ${cells.map(() => '---').join(' | ')} |`);
+    }
+  }
+
+  // If no column header, add separator after first row anyway for readability
+  if (!hasColumnHeader && rows.length > 1) {
+    lines.splice(1, 0, `| ${Array(columnCount).fill('---').join(' | ')} |`);
+  }
+
+  return { text: lines.join('\n'), rowCount: rows.length };
 }
