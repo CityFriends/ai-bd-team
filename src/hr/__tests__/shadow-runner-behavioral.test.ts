@@ -1216,3 +1216,609 @@ describe('Service-Key Isolation', () => {
     });
   });
 });
+
+// ── Effective PostgreSQL Privilege Tests ──────────────────────────
+// These tests verify that the adapter rejects effective privileges
+// granted through ANY path: direct, role inheritance, or PUBLIC.
+// They use the mock adapter's effectivePrivileges configuration to
+// simulate PostgreSQL's has_table_privilege() and has_function_privilege()
+// behavior without requiring a live database connection.
+
+describe('Effective PostgreSQL Privilege Verification', () => {
+  describe('Direct mutation privileges', () => {
+    it('rejects direct INSERT privilege on approved table', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {
+            specificMutationPrivileges: { hr_knowledge_pages: ['INSERT'] },
+            grantPath: 'direct',
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.hasMutationPrivileges).toBe(true);
+      expect(result.privileges.issues.some((i) => i.includes('INSERT'))).toBe(true);
+      expect(result.privileges.issues.some((i) => i.includes('hr_knowledge_pages'))).toBe(true);
+    });
+
+    it('rejects direct UPDATE privilege on approved table', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {
+            specificMutationPrivileges: { hr_approved_roots: ['UPDATE'] },
+            grantPath: 'direct',
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.hasMutationPrivileges).toBe(true);
+      expect(result.privileges.issues.some((i) => i.includes('UPDATE'))).toBe(true);
+    });
+
+    it('rejects direct DELETE privilege on approved table', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {
+            specificMutationPrivileges: { hr_page_approvals: ['DELETE'] },
+            grantPath: 'direct',
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.hasMutationPrivileges).toBe(true);
+      expect(result.privileges.issues.some((i) => i.includes('DELETE'))).toBe(true);
+    });
+  });
+
+  describe('Inherited mutation privileges (via role membership)', () => {
+    it('rejects inherited INSERT privilege', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {
+            specificMutationPrivileges: { hr_knowledge_pages: ['INSERT'] },
+            grantPath: 'inherited',
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.hasMutationPrivileges).toBe(true);
+      expect(result.privileges.issues.some((i) => i.includes('inherited'))).toBe(true);
+    });
+
+    it('rejects inherited UPDATE privilege', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {
+            mutationOnTables: ['hr_notion_connections'],
+            grantPath: 'inherited',
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.hasMutationPrivileges).toBe(true);
+      expect(result.privileges.issues.some((i) => i.includes('(via inherited)'))).toBe(true);
+    });
+  });
+
+  describe('PUBLIC mutation privileges', () => {
+    it('rejects PUBLIC INSERT privilege', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {
+            specificMutationPrivileges: { hr_knowledge_pages: ['INSERT'] },
+            grantPath: 'public',
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.hasMutationPrivileges).toBe(true);
+      expect(result.privileges.issues.some((i) => i.includes('(via public)'))).toBe(true);
+    });
+
+    it('rejects PUBLIC DELETE privilege', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {
+            specificMutationPrivileges: { hr_approved_roots: ['DELETE'] },
+            grantPath: 'public',
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.hasMutationPrivileges).toBe(true);
+    });
+  });
+
+  describe('Effective REFERENCES privilege', () => {
+    it('rejects direct REFERENCES privilege', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {
+            specificMutationPrivileges: { hr_knowledge_pages: ['REFERENCES'] },
+            grantPath: 'direct',
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.hasMutationPrivileges).toBe(true);
+      expect(result.privileges.issues.some((i) => i.includes('REFERENCES'))).toBe(true);
+    });
+
+    it('rejects inherited REFERENCES privilege', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {
+            specificMutationPrivileges: { hr_page_approvals: ['REFERENCES'] },
+            grantPath: 'inherited',
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.issues.some((i) => i.includes('REFERENCES'))).toBe(true);
+      expect(result.privileges.issues.some((i) => i.includes('inherited'))).toBe(true);
+    });
+  });
+
+  describe('Effective TRIGGER privilege', () => {
+    it('rejects direct TRIGGER privilege', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {
+            specificMutationPrivileges: { hr_notion_connections: ['TRIGGER'] },
+            grantPath: 'direct',
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.hasMutationPrivileges).toBe(true);
+      expect(result.privileges.issues.some((i) => i.includes('TRIGGER'))).toBe(true);
+    });
+
+    it('rejects PUBLIC TRIGGER privilege', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {
+            specificMutationPrivileges: { hr_approved_roots: ['TRIGGER'] },
+            grantPath: 'public',
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.issues.some((i) => i.includes('(via public)'))).toBe(true);
+    });
+  });
+
+  describe('Inherited forbidden-table SELECT', () => {
+    it('rejects inherited SELECT on hr_signing_secrets', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {
+            selectOnForbiddenTables: ['hr_signing_secrets'],
+            grantPath: 'inherited',
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.hasForbiddenAccess).toBe(true);
+      expect(result.privileges.issues.some((i) => i.includes('hr_signing_secrets'))).toBe(true);
+      expect(result.privileges.issues.some((i) => i.includes('inherited'))).toBe(true);
+    });
+
+    it('rejects inherited SELECT on hr_employees', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {
+            selectOnForbiddenTables: ['hr_employees'],
+            grantPath: 'inherited',
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.hasForbiddenAccess).toBe(true);
+      expect(result.privileges.issues.some((i) => i.includes('hr_employees'))).toBe(true);
+    });
+  });
+
+  describe('PUBLIC forbidden-table SELECT', () => {
+    it('rejects PUBLIC SELECT on hr_audit_events', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {
+            selectOnForbiddenTables: ['hr_audit_events'],
+            grantPath: 'public',
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.hasForbiddenAccess).toBe(true);
+      expect(result.privileges.issues.some((i) => i.includes('(via public)'))).toBe(true);
+    });
+
+    it('rejects PUBLIC SELECT on hr_knowledge_chunks', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {
+            selectOnForbiddenTables: ['hr_knowledge_chunks'],
+            grantPath: 'public',
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.hasForbiddenAccess).toBe(true);
+    });
+  });
+
+  describe('Inherited mutation-function EXECUTE', () => {
+    it('rejects inherited EXECUTE on hr_upsert_knowledge_page', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {
+            executeOnFunctions: ['hr_upsert_knowledge_page'],
+            grantPath: 'inherited',
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.hasForbiddenFunctions).toBe(true);
+      expect(result.privileges.issues.some((i) => i.includes('hr_upsert_knowledge_page'))).toBe(
+        true
+      );
+      expect(result.privileges.issues.some((i) => i.includes('inherited'))).toBe(true);
+    });
+
+    it('rejects inherited EXECUTE on hr_create_employee', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {
+            executeOnFunctions: ['hr_create_employee'],
+            grantPath: 'inherited',
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.hasForbiddenFunctions).toBe(true);
+    });
+  });
+
+  describe('PUBLIC mutation-function EXECUTE', () => {
+    it('rejects PUBLIC EXECUTE on hr_publish_routine_page', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      // Note: PostgreSQL grants EXECUTE to PUBLIC by default!
+      // This test verifies we detect and reject such privileges.
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {
+            executeOnFunctions: ['hr_publish_routine_page'],
+            grantPath: 'public',
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.hasForbiddenFunctions).toBe(true);
+      expect(result.privileges.issues.some((i) => i.includes('(via public)'))).toBe(true);
+    });
+
+    it('rejects PUBLIC EXECUTE on hr_batch_approve_compensation', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {
+            executeOnFunctions: ['hr_batch_approve_compensation'],
+            grantPath: 'public',
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.hasForbiddenFunctions).toBe(true);
+    });
+  });
+
+  describe('No unauthorized effective privileges', () => {
+    it('passes verification with clean effective privileges', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {
+            // No mutation privileges
+            // No forbidden table access
+            // No forbidden functions
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(true);
+      expect(result.privileges.valid).toBe(true);
+      expect(result.privileges.hasMutationPrivileges).toBe(false);
+      expect(result.privileges.hasForbiddenAccess).toBe(false);
+      expect(result.privileges.hasForbiddenFunctions).toBe(false);
+      expect(result.privileges.issues).toHaveLength(0);
+    });
+
+    it('allows data access after clean verification', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        {
+          connections: [
+            {
+              id: 'c1',
+              name: 'Test',
+              workspaceId: 'ws',
+              tokenHash: 'h',
+              isActive: true,
+              createdAt: '',
+              lastSyncAt: null,
+            },
+          ],
+          roots: [],
+          pages: new Map(),
+          approvals: [],
+        },
+        {
+          effectivePrivileges: {
+            // Clean - no unauthorized privileges
+          },
+        }
+      );
+
+      const securityResult = await adapter.verifySecurityBoundary();
+      expect(securityResult.valid).toBe(true);
+
+      const dataResult = await adapter.loadConnections();
+      expect(dataResult.error).toBeNull();
+      expect(dataResult.data).toHaveLength(1);
+    });
+  });
+
+  describe('Privilege-query failure', () => {
+    it('fails closed when privilege query errors', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        { simulatePrivilegeQueryFailure: true }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.valid).toBe(false);
+      // Fail closed: all flags set to true
+      expect(result.privileges.hasElevatedAttributes).toBe(true);
+      expect(result.privileges.hasMutationPrivileges).toBe(true);
+      expect(result.privileges.hasForbiddenAccess).toBe(true);
+      expect(result.privileges.hasForbiddenFunctions).toBe(true);
+      expect(result.privileges.issues.some((i) => i.includes('query failed'))).toBe(true);
+    });
+
+    it('blocks data access after privilege query failure', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        {
+          connections: [
+            {
+              id: 'c1',
+              name: 'Test',
+              workspaceId: 'ws',
+              tokenHash: 'h',
+              isActive: true,
+              createdAt: '',
+              lastSyncAt: null,
+            },
+          ],
+          roots: [],
+          pages: new Map(),
+          approvals: [],
+        },
+        { simulatePrivilegeQueryFailure: true }
+      );
+
+      const securityResult = await adapter.verifySecurityBoundary();
+      expect(securityResult.valid).toBe(false);
+
+      const dataResult = await adapter.loadConnections();
+      expect(dataResult.error).toBe('Security boundary not verified');
+      expect(dataResult.data).toBeNull();
+    });
+  });
+
+  describe('Verification failure blocks discovery reads', () => {
+    it('any effective privilege violation blocks all data methods', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        {
+          connections: [
+            {
+              id: 'c1',
+              name: 'Test',
+              workspaceId: 'ws',
+              tokenHash: 'h',
+              isActive: true,
+              createdAt: '',
+              lastSyncAt: null,
+            },
+          ],
+          roots: [
+            {
+              id: 'r1',
+              connectionId: 'c1',
+              notionPageId: 'np1',
+              name: 'Root',
+              accessClassification: 'employee_safe',
+              isActive: true,
+              createdAt: '',
+            },
+          ],
+          pages: new Map([
+            [
+              'c1',
+              [
+                {
+                  id: 'p1',
+                  notionPageId: 'np1',
+                  connectionId: 'c1',
+                  title: 'Page',
+                  contentHash: null,
+                  publicationStatus: null,
+                  approvedRootId: 'r1',
+                  lastVerifiedAt: null,
+                },
+              ],
+            ],
+          ]),
+          approvals: [
+            {
+              id: 'a1',
+              knowledgePageId: 'p1',
+              approvedContentHash: 'hash',
+              approvedBy: 'admin',
+              approvedAt: '',
+              revokedAt: null,
+            },
+          ],
+        },
+        {
+          effectivePrivileges: {
+            specificMutationPrivileges: { hr_knowledge_pages: ['TRUNCATE'] },
+            grantPath: 'public',
+          },
+        }
+      );
+
+      // Verification fails
+      const securityResult = await adapter.verifySecurityBoundary();
+      expect(securityResult.valid).toBe(false);
+
+      // ALL data access methods are blocked
+      expect((await adapter.loadConnections()).error).toBe('Security boundary not verified');
+      expect((await adapter.loadApprovedRoots()).error).toBe('Security boundary not verified');
+      expect((await adapter.loadApprovedRootsForClassifier()).error).toBe(
+        'Security boundary not verified'
+      );
+      expect((await adapter.loadApprovedRootsForConnection('c1')).error).toBe(
+        'Security boundary not verified'
+      );
+      expect((await adapter.loadExistingPages('c1')).error).toBe('Security boundary not verified');
+      expect((await adapter.loadExistingApprovals()).error).toBe('Security boundary not verified');
+      expect((await adapter.loadConnection('c1')).error).toBe('Security boundary not verified');
+    });
+  });
+});

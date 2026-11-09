@@ -115,19 +115,47 @@ const EXPECTED_ROLE = 'hr_shadow_reader';
  *   - hr_knowledge_chunks
  */
 
-/** Mutation functions that must NOT be executable */
+/** Tables allowed for SELECT access */
+const ALLOWED_TABLES = [
+  'hr_notion_connections',
+  'hr_approved_roots',
+  'hr_knowledge_pages',
+  'hr_page_approvals',
+];
+
+/** Tables forbidden for any access */
+const FORBIDDEN_TABLES = [
+  'hr_signing_secrets',
+  'hr_employees',
+  'hr_audit_events',
+  'hr_knowledge_chunks',
+  'hr_sync_leases',
+];
+
+/** All HR tables to check for mutation privileges */
+const ALL_HR_TABLES = [...ALLOWED_TABLES, ...FORBIDDEN_TABLES];
+
+/** Mutation functions that must NOT be executable (with signatures for unambiguous lookup) */
 const FORBIDDEN_FUNCTIONS = [
-  'hr_is_authorized_admin',
+  'hr_is_authorized_admin(text)',
+  'hr_check_idempotency(text, text)',
   'hr_create_employee',
   'hr_update_employee',
   'hr_deactivate_employee',
+  'hr_sync_bootstrap_admins(text[])',
   'hr_acquire_sync_lease',
   'hr_release_sync_lease',
+  'hr_extend_sync_lease',
   'hr_upsert_knowledge_page',
   'hr_publish_routine_page',
   'hr_suspend_page',
   'hr_batch_approve_compensation',
+  'hr_retrieve_knowledge(text, text, integer, integer)',
+  'hr_retrieve_knowledge_v2(text, text, integer, integer)',
 ];
+
+/** Mutation privilege types to check */
+const MUTATION_PRIVILEGES = ['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'];
 
 // ── Identity Verification ─────────────────────────────────────
 
@@ -188,6 +216,15 @@ async function verifyIdentity(client: pg.PoolClient): Promise<IdentityCheckResul
 
 /**
  * Verify the role has no elevated privileges.
+ *
+ * Uses PostgreSQL's has_table_privilege() and has_function_privilege() functions
+ * to evaluate EFFECTIVE privileges, which include:
+ *   - Direct grants to the current role
+ *   - Grants inherited through role membership
+ *   - Grants to PUBLIC
+ *
+ * This is more comprehensive than querying information_schema.table_privileges,
+ * which only shows direct grants to the specified grantee.
  */
 async function verifyPrivileges(client: pg.PoolClient): Promise<PrivilegeCheckResult> {
   const issues: string[] = [];
@@ -227,53 +264,58 @@ async function verifyPrivileges(client: pg.PoolClient): Promise<PrivilegeCheckRe
       }
     }
 
-    // 2. Check for mutation and schema-altering privileges on HR tables
-    // Includes REFERENCES (foreign key creation) and TRIGGER (trigger creation)
-    const { rows: privRows } = await client.query(`
-      SELECT table_name, privilege_type
-      FROM information_schema.table_privileges
-      WHERE grantee = current_user
-        AND table_schema = 'public'
-        AND privilege_type IN ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER')
-    `);
-
-    if (privRows.length > 0) {
-      for (const row of privRows) {
-        issues.push(`Has ${row.privilege_type} on ${row.table_name}`);
+    // 2. Check EFFECTIVE mutation privileges on ALL HR tables
+    // Uses has_table_privilege() which evaluates privileges from:
+    //   - Direct grants
+    //   - Role membership inheritance
+    //   - PUBLIC grants
+    for (const tableName of ALL_HR_TABLES) {
+      for (const privilege of MUTATION_PRIVILEGES) {
+        const { rows } = await client.query(
+          `SELECT has_table_privilege(current_user, $1, $2) AS has_priv`,
+          [`public.${tableName}`, privilege]
+        );
+        if (rows[0]?.has_priv === true) {
+          issues.push(`Has effective ${privilege} on ${tableName}`);
+          hasMutationPrivileges = true;
+        }
       }
-      hasMutationPrivileges = true;
     }
 
-    // 3. Check for access to forbidden tables
-    const { rows: forbiddenRows } = await client.query(`
-      SELECT table_name, privilege_type
-      FROM information_schema.table_privileges
-      WHERE grantee = current_user
-        AND table_schema = 'public'
-        AND table_name IN ('hr_signing_secrets', 'hr_employees', 'hr_audit_events', 'hr_knowledge_chunks')
-    `);
-
-    if (forbiddenRows.length > 0) {
-      for (const row of forbiddenRows) {
-        issues.push(`Has ${row.privilege_type} on forbidden table ${row.table_name}`);
+    // 3. Check EFFECTIVE SELECT access to forbidden tables
+    // The role must NOT have SELECT on forbidden tables through any grant path
+    for (const tableName of FORBIDDEN_TABLES) {
+      const { rows } = await client.query(
+        `SELECT has_table_privilege(current_user, $1, 'SELECT') AS has_priv`,
+        [`public.${tableName}`]
+      );
+      if (rows[0]?.has_priv === true) {
+        issues.push(`Has effective SELECT on forbidden table ${tableName}`);
+        hasForbiddenAccess = true;
       }
-      hasForbiddenAccess = true;
     }
 
-    // 4. Check for EXECUTE on mutation functions
-    const { rows: funcRows } = await client.query(`
-      SELECT routine_name
-      FROM information_schema.routine_privileges
-      WHERE grantee = current_user
-        AND routine_schema = 'public'
-        AND routine_name IN (${FORBIDDEN_FUNCTIONS.map((_, i) => `$${i + 1}`).join(', ')})
-    `, FORBIDDEN_FUNCTIONS);
-
-    if (funcRows.length > 0) {
-      for (const row of funcRows) {
-        issues.push(`Has EXECUTE on mutation function ${row.routine_name}`);
+    // 4. Check EFFECTIVE EXECUTE on mutation functions
+    // Uses has_function_privilege() which evaluates privileges from:
+    //   - Direct grants
+    //   - Role membership inheritance
+    //   - PUBLIC grants (PostgreSQL grants EXECUTE to PUBLIC by default!)
+    for (const funcSignature of FORBIDDEN_FUNCTIONS) {
+      try {
+        // Try to resolve the function and check privilege
+        // Use regprocedure cast for unambiguous function lookup
+        const { rows } = await client.query(
+          `SELECT has_function_privilege(current_user, $1::regprocedure, 'EXECUTE') AS has_priv`,
+          [`public.${funcSignature}`]
+        );
+        if (rows[0]?.has_priv === true) {
+          issues.push(`Has effective EXECUTE on mutation function ${funcSignature}`);
+          hasForbiddenFunctions = true;
+        }
+      } catch {
+        // Function may not exist yet (pre-migration) - not an error
+        // The security boundary check runs after migration is applied
       }
-      hasForbiddenFunctions = true;
     }
 
     // 5. Check for elevated role membership
@@ -318,12 +360,18 @@ export interface ReadonlyAdapter {
   loadConnections(): Promise<ReadonlyAdapterResult<NotionConnection[]>>;
   loadApprovedRoots(): Promise<ReadonlyAdapterResult<ApprovedRootRow[]>>;
   loadApprovedRootsForClassifier(): Promise<ReadonlyAdapterResult<ApprovedRoot[]>>;
-  loadApprovedRootsForConnection(connectionId: string): Promise<ReadonlyAdapterResult<ApprovedRootRow[]>>;
+  loadApprovedRootsForConnection(
+    connectionId: string
+  ): Promise<ReadonlyAdapterResult<ApprovedRootRow[]>>;
   loadExistingPages(connectionId: string): Promise<ReadonlyAdapterResult<ExistingPage[]>>;
   loadExistingApprovals(): Promise<ReadonlyAdapterResult<ExistingApproval[]>>;
   loadConnection(connectionId: string): Promise<ReadonlyAdapterResult<NotionConnection | null>>;
   verifyConnectivity(): Promise<boolean>;
-  verifySecurityBoundary(): Promise<{ valid: boolean; identity: IdentityCheckResult; privileges: PrivilegeCheckResult }>;
+  verifySecurityBoundary(): Promise<{
+    valid: boolean;
+    identity: IdentityCheckResult;
+    privileges: PrivilegeCheckResult;
+  }>;
   close(): Promise<void>;
 }
 
@@ -382,7 +430,18 @@ export function createSecureReadonlyAdapter(config: SecurePoolConfig): ReadonlyA
       try {
         const identity = await verifyIdentity(client);
         if (!identity.valid) {
-          return { valid: false, identity, privileges: { valid: false, issues: ['Skipped due to identity failure'], hasElevatedAttributes: true, hasMutationPrivileges: true, hasForbiddenAccess: true, hasForbiddenFunctions: true } };
+          return {
+            valid: false,
+            identity,
+            privileges: {
+              valid: false,
+              issues: ['Skipped due to identity failure'],
+              hasElevatedAttributes: true,
+              hasMutationPrivileges: true,
+              hasForbiddenAccess: true,
+              hasForbiddenFunctions: true,
+            },
+          };
         }
 
         const privileges = await verifyPrivileges(client);
@@ -413,7 +472,10 @@ export function createSecureReadonlyAdapter(config: SecurePoolConfig): ReadonlyA
 
     async loadConnections(): Promise<ReadonlyAdapterResult<NotionConnection[]>> {
       if (!securityVerified) {
-        return { data: null, error: 'Security boundary not verified. Call verifySecurityBoundary() first.' };
+        return {
+          data: null,
+          error: 'Security boundary not verified. Call verifySecurityBoundary() first.',
+        };
       }
 
       const client = await pool.connect();
@@ -445,7 +507,10 @@ export function createSecureReadonlyAdapter(config: SecurePoolConfig): ReadonlyA
 
     async loadApprovedRoots(): Promise<ReadonlyAdapterResult<ApprovedRootRow[]>> {
       if (!securityVerified) {
-        return { data: null, error: 'Security boundary not verified. Call verifySecurityBoundary() first.' };
+        return {
+          data: null,
+          error: 'Security boundary not verified. Call verifySecurityBoundary() first.',
+        };
       }
 
       const client = await pool.connect();
@@ -491,19 +556,27 @@ export function createSecureReadonlyAdapter(config: SecurePoolConfig): ReadonlyA
       return { data: classifierRoots, error: null };
     },
 
-    async loadApprovedRootsForConnection(connectionId: string): Promise<ReadonlyAdapterResult<ApprovedRootRow[]>> {
+    async loadApprovedRootsForConnection(
+      connectionId: string
+    ): Promise<ReadonlyAdapterResult<ApprovedRootRow[]>> {
       if (!securityVerified) {
-        return { data: null, error: 'Security boundary not verified. Call verifySecurityBoundary() first.' };
+        return {
+          data: null,
+          error: 'Security boundary not verified. Call verifySecurityBoundary() first.',
+        };
       }
 
       const client = await pool.connect();
       try {
-        const { rows } = await client.query(`
+        const { rows } = await client.query(
+          `
           SELECT id, connection_id, notion_page_id, name, access_classification, is_active, created_at
           FROM hr_approved_roots
           WHERE connection_id = $1
           ORDER BY created_at ASC
-        `, [connectionId]);
+        `,
+          [connectionId]
+        );
 
         const roots: ApprovedRootRow[] = rows.map((row) => ({
           id: row.id,
@@ -525,16 +598,22 @@ export function createSecureReadonlyAdapter(config: SecurePoolConfig): ReadonlyA
 
     async loadExistingPages(connectionId: string): Promise<ReadonlyAdapterResult<ExistingPage[]>> {
       if (!securityVerified) {
-        return { data: null, error: 'Security boundary not verified. Call verifySecurityBoundary() first.' };
+        return {
+          data: null,
+          error: 'Security boundary not verified. Call verifySecurityBoundary() first.',
+        };
       }
 
       const client = await pool.connect();
       try {
-        const { rows } = await client.query(`
+        const { rows } = await client.query(
+          `
           SELECT id, notion_page_id, connection_id, title, content_hash, publication_status, approved_root_id, last_verified_at
           FROM hr_knowledge_pages
           WHERE connection_id = $1
-        `, [connectionId]);
+        `,
+          [connectionId]
+        );
 
         const pages: ExistingPage[] = rows.map((row) => ({
           id: row.id,
@@ -557,7 +636,10 @@ export function createSecureReadonlyAdapter(config: SecurePoolConfig): ReadonlyA
 
     async loadExistingApprovals(): Promise<ReadonlyAdapterResult<ExistingApproval[]>> {
       if (!securityVerified) {
-        return { data: null, error: 'Security boundary not verified. Call verifySecurityBoundary() first.' };
+        return {
+          data: null,
+          error: 'Security boundary not verified. Call verifySecurityBoundary() first.',
+        };
       }
 
       const client = await pool.connect();
@@ -585,18 +667,26 @@ export function createSecureReadonlyAdapter(config: SecurePoolConfig): ReadonlyA
       }
     },
 
-    async loadConnection(connectionId: string): Promise<ReadonlyAdapterResult<NotionConnection | null>> {
+    async loadConnection(
+      connectionId: string
+    ): Promise<ReadonlyAdapterResult<NotionConnection | null>> {
       if (!securityVerified) {
-        return { data: null, error: 'Security boundary not verified. Call verifySecurityBoundary() first.' };
+        return {
+          data: null,
+          error: 'Security boundary not verified. Call verifySecurityBoundary() first.',
+        };
       }
 
       const client = await pool.connect();
       try {
-        const { rows } = await client.query(`
+        const { rows } = await client.query(
+          `
           SELECT id, name, workspace_id, token_hash, is_active, created_at, last_sync_at
           FROM hr_notion_connections
           WHERE id = $1
-        `, [connectionId]);
+        `,
+          [connectionId]
+        );
 
         if (rows.length === 0) {
           return { data: null, error: null };
@@ -644,10 +734,35 @@ export interface MockSecurityConfig {
     hasForbiddenAccess?: boolean;
     hasForbiddenFunctions?: boolean;
   };
+  /**
+   * Granular effective privilege simulation for testing different grant paths.
+   * When set, these override the simple boolean flags above.
+   */
+  effectivePrivileges?: {
+    /** Tables with effective mutation privileges (any of INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER) */
+    mutationOnTables?: string[];
+    /** Specific mutation privileges: { tableName: ['INSERT', 'TRIGGER', ...] } */
+    specificMutationPrivileges?: Record<string, string[]>;
+    /** Tables with effective SELECT (used for forbidden table check) */
+    selectOnForbiddenTables?: string[];
+    /** Functions with effective EXECUTE */
+    executeOnFunctions?: string[];
+    /** Grant path for issues (for test assertions) */
+    grantPath?: 'direct' | 'inherited' | 'public';
+  };
+  /** Simulate privilege query failure */
+  simulatePrivilegeQueryFailure?: boolean;
 }
 
 /**
  * Create a mock read-only adapter for offline testing.
+ *
+ * Supports two privilege configuration modes:
+ * 1. Simple boolean flags (privileges.hasMutationPrivileges, etc.)
+ * 2. Granular effective privilege simulation (effectivePrivileges)
+ *
+ * When effectivePrivileges is set, it takes precedence and generates
+ * detailed issue messages that mirror the real adapter's output.
  */
 export function createMockReadonlyAdapter(
   data: MockAdapterData,
@@ -657,6 +772,27 @@ export function createMockReadonlyAdapter(
 
   return {
     async verifySecurityBoundary() {
+      // Simulate privilege query failure
+      if (securityConfig?.simulatePrivilegeQueryFailure) {
+        return {
+          valid: false,
+          identity: {
+            valid: true,
+            currentUser: EXPECTED_ROLE,
+            sessionUser: EXPECTED_ROLE,
+            issues: [],
+          },
+          privileges: {
+            valid: false,
+            issues: ['Privilege check query failed: simulated error'],
+            hasElevatedAttributes: true,
+            hasMutationPrivileges: true,
+            hasForbiddenAccess: true,
+            hasForbiddenFunctions: true,
+          },
+        };
+      }
+
       const currentUser = securityConfig?.identity?.currentUser ?? EXPECTED_ROLE;
       const sessionUser = securityConfig?.identity?.sessionUser ?? EXPECTED_ROLE;
 
@@ -668,12 +804,85 @@ export function createMockReadonlyAdapter(
         issues: identityValid ? [] : [`Identity mismatch: ${currentUser}/${sessionUser}`],
       };
 
+      // Check for granular effective privilege configuration
+      const effectivePrivs = securityConfig?.effectivePrivileges;
+      if (effectivePrivs) {
+        const privilegeIssues: string[] = [];
+        const hasElevatedAttributes = securityConfig?.privileges?.hasElevatedAttributes ?? false;
+        let hasMutationPrivileges = false;
+        let hasForbiddenAccess = false;
+        let hasForbiddenFunctions = false;
+
+        const grantPath = effectivePrivs.grantPath ?? 'direct';
+        const pathSuffix = grantPath === 'direct' ? '' : ` (via ${grantPath})`;
+
+        // Check mutation privileges on tables
+        if (effectivePrivs.mutationOnTables?.length) {
+          for (const table of effectivePrivs.mutationOnTables) {
+            privilegeIssues.push(`Has effective mutation privilege on ${table}${pathSuffix}`);
+          }
+          hasMutationPrivileges = true;
+        }
+
+        // Check specific mutation privileges
+        if (effectivePrivs.specificMutationPrivileges) {
+          for (const [table, privs] of Object.entries(effectivePrivs.specificMutationPrivileges)) {
+            for (const priv of privs) {
+              privilegeIssues.push(`Has effective ${priv} on ${table}${pathSuffix}`);
+            }
+          }
+          hasMutationPrivileges = true;
+        }
+
+        // Check SELECT on forbidden tables
+        if (effectivePrivs.selectOnForbiddenTables?.length) {
+          for (const table of effectivePrivs.selectOnForbiddenTables) {
+            privilegeIssues.push(`Has effective SELECT on forbidden table ${table}${pathSuffix}`);
+          }
+          hasForbiddenAccess = true;
+        }
+
+        // Check EXECUTE on functions
+        if (effectivePrivs.executeOnFunctions?.length) {
+          for (const func of effectivePrivs.executeOnFunctions) {
+            privilegeIssues.push(`Has effective EXECUTE on mutation function ${func}${pathSuffix}`);
+          }
+          hasForbiddenFunctions = true;
+        }
+
+        const privilegesValid =
+          !hasElevatedAttributes &&
+          !hasMutationPrivileges &&
+          !hasForbiddenAccess &&
+          !hasForbiddenFunctions;
+        const privileges: PrivilegeCheckResult = {
+          valid: privilegesValid,
+          issues: privilegeIssues,
+          hasElevatedAttributes,
+          hasMutationPrivileges,
+          hasForbiddenAccess,
+          hasForbiddenFunctions,
+        };
+
+        const valid = identityValid && privilegesValid;
+        if (valid) {
+          securityVerified = true;
+        }
+
+        return { valid, identity, privileges };
+      }
+
+      // Fall back to simple boolean flags
       const hasElevatedAttributes = securityConfig?.privileges?.hasElevatedAttributes ?? false;
       const hasMutationPrivileges = securityConfig?.privileges?.hasMutationPrivileges ?? false;
       const hasForbiddenAccess = securityConfig?.privileges?.hasForbiddenAccess ?? false;
       const hasForbiddenFunctions = securityConfig?.privileges?.hasForbiddenFunctions ?? false;
 
-      const privilegesValid = !hasElevatedAttributes && !hasMutationPrivileges && !hasForbiddenAccess && !hasForbiddenFunctions;
+      const privilegesValid =
+        !hasElevatedAttributes &&
+        !hasMutationPrivileges &&
+        !hasForbiddenAccess &&
+        !hasForbiddenFunctions;
       const privilegeIssues: string[] = [];
       if (hasElevatedAttributes) privilegeIssues.push('Has elevated attributes');
       if (hasMutationPrivileges) privilegeIssues.push('Has mutation privileges');
