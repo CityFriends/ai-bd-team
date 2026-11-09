@@ -110,16 +110,25 @@ REVOKE EXECUTE ON FUNCTION public.hr_update_employee FROM hr_shadow_reader;
 REVOKE EXECUTE ON FUNCTION public.hr_deactivate_employee FROM hr_shadow_reader;
 REVOKE EXECUTE ON FUNCTION public.hr_sync_bootstrap_admins(TEXT[]) FROM hr_shadow_reader;
 
--- Sync and publication functions
-REVOKE EXECUTE ON FUNCTION public.hr_acquire_sync_lease FROM hr_shadow_reader;
-REVOKE EXECUTE ON FUNCTION public.hr_release_sync_lease FROM hr_shadow_reader;
-REVOKE EXECUTE ON FUNCTION public.hr_extend_sync_lease FROM hr_shadow_reader;
-REVOKE EXECUTE ON FUNCTION public.hr_upsert_knowledge_page FROM hr_shadow_reader;
-REVOKE EXECUTE ON FUNCTION public.hr_publish_routine_page FROM hr_shadow_reader;
-REVOKE EXECUTE ON FUNCTION public.hr_suspend_page FROM hr_shadow_reader;
-REVOKE EXECUTE ON FUNCTION public.hr_batch_approve_compensation FROM hr_shadow_reader;
+-- Sync lease functions (migration 011)
+REVOKE EXECUTE ON FUNCTION public.hr_acquire_sync_lease(TEXT, TEXT, INTEGER) FROM hr_shadow_reader;
+REVOKE EXECUTE ON FUNCTION public.hr_renew_sync_lease(TEXT, TEXT, BIGINT, INTEGER) FROM hr_shadow_reader;
+REVOKE EXECUTE ON FUNCTION public.hr_release_sync_lease(TEXT, TEXT, BIGINT) FROM hr_shadow_reader;
 
--- Retrieval function (not needed for shadow discovery)
+-- Publication lifecycle functions (migration 012)
+REVOKE EXECUTE ON FUNCTION public.hr_publish_routine_page(UUID, TEXT, TEXT, TEXT, BIGINT, TEXT) FROM hr_shadow_reader;
+REVOKE EXECUTE ON FUNCTION public.hr_suspend_changed_page(UUID, TEXT, TEXT, TEXT, BIGINT, TEXT) FROM hr_shadow_reader;
+REVOKE EXECUTE ON FUNCTION public.hr_approve_compensation_batch(UUID, TEXT, TEXT) FROM hr_shadow_reader;
+
+-- Sensitive policy approval functions (migration 012)
+REVOKE EXECUTE ON FUNCTION public.hr_approve_sensitive_policy(UUID, TEXT) FROM hr_shadow_reader;
+REVOKE EXECUTE ON FUNCTION public.hr_reject_sensitive_policy(UUID, TEXT) FROM hr_shadow_reader;
+
+-- Knowledge approval functions (migration 008)
+REVOKE EXECUTE ON FUNCTION public.hr_approve_knowledge_page(TEXT, UUID[], TEXT[]) FROM hr_shadow_reader;
+REVOKE EXECUTE ON FUNCTION public.hr_revoke_knowledge_approval(TEXT, UUID) FROM hr_shadow_reader;
+
+-- Retrieval functions (not needed for shadow discovery)
 REVOKE EXECUTE ON FUNCTION public.hr_retrieve_knowledge(TEXT, TEXT, INT, INT) FROM hr_shadow_reader;
 REVOKE EXECUTE ON FUNCTION public.hr_retrieve_knowledge_v2(TEXT, TEXT, INT, INT) FROM hr_shadow_reader;
 

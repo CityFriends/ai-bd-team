@@ -102,17 +102,18 @@ const EXPECTED_ROLE = 'hr_shadow_reader';
 /**
  * Security documentation - tables and functions.
  *
- * Allowed for SELECT:
+ * Allowed for SELECT (4 tables):
  *   - hr_notion_connections
  *   - hr_approved_roots
  *   - hr_knowledge_pages
  *   - hr_page_approvals
  *
- * Forbidden (REVOKE in migration 013):
- *   - hr_signing_secrets
- *   - hr_employees
- *   - hr_audit_events
- *   - hr_knowledge_chunks
+ * Forbidden for any access (16 tables):
+ *   - hr_signing_secrets, hr_employees, hr_audit_events, hr_knowledge_chunks
+ *   - hr_sync_leases, hr_sync_checkpoints, hr_publication_queue
+ *   - hr_notification_outbox, hr_compensation_batches, hr_compensation_batch_entries
+ *   - hr_user_roles, hr_bootstrap_admins, hr_supervisor_assignments
+ *   - hr_personal_page_grants, hr_sensitivity_watermarks, hr_knowledge_sources
  */
 
 /** Tables allowed for SELECT access */
@@ -123,13 +124,28 @@ const ALLOWED_TABLES = [
   'hr_page_approvals',
 ];
 
-/** Tables forbidden for any access */
+/** Tables forbidden for any access (all HR tables except 4 allowed) */
 const FORBIDDEN_TABLES = [
+  // Sensitive data tables
   'hr_signing_secrets',
   'hr_employees',
   'hr_audit_events',
   'hr_knowledge_chunks',
+  // Sync and operation tables
   'hr_sync_leases',
+  'hr_sync_checkpoints',
+  'hr_publication_queue',
+  'hr_notification_outbox',
+  'hr_compensation_batches',
+  'hr_compensation_batch_entries',
+  // Access control tables
+  'hr_user_roles',
+  'hr_bootstrap_admins',
+  'hr_supervisor_assignments',
+  'hr_personal_page_grants',
+  'hr_sensitivity_watermarks',
+  // Legacy/auxiliary tables
+  'hr_knowledge_sources',
 ];
 
 /** All HR tables to check for mutation privileges */
@@ -137,21 +153,31 @@ const ALL_HR_TABLES = [...ALLOWED_TABLES, ...FORBIDDEN_TABLES];
 
 /** Mutation functions that must NOT be executable (with signatures for unambiguous lookup) */
 const FORBIDDEN_FUNCTIONS = [
+  // Admin and employee management (migration 004)
   'hr_is_authorized_admin(text)',
   'hr_check_idempotency(text, text)',
-  'hr_create_employee',
-  'hr_update_employee',
-  'hr_deactivate_employee',
+  'hr_create_employee(text, text, text, text, text, text, text, text, text, text, date, text)',
+  'hr_update_employee(text, uuid, text, text, jsonb)',
+  'hr_deactivate_employee(text, uuid, text, text)',
+  // Bootstrap sync (migration 005)
   'hr_sync_bootstrap_admins(text[])',
-  'hr_acquire_sync_lease',
-  'hr_release_sync_lease',
-  'hr_extend_sync_lease',
-  'hr_upsert_knowledge_page',
-  'hr_publish_routine_page',
-  'hr_suspend_page',
-  'hr_batch_approve_compensation',
+  // Knowledge approval functions (migration 008)
+  'hr_approve_knowledge_page(text, uuid[], text[])',
+  'hr_revoke_knowledge_approval(text, uuid)',
+  // Retrieval functions (migration 010)
   'hr_retrieve_knowledge(text, text, integer, integer)',
   'hr_retrieve_knowledge_v2(text, text, integer, integer)',
+  // Sync lease management (migration 011)
+  'hr_acquire_sync_lease(text, text, integer)',
+  'hr_renew_sync_lease(text, text, bigint, integer)',
+  'hr_release_sync_lease(text, text, bigint)',
+  // Publication lifecycle (migration 012)
+  'hr_publish_routine_page(uuid, text, text, text, bigint, text)',
+  'hr_suspend_changed_page(uuid, text, text, text, bigint, text)',
+  'hr_approve_compensation_batch(uuid, text, text)',
+  // Sensitive policy approval (migration 012)
+  'hr_approve_sensitive_policy(uuid, text)',
+  'hr_reject_sensitive_policy(uuid, text)',
 ];
 
 /** Mutation privilege types to check */
@@ -300,6 +326,14 @@ async function verifyPrivileges(client: pg.PoolClient): Promise<PrivilegeCheckRe
     //   - Direct grants
     //   - Role membership inheritance
     //   - PUBLIC grants (PostgreSQL grants EXECUTE to PUBLIC by default!)
+    //
+    // FAIL-CLOSED: ALL expected functions MUST exist and be verified.
+    // Missing functions, ambiguous references, permission errors, and any
+    // other failures cause verification to FAIL. A failed check cannot prove
+    // EXECUTE is denied.
+    const verifiedFunctions: string[] = [];
+    const missingFunctions: string[] = [];
+
     for (const funcSignature of FORBIDDEN_FUNCTIONS) {
       try {
         // Try to resolve the function and check privilege
@@ -312,10 +346,35 @@ async function verifyPrivileges(client: pg.PoolClient): Promise<PrivilegeCheckRe
           issues.push(`Has effective EXECUTE on mutation function ${funcSignature}`);
           hasForbiddenFunctions = true;
         }
-      } catch {
-        // Function may not exist yet (pre-migration) - not an error
-        // The security boundary check runs after migration is applied
+        verifiedFunctions.push(funcSignature);
+      } catch (err: unknown) {
+        // FAIL-CLOSED: ALL errors cause verification failure.
+        const pgError = err as { code?: string; message?: string };
+        if (pgError.code === '42883') {
+          // Function does not exist - this is a security gap, not acceptable
+          missingFunctions.push(funcSignature);
+          issues.push(`Expected function missing: ${funcSignature} (code: 42883)`);
+          hasForbiddenFunctions = true; // Fail closed - cannot verify
+        } else {
+          // Any other error: ambiguous function (42725), permission denied (42501),
+          // syntax error, connection failure, etc. - FAIL CLOSED
+          issues.push(
+            `Function privilege check failed for ${funcSignature}: ${pgError.message || String(err)} (code: ${pgError.code || 'unknown'})`
+          );
+          hasForbiddenFunctions = true; // Fail closed - assume worst case
+        }
       }
+    }
+
+    // Verify all expected functions were checked
+    if (verifiedFunctions.length !== FORBIDDEN_FUNCTIONS.length) {
+      issues.push(
+        `Incomplete function verification: ${verifiedFunctions.length}/${FORBIDDEN_FUNCTIONS.length} functions checked`
+      );
+      if (missingFunctions.length > 0) {
+        issues.push(`Missing functions: ${missingFunctions.join(', ')}`);
+      }
+      hasForbiddenFunctions = true;
     }
 
     // 5. Check for elevated role membership
@@ -752,6 +811,22 @@ export interface MockSecurityConfig {
   };
   /** Simulate privilege query failure */
   simulatePrivilegeQueryFailure?: boolean;
+  /**
+   * Simulate function-specific errors for fail-closed testing.
+   * Maps function names to error scenarios.
+   */
+  simulateFunctionErrors?: {
+    /** Functions that trigger ambiguous function error (42725) */
+    ambiguousFunctions?: string[];
+    /** Functions that trigger permission denied error (42501) */
+    permissionDeniedFunctions?: string[];
+    /** Functions that trigger invalid regprocedure error */
+    invalidSignatureFunctions?: string[];
+    /** Functions that trigger unexpected database error */
+    unexpectedErrorFunctions?: string[];
+    /** Functions that are missing (42883) - now causes verification failure */
+    missingFunctions?: string[];
+  };
 }
 
 /**
@@ -848,6 +923,52 @@ export function createMockReadonlyAdapter(
             privilegeIssues.push(`Has effective EXECUTE on mutation function ${func}${pathSuffix}`);
           }
           hasForbiddenFunctions = true;
+        }
+
+        // Simulate function-specific errors (fail-closed behavior testing)
+        const funcErrors = securityConfig?.simulateFunctionErrors;
+        if (funcErrors) {
+          if (funcErrors.ambiguousFunctions?.length) {
+            for (const func of funcErrors.ambiguousFunctions) {
+              privilegeIssues.push(
+                `Function privilege check failed for ${func}: function name is ambiguous (code: 42725)`
+              );
+            }
+            hasForbiddenFunctions = true;
+          }
+          if (funcErrors.permissionDeniedFunctions?.length) {
+            for (const func of funcErrors.permissionDeniedFunctions) {
+              privilegeIssues.push(
+                `Function privilege check failed for ${func}: permission denied (code: 42501)`
+              );
+            }
+            hasForbiddenFunctions = true;
+          }
+          if (funcErrors.invalidSignatureFunctions?.length) {
+            for (const func of funcErrors.invalidSignatureFunctions) {
+              privilegeIssues.push(
+                `Function privilege check failed for ${func}: invalid function signature (code: 42883)`
+              );
+            }
+            // Note: 42883 is tolerated in real adapter, but for testing we can simulate
+            // scenarios where it should NOT be tolerated
+            hasForbiddenFunctions = true;
+          }
+          if (funcErrors.unexpectedErrorFunctions?.length) {
+            for (const func of funcErrors.unexpectedErrorFunctions) {
+              privilegeIssues.push(
+                `Function privilege check failed for ${func}: unexpected database error (code: unknown)`
+              );
+            }
+            hasForbiddenFunctions = true;
+          }
+          if (funcErrors.missingFunctions?.length) {
+            for (const func of funcErrors.missingFunctions) {
+              privilegeIssues.push(`Expected function missing: ${func} (code: 42883)`);
+            }
+            privilegeIssues.push(`Missing functions: ${funcErrors.missingFunctions.join(', ')}`);
+            hasForbiddenFunctions = true;
+          }
         }
 
         const privilegesValid =

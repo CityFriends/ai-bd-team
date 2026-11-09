@@ -1539,14 +1539,14 @@ describe('Effective PostgreSQL Privilege Verification', () => {
   });
 
   describe('Inherited mutation-function EXECUTE', () => {
-    it('rejects inherited EXECUTE on hr_upsert_knowledge_page', async () => {
+    it('rejects inherited EXECUTE on hr_suspend_changed_page', async () => {
       const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
 
       const adapter = createMockReadonlyAdapter(
         { connections: [], roots: [], pages: new Map(), approvals: [] },
         {
           effectivePrivileges: {
-            executeOnFunctions: ['hr_upsert_knowledge_page'],
+            executeOnFunctions: ['hr_suspend_changed_page'],
             grantPath: 'inherited',
           },
         }
@@ -1556,7 +1556,7 @@ describe('Effective PostgreSQL Privilege Verification', () => {
 
       expect(result.valid).toBe(false);
       expect(result.privileges.hasForbiddenFunctions).toBe(true);
-      expect(result.privileges.issues.some((i) => i.includes('hr_upsert_knowledge_page'))).toBe(
+      expect(result.privileges.issues.some((i) => i.includes('hr_suspend_changed_page'))).toBe(
         true
       );
       expect(result.privileges.issues.some((i) => i.includes('inherited'))).toBe(true);
@@ -1605,14 +1605,14 @@ describe('Effective PostgreSQL Privilege Verification', () => {
       expect(result.privileges.issues.some((i) => i.includes('(via public)'))).toBe(true);
     });
 
-    it('rejects PUBLIC EXECUTE on hr_batch_approve_compensation', async () => {
+    it('rejects PUBLIC EXECUTE on hr_approve_compensation_batch', async () => {
       const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
 
       const adapter = createMockReadonlyAdapter(
         { connections: [], roots: [], pages: new Map(), approvals: [] },
         {
           effectivePrivileges: {
-            executeOnFunctions: ['hr_batch_approve_compensation'],
+            executeOnFunctions: ['hr_approve_compensation_batch'],
             grantPath: 'public',
           },
         }
@@ -1622,6 +1622,208 @@ describe('Effective PostgreSQL Privilege Verification', () => {
 
       expect(result.valid).toBe(false);
       expect(result.privileges.hasForbiddenFunctions).toBe(true);
+    });
+
+    it('rejects PUBLIC EXECUTE on hr_approve_sensitive_policy', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {
+            executeOnFunctions: ['hr_approve_sensitive_policy'],
+            grantPath: 'public',
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.hasForbiddenFunctions).toBe(true);
+      expect(result.privileges.issues.some((i) => i.includes('hr_approve_sensitive_policy'))).toBe(
+        true
+      );
+    });
+
+    it('rejects inherited EXECUTE on hr_reject_sensitive_policy', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {
+            executeOnFunctions: ['hr_reject_sensitive_policy'],
+            grantPath: 'inherited',
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.hasForbiddenFunctions).toBe(true);
+      expect(result.privileges.issues.some((i) => i.includes('hr_reject_sensitive_policy'))).toBe(
+        true
+      );
+      expect(result.privileges.issues.some((i) => i.includes('inherited'))).toBe(true);
+    });
+  });
+
+  describe('Fail-closed function verification', () => {
+    it('rejects verification when function reference is ambiguous (42725)', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {},
+          simulateFunctionErrors: {
+            ambiguousFunctions: ['hr_create_employee'],
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.hasForbiddenFunctions).toBe(true);
+      expect(result.privileges.issues.some((i) => i.includes('ambiguous'))).toBe(true);
+      expect(result.privileges.issues.some((i) => i.includes('42725'))).toBe(true);
+    });
+
+    it('rejects verification when permission denied on function check (42501)', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {},
+          simulateFunctionErrors: {
+            permissionDeniedFunctions: ['hr_retrieve_knowledge'],
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.hasForbiddenFunctions).toBe(true);
+      expect(result.privileges.issues.some((i) => i.includes('permission denied'))).toBe(true);
+      expect(result.privileges.issues.some((i) => i.includes('42501'))).toBe(true);
+    });
+
+    it('rejects verification on unexpected database error', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {},
+          simulateFunctionErrors: {
+            unexpectedErrorFunctions: ['hr_sync_bootstrap_admins'],
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.hasForbiddenFunctions).toBe(true);
+      expect(result.privileges.issues.some((i) => i.includes('unexpected database error'))).toBe(
+        true
+      );
+    });
+
+    it('rejects verification when multiple function errors occur', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {},
+          simulateFunctionErrors: {
+            ambiguousFunctions: ['hr_create_employee'],
+            permissionDeniedFunctions: ['hr_retrieve_knowledge'],
+            unexpectedErrorFunctions: ['hr_sync_bootstrap_admins'],
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.hasForbiddenFunctions).toBe(true);
+      expect(result.privileges.issues.length).toBeGreaterThanOrEqual(3);
+    });
+
+    it('passes verification when all function checks succeed with no privileges', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {
+            // No EXECUTE privileges
+          },
+          // No simulated errors
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(true);
+      expect(result.privileges.hasForbiddenFunctions).toBe(false);
+    });
+
+    it('rejects verification when expected function is missing (42883 no longer tolerated)', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {},
+          simulateFunctionErrors: {
+            missingFunctions: ['hr_approve_sensitive_policy'],
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.hasForbiddenFunctions).toBe(true);
+      expect(result.privileges.issues.some((i) => i.includes('Expected function missing'))).toBe(
+        true
+      );
+      expect(result.privileges.issues.some((i) => i.includes('42883'))).toBe(true);
+    });
+
+    it('rejects verification when multiple expected functions are missing', async () => {
+      const { createMockReadonlyAdapter } = await import('../database/readonly-adapter.js');
+
+      const adapter = createMockReadonlyAdapter(
+        { connections: [], roots: [], pages: new Map(), approvals: [] },
+        {
+          effectivePrivileges: {},
+          simulateFunctionErrors: {
+            missingFunctions: [
+              'hr_create_employee',
+              'hr_update_employee',
+              'hr_deactivate_employee',
+            ],
+          },
+        }
+      );
+
+      const result = await adapter.verifySecurityBoundary();
+
+      expect(result.valid).toBe(false);
+      expect(result.privileges.hasForbiddenFunctions).toBe(true);
+      expect(
+        result.privileges.issues.filter((i) => i.includes('Expected function missing'))
+      ).toHaveLength(3);
+      expect(result.privileges.issues.some((i) => i.includes('Missing functions:'))).toBe(true);
     });
   });
 
