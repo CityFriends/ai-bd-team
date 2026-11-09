@@ -1,0 +1,770 @@
+/**
+ * Read-Only Database Adapter for Shadow Discovery
+ *
+ * Provides database-enforced read-only access using a dedicated
+ * hr_shadow_reader PostgreSQL role. This adapter:
+ *
+ *   1. Verifies the connection identity is hr_shadow_reader
+ *   2. Verifies the role has no elevated privileges
+ *   3. Executes only SELECT queries on allowed tables
+ *   4. Fails closed on any security check failure
+ *
+ * Security model:
+ *   - Uses dedicated hr_shadow_reader role (NOT service_role)
+ *   - Runtime identity verification before any data access
+ *   - Hardcoded allowed tables and columns
+ *   - Parameterized queries only
+ *   - No mutation operations possible at database level
+ */
+
+import pg from 'pg';
+import type { ApprovedRoot } from '../notion/classifier.js';
+
+// ── Supabase Root CA for TLS ──────────────────────────────────
+// Duplicated from hr-client.ts for module isolation.
+
+const SUPABASE_ROOT_CA = `-----BEGIN CERTIFICATE-----
+MIIDxDCCAqygAwIBAgIUbLxMod62P2ktCiAkxnKJwtE9VPYwDQYJKoZIhvcNAQEL
+BQAwazELMAkGA1UEBhMCVVMxEDAOBgNVBAgMB0RlbHdhcmUxEzARBgNVBAcMCk5l
+dyBDYXN0bGUxFTATBgNVBAoMDFN1cGFiYXNlIEluYzEeMBwGA1UEAwwVU3VwYWJh
+c2UgUm9vdCAyMDIxIENBMB4XDTIxMDQyODEwNTY1M1oXDTMxMDQyNjEwNTY1M1ow
+azELMAkGA1UEBhMCVVMxEDAOBgNVBAgMB0RlbHdhcmUxEzARBgNVBAcMCk5ldyBD
+YXN0bGUxFTATBgNVBAoMDFN1cGFiYXNlIEluYzEeMBwGA1UEAwwVU3VwYWJhc2Ug
+Um9vdCAyMDIxIENBMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqQXW
+QyHOB+qR2GJobCq/CBmQ40G0oDmCC3mzVnn8sv4XNeWtE5XcEL0uVih7Jo4Dkx1Q
+DmGHBH1zDfgs2qXiLb6xpw/CKQPypZW1JssOTMIfQppNQ87K75Ya0p25Y3ePS2t2
+GtvHxNjUV6kjOZjEn2yWEcBdpOVCUYBVFBNMB4YBHkNRDa/+S4uywAoaTWnCJLUi
+cvTlHmMw6xSQQn1UfRQHk50DMCEJ7Cy1RxrZJrkXXRP3LqQL2ijJ6F4yMfh+Gyb4
+O4XajoVj/+R4GwywKYrrS8PrSNtwxr5StlQO8zIQUSMiq26wM8mgELFlS/32Uclt
+NaQ1xBRizkzpZct9DwIDAQABo2AwXjALBgNVHQ8EBAMCAQYwHQYDVR0OBBYEFKjX
+uXY32CztkhImng4yJNUtaUYsMB8GA1UdIwQYMBaAFKjXuXY32CztkhImng4yJNUt
+aUYsMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAB8spzNn+4VU
+tVxbdMaX+39Z50sc7uATmus16jmmHjhIHz+l/9GlJ5KqAMOx26mPZgfzG7oneL2b
+VW+WgYUkTT3XEPFWnTp2RJwQao8/tYPXWEJDc0WVQHrpmnWOFKU/d3MqBgBm5y+6
+jB81TU/RG2rVerPDWP+1MMcNNy0491CTL5XQZ7JfDJJ9CCmXSdtTl4uUQnSuv/Qx
+Cea13BX2ZgJc7Au30vihLhub52De4P/4gonKsNHYdbWjg7OWKwNv/zitGDVDB9Y2
+CMTyZKG3XEu5Ghl1LEnI3QmEKsqaCLv12BnVjbkSeZsMnevJPs1Ye6TjjJwdik5P
+o/bKiIz+Fq8=
+-----END CERTIFICATE-----`;
+
+// ── Types ─────────────────────────────────────────────────────
+
+export interface NotionConnection {
+  id: string;
+  name: string;
+  workspaceId: string;
+  tokenHash: string;
+  isActive: boolean;
+  createdAt: string;
+  lastSyncAt: string | null;
+}
+
+export interface ApprovedRootRow {
+  id: string;
+  connectionId: string;
+  notionPageId: string;
+  name: string;
+  accessClassification: 'employee_safe' | 'hr_restricted' | 'personalized';
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface ExistingPage {
+  id: string;
+  notionPageId: string;
+  connectionId: string;
+  title: string;
+  contentHash: string | null;
+  publicationStatus: string | null;
+  approvedRootId: string | null;
+  lastVerifiedAt: string | null;
+}
+
+export interface ExistingApproval {
+  id: string;
+  knowledgePageId: string;
+  approvedContentHash: string;
+  approvedBy: string;
+  approvedAt: string;
+  revokedAt: string | null;
+}
+
+export interface ReadonlyAdapterResult<T> {
+  data: T | null;
+  error: string | null;
+}
+
+// ── Security Constants ────────────────────────────────────────
+
+/** Expected database role name */
+const EXPECTED_ROLE = 'hr_shadow_reader';
+
+/**
+ * Security documentation - tables and functions.
+ *
+ * Allowed for SELECT:
+ *   - hr_notion_connections
+ *   - hr_approved_roots
+ *   - hr_knowledge_pages
+ *   - hr_page_approvals
+ *
+ * Forbidden (REVOKE in migration 013):
+ *   - hr_signing_secrets
+ *   - hr_employees
+ *   - hr_audit_events
+ *   - hr_knowledge_chunks
+ */
+
+/** Mutation functions that must NOT be executable */
+const FORBIDDEN_FUNCTIONS = [
+  'hr_is_authorized_admin',
+  'hr_create_employee',
+  'hr_update_employee',
+  'hr_deactivate_employee',
+  'hr_acquire_sync_lease',
+  'hr_release_sync_lease',
+  'hr_upsert_knowledge_page',
+  'hr_publish_routine_page',
+  'hr_suspend_page',
+  'hr_batch_approve_compensation',
+];
+
+// ── Identity Verification ─────────────────────────────────────
+
+export interface IdentityCheckResult {
+  valid: boolean;
+  currentUser: string | null;
+  sessionUser: string | null;
+  issues: string[];
+}
+
+export interface PrivilegeCheckResult {
+  valid: boolean;
+  issues: string[];
+  hasElevatedAttributes: boolean;
+  hasMutationPrivileges: boolean;
+  hasForbiddenAccess: boolean;
+  hasForbiddenFunctions: boolean;
+}
+
+/**
+ * Verify the database connection identity is the expected role.
+ */
+async function verifyIdentity(client: pg.PoolClient): Promise<IdentityCheckResult> {
+  const issues: string[] = [];
+
+  try {
+    // Check current_user and session_user
+    const { rows } = await client.query(`
+      SELECT current_user, session_user
+    `);
+
+    const currentUser = rows[0]?.current_user;
+    const sessionUser = rows[0]?.session_user;
+
+    if (currentUser !== EXPECTED_ROLE) {
+      issues.push(`current_user is '${currentUser}', expected '${EXPECTED_ROLE}'`);
+    }
+
+    if (sessionUser !== EXPECTED_ROLE) {
+      issues.push(`session_user is '${sessionUser}', expected '${EXPECTED_ROLE}'`);
+    }
+
+    return {
+      valid: issues.length === 0,
+      currentUser,
+      sessionUser,
+      issues,
+    };
+  } catch (err) {
+    return {
+      valid: false,
+      currentUser: null,
+      sessionUser: null,
+      issues: [`Identity check query failed: ${err instanceof Error ? err.message : String(err)}`],
+    };
+  }
+}
+
+/**
+ * Verify the role has no elevated privileges.
+ */
+async function verifyPrivileges(client: pg.PoolClient): Promise<PrivilegeCheckResult> {
+  const issues: string[] = [];
+  let hasElevatedAttributes = false;
+  let hasMutationPrivileges = false;
+  let hasForbiddenAccess = false;
+  let hasForbiddenFunctions = false;
+
+  try {
+    // 1. Check role attributes
+    const { rows: attrRows } = await client.query(`
+      SELECT rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls
+      FROM pg_roles WHERE rolname = current_user
+    `);
+
+    if (attrRows.length > 0) {
+      const attrs = attrRows[0];
+      if (attrs.rolsuper) {
+        issues.push('Role has SUPERUSER attribute');
+        hasElevatedAttributes = true;
+      }
+      if (attrs.rolcreatedb) {
+        issues.push('Role has CREATEDB attribute');
+        hasElevatedAttributes = true;
+      }
+      if (attrs.rolcreaterole) {
+        issues.push('Role has CREATEROLE attribute');
+        hasElevatedAttributes = true;
+      }
+      if (attrs.rolreplication) {
+        issues.push('Role has REPLICATION attribute');
+        hasElevatedAttributes = true;
+      }
+      if (attrs.rolbypassrls) {
+        issues.push('Role has BYPASSRLS attribute');
+        hasElevatedAttributes = true;
+      }
+    }
+
+    // 2. Check for mutation and schema-altering privileges on HR tables
+    // Includes REFERENCES (foreign key creation) and TRIGGER (trigger creation)
+    const { rows: privRows } = await client.query(`
+      SELECT table_name, privilege_type
+      FROM information_schema.table_privileges
+      WHERE grantee = current_user
+        AND table_schema = 'public'
+        AND privilege_type IN ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER')
+    `);
+
+    if (privRows.length > 0) {
+      for (const row of privRows) {
+        issues.push(`Has ${row.privilege_type} on ${row.table_name}`);
+      }
+      hasMutationPrivileges = true;
+    }
+
+    // 3. Check for access to forbidden tables
+    const { rows: forbiddenRows } = await client.query(`
+      SELECT table_name, privilege_type
+      FROM information_schema.table_privileges
+      WHERE grantee = current_user
+        AND table_schema = 'public'
+        AND table_name IN ('hr_signing_secrets', 'hr_employees', 'hr_audit_events', 'hr_knowledge_chunks')
+    `);
+
+    if (forbiddenRows.length > 0) {
+      for (const row of forbiddenRows) {
+        issues.push(`Has ${row.privilege_type} on forbidden table ${row.table_name}`);
+      }
+      hasForbiddenAccess = true;
+    }
+
+    // 4. Check for EXECUTE on mutation functions
+    const { rows: funcRows } = await client.query(`
+      SELECT routine_name
+      FROM information_schema.routine_privileges
+      WHERE grantee = current_user
+        AND routine_schema = 'public'
+        AND routine_name IN (${FORBIDDEN_FUNCTIONS.map((_, i) => `$${i + 1}`).join(', ')})
+    `, FORBIDDEN_FUNCTIONS);
+
+    if (funcRows.length > 0) {
+      for (const row of funcRows) {
+        issues.push(`Has EXECUTE on mutation function ${row.routine_name}`);
+      }
+      hasForbiddenFunctions = true;
+    }
+
+    // 5. Check for elevated role membership
+    const { rows: memberRows } = await client.query(`
+      SELECT r.rolname AS member_of
+      FROM pg_auth_members m
+      JOIN pg_roles r ON m.roleid = r.oid
+      WHERE m.member = (SELECT oid FROM pg_roles WHERE rolname = current_user)
+        AND r.rolname IN ('service_role', 'postgres', 'supabase_admin', 'authenticator')
+    `);
+
+    if (memberRows.length > 0) {
+      for (const row of memberRows) {
+        issues.push(`Member of elevated role: ${row.member_of}`);
+      }
+      hasElevatedAttributes = true;
+    }
+
+    return {
+      valid: issues.length === 0,
+      issues,
+      hasElevatedAttributes,
+      hasMutationPrivileges,
+      hasForbiddenAccess,
+      hasForbiddenFunctions,
+    };
+  } catch (err) {
+    return {
+      valid: false,
+      issues: [`Privilege check query failed: ${err instanceof Error ? err.message : String(err)}`],
+      hasElevatedAttributes: true, // Fail closed
+      hasMutationPrivileges: true,
+      hasForbiddenAccess: true,
+      hasForbiddenFunctions: true,
+    };
+  }
+}
+
+// ── Read-Only Adapter Interface ───────────────────────────────
+
+export interface ReadonlyAdapter {
+  loadConnections(): Promise<ReadonlyAdapterResult<NotionConnection[]>>;
+  loadApprovedRoots(): Promise<ReadonlyAdapterResult<ApprovedRootRow[]>>;
+  loadApprovedRootsForClassifier(): Promise<ReadonlyAdapterResult<ApprovedRoot[]>>;
+  loadApprovedRootsForConnection(connectionId: string): Promise<ReadonlyAdapterResult<ApprovedRootRow[]>>;
+  loadExistingPages(connectionId: string): Promise<ReadonlyAdapterResult<ExistingPage[]>>;
+  loadExistingApprovals(): Promise<ReadonlyAdapterResult<ExistingApproval[]>>;
+  loadConnection(connectionId: string): Promise<ReadonlyAdapterResult<NotionConnection | null>>;
+  verifyConnectivity(): Promise<boolean>;
+  verifySecurityBoundary(): Promise<{ valid: boolean; identity: IdentityCheckResult; privileges: PrivilegeCheckResult }>;
+  close(): Promise<void>;
+}
+
+// ── Secure Pool Factory ───────────────────────────────────────
+
+/**
+ * Strip SSL query parameters from connection URL.
+ */
+function stripSslParams(connectionString: string): string {
+  const url = new URL(connectionString);
+  url.searchParams.delete('sslmode');
+  url.searchParams.delete('sslcert');
+  url.searchParams.delete('sslkey');
+  url.searchParams.delete('sslrootcert');
+  return url.toString();
+}
+
+export interface SecurePoolConfig {
+  connectionString: string;
+  maxConnections?: number;
+  idleTimeoutMs?: number;
+  connectionTimeoutMs?: number;
+}
+
+/**
+ * Create a secure read-only adapter using the hr_shadow_reader identity.
+ *
+ * This adapter:
+ * 1. Connects using the provided connection string
+ * 2. Verifies the connection is using hr_shadow_reader
+ * 3. Verifies the role has no elevated privileges
+ * 4. Fails closed if any security check fails
+ */
+export function createSecureReadonlyAdapter(config: SecurePoolConfig): ReadonlyAdapter {
+  const pool = new pg.Pool({
+    connectionString: stripSslParams(config.connectionString),
+    max: config.maxConnections ?? 3,
+    idleTimeoutMillis: config.idleTimeoutMs ?? 30000,
+    connectionTimeoutMillis: config.connectionTimeoutMs ?? 10000,
+    ssl: {
+      rejectUnauthorized: true,
+      ca: SUPABASE_ROOT_CA,
+    },
+  });
+
+  // Suppress connection string in error logs
+  pool.on('error', () => {
+    // Intentionally empty - errors are handled in query methods
+  });
+
+  let securityVerified = false;
+
+  return {
+    async verifySecurityBoundary() {
+      const client = await pool.connect();
+      try {
+        const identity = await verifyIdentity(client);
+        if (!identity.valid) {
+          return { valid: false, identity, privileges: { valid: false, issues: ['Skipped due to identity failure'], hasElevatedAttributes: true, hasMutationPrivileges: true, hasForbiddenAccess: true, hasForbiddenFunctions: true } };
+        }
+
+        const privileges = await verifyPrivileges(client);
+        if (!privileges.valid) {
+          return { valid: false, identity, privileges };
+        }
+
+        securityVerified = true;
+        return { valid: true, identity, privileges };
+      } finally {
+        client.release();
+      }
+    },
+
+    async verifyConnectivity(): Promise<boolean> {
+      try {
+        const client = await pool.connect();
+        try {
+          await client.query('SELECT 1');
+          return true;
+        } finally {
+          client.release();
+        }
+      } catch {
+        return false;
+      }
+    },
+
+    async loadConnections(): Promise<ReadonlyAdapterResult<NotionConnection[]>> {
+      if (!securityVerified) {
+        return { data: null, error: 'Security boundary not verified. Call verifySecurityBoundary() first.' };
+      }
+
+      const client = await pool.connect();
+      try {
+        const { rows } = await client.query(`
+          SELECT id, name, workspace_id, token_hash, is_active, created_at, last_sync_at
+          FROM hr_notion_connections
+          WHERE is_active = true
+          ORDER BY created_at ASC
+        `);
+
+        const connections: NotionConnection[] = rows.map((row) => ({
+          id: row.id,
+          name: row.name,
+          workspaceId: row.workspace_id,
+          tokenHash: row.token_hash,
+          isActive: row.is_active,
+          createdAt: row.created_at,
+          lastSyncAt: row.last_sync_at,
+        }));
+
+        return { data: connections, error: null };
+      } catch (err) {
+        return { data: null, error: err instanceof Error ? err.message : String(err) };
+      } finally {
+        client.release();
+      }
+    },
+
+    async loadApprovedRoots(): Promise<ReadonlyAdapterResult<ApprovedRootRow[]>> {
+      if (!securityVerified) {
+        return { data: null, error: 'Security boundary not verified. Call verifySecurityBoundary() first.' };
+      }
+
+      const client = await pool.connect();
+      try {
+        const { rows } = await client.query(`
+          SELECT id, connection_id, notion_page_id, name, access_classification, is_active, created_at
+          FROM hr_approved_roots
+          ORDER BY created_at ASC
+        `);
+
+        const roots: ApprovedRootRow[] = rows.map((row) => ({
+          id: row.id,
+          connectionId: row.connection_id,
+          notionPageId: row.notion_page_id,
+          name: row.name,
+          accessClassification: row.access_classification,
+          isActive: row.is_active,
+          createdAt: row.created_at,
+        }));
+
+        return { data: roots, error: null };
+      } catch (err) {
+        return { data: null, error: err instanceof Error ? err.message : String(err) };
+      } finally {
+        client.release();
+      }
+    },
+
+    async loadApprovedRootsForClassifier(): Promise<ReadonlyAdapterResult<ApprovedRoot[]>> {
+      const result = await this.loadApprovedRoots();
+      if (result.error || !result.data) {
+        return { data: null, error: result.error };
+      }
+
+      const classifierRoots: ApprovedRoot[] = result.data.map((row) => ({
+        id: row.id,
+        connectionId: row.connectionId,
+        notionPageId: row.notionPageId,
+        accessClassification: row.accessClassification,
+        isActive: row.isActive,
+      }));
+
+      return { data: classifierRoots, error: null };
+    },
+
+    async loadApprovedRootsForConnection(connectionId: string): Promise<ReadonlyAdapterResult<ApprovedRootRow[]>> {
+      if (!securityVerified) {
+        return { data: null, error: 'Security boundary not verified. Call verifySecurityBoundary() first.' };
+      }
+
+      const client = await pool.connect();
+      try {
+        const { rows } = await client.query(`
+          SELECT id, connection_id, notion_page_id, name, access_classification, is_active, created_at
+          FROM hr_approved_roots
+          WHERE connection_id = $1
+          ORDER BY created_at ASC
+        `, [connectionId]);
+
+        const roots: ApprovedRootRow[] = rows.map((row) => ({
+          id: row.id,
+          connectionId: row.connection_id,
+          notionPageId: row.notion_page_id,
+          name: row.name,
+          accessClassification: row.access_classification,
+          isActive: row.is_active,
+          createdAt: row.created_at,
+        }));
+
+        return { data: roots, error: null };
+      } catch (err) {
+        return { data: null, error: err instanceof Error ? err.message : String(err) };
+      } finally {
+        client.release();
+      }
+    },
+
+    async loadExistingPages(connectionId: string): Promise<ReadonlyAdapterResult<ExistingPage[]>> {
+      if (!securityVerified) {
+        return { data: null, error: 'Security boundary not verified. Call verifySecurityBoundary() first.' };
+      }
+
+      const client = await pool.connect();
+      try {
+        const { rows } = await client.query(`
+          SELECT id, notion_page_id, connection_id, title, content_hash, publication_status, approved_root_id, last_verified_at
+          FROM hr_knowledge_pages
+          WHERE connection_id = $1
+        `, [connectionId]);
+
+        const pages: ExistingPage[] = rows.map((row) => ({
+          id: row.id,
+          notionPageId: row.notion_page_id,
+          connectionId: row.connection_id,
+          title: row.title,
+          contentHash: row.content_hash,
+          publicationStatus: row.publication_status,
+          approvedRootId: row.approved_root_id,
+          lastVerifiedAt: row.last_verified_at,
+        }));
+
+        return { data: pages, error: null };
+      } catch (err) {
+        return { data: null, error: err instanceof Error ? err.message : String(err) };
+      } finally {
+        client.release();
+      }
+    },
+
+    async loadExistingApprovals(): Promise<ReadonlyAdapterResult<ExistingApproval[]>> {
+      if (!securityVerified) {
+        return { data: null, error: 'Security boundary not verified. Call verifySecurityBoundary() first.' };
+      }
+
+      const client = await pool.connect();
+      try {
+        const { rows } = await client.query(`
+          SELECT id, knowledge_page_id, approved_content_hash, approved_by, approved_at, revoked_at
+          FROM hr_page_approvals
+          WHERE revoked_at IS NULL
+        `);
+
+        const approvals: ExistingApproval[] = rows.map((row) => ({
+          id: row.id,
+          knowledgePageId: row.knowledge_page_id,
+          approvedContentHash: row.approved_content_hash,
+          approvedBy: row.approved_by,
+          approvedAt: row.approved_at,
+          revokedAt: row.revoked_at,
+        }));
+
+        return { data: approvals, error: null };
+      } catch (err) {
+        return { data: null, error: err instanceof Error ? err.message : String(err) };
+      } finally {
+        client.release();
+      }
+    },
+
+    async loadConnection(connectionId: string): Promise<ReadonlyAdapterResult<NotionConnection | null>> {
+      if (!securityVerified) {
+        return { data: null, error: 'Security boundary not verified. Call verifySecurityBoundary() first.' };
+      }
+
+      const client = await pool.connect();
+      try {
+        const { rows } = await client.query(`
+          SELECT id, name, workspace_id, token_hash, is_active, created_at, last_sync_at
+          FROM hr_notion_connections
+          WHERE id = $1
+        `, [connectionId]);
+
+        if (rows.length === 0) {
+          return { data: null, error: null };
+        }
+
+        const row = rows[0];
+        const connection: NotionConnection = {
+          id: row.id,
+          name: row.name,
+          workspaceId: row.workspace_id,
+          tokenHash: row.token_hash,
+          isActive: row.is_active,
+          createdAt: row.created_at,
+          lastSyncAt: row.last_sync_at,
+        };
+
+        return { data: connection, error: null };
+      } catch (err) {
+        return { data: null, error: err instanceof Error ? err.message : String(err) };
+      } finally {
+        client.release();
+      }
+    },
+
+    async close(): Promise<void> {
+      await pool.end();
+    },
+  };
+}
+
+// ── Mock Adapter for Testing ──────────────────────────────────
+
+export interface MockAdapterData {
+  connections: NotionConnection[];
+  roots: ApprovedRootRow[];
+  pages: Map<string, ExistingPage[]>;
+  approvals: ExistingApproval[];
+}
+
+export interface MockSecurityConfig {
+  identity?: { currentUser: string; sessionUser: string };
+  privileges?: {
+    hasElevatedAttributes?: boolean;
+    hasMutationPrivileges?: boolean;
+    hasForbiddenAccess?: boolean;
+    hasForbiddenFunctions?: boolean;
+  };
+}
+
+/**
+ * Create a mock read-only adapter for offline testing.
+ */
+export function createMockReadonlyAdapter(
+  data: MockAdapterData,
+  securityConfig?: MockSecurityConfig
+): ReadonlyAdapter {
+  let securityVerified = false;
+
+  return {
+    async verifySecurityBoundary() {
+      const currentUser = securityConfig?.identity?.currentUser ?? EXPECTED_ROLE;
+      const sessionUser = securityConfig?.identity?.sessionUser ?? EXPECTED_ROLE;
+
+      const identityValid = currentUser === EXPECTED_ROLE && sessionUser === EXPECTED_ROLE;
+      const identity: IdentityCheckResult = {
+        valid: identityValid,
+        currentUser,
+        sessionUser,
+        issues: identityValid ? [] : [`Identity mismatch: ${currentUser}/${sessionUser}`],
+      };
+
+      const hasElevatedAttributes = securityConfig?.privileges?.hasElevatedAttributes ?? false;
+      const hasMutationPrivileges = securityConfig?.privileges?.hasMutationPrivileges ?? false;
+      const hasForbiddenAccess = securityConfig?.privileges?.hasForbiddenAccess ?? false;
+      const hasForbiddenFunctions = securityConfig?.privileges?.hasForbiddenFunctions ?? false;
+
+      const privilegesValid = !hasElevatedAttributes && !hasMutationPrivileges && !hasForbiddenAccess && !hasForbiddenFunctions;
+      const privilegeIssues: string[] = [];
+      if (hasElevatedAttributes) privilegeIssues.push('Has elevated attributes');
+      if (hasMutationPrivileges) privilegeIssues.push('Has mutation privileges');
+      if (hasForbiddenAccess) privilegeIssues.push('Has forbidden table access');
+      if (hasForbiddenFunctions) privilegeIssues.push('Has forbidden function access');
+
+      const privileges: PrivilegeCheckResult = {
+        valid: privilegesValid,
+        issues: privilegeIssues,
+        hasElevatedAttributes,
+        hasMutationPrivileges,
+        hasForbiddenAccess,
+        hasForbiddenFunctions,
+      };
+
+      const valid = identityValid && privilegesValid;
+      if (valid) {
+        securityVerified = true;
+      }
+
+      return { valid, identity, privileges };
+    },
+
+    async verifyConnectivity() {
+      return true;
+    },
+
+    async loadConnections() {
+      if (!securityVerified) {
+        return { data: null, error: 'Security boundary not verified' };
+      }
+      return { data: data.connections.filter((c) => c.isActive), error: null };
+    },
+
+    async loadApprovedRoots() {
+      if (!securityVerified) {
+        return { data: null, error: 'Security boundary not verified' };
+      }
+      return { data: data.roots, error: null };
+    },
+
+    async loadApprovedRootsForClassifier() {
+      if (!securityVerified) {
+        return { data: null, error: 'Security boundary not verified' };
+      }
+      const classifierRoots: ApprovedRoot[] = data.roots.map((row) => ({
+        id: row.id,
+        connectionId: row.connectionId,
+        notionPageId: row.notionPageId,
+        accessClassification: row.accessClassification,
+        isActive: row.isActive,
+      }));
+      return { data: classifierRoots, error: null };
+    },
+
+    async loadApprovedRootsForConnection(connectionId: string) {
+      if (!securityVerified) {
+        return { data: null, error: 'Security boundary not verified' };
+      }
+      return {
+        data: data.roots.filter((r) => r.connectionId === connectionId),
+        error: null,
+      };
+    },
+
+    async loadExistingPages(connectionId: string) {
+      if (!securityVerified) {
+        return { data: null, error: 'Security boundary not verified' };
+      }
+      return { data: data.pages.get(connectionId) || [], error: null };
+    },
+
+    async loadExistingApprovals() {
+      if (!securityVerified) {
+        return { data: null, error: 'Security boundary not verified' };
+      }
+      return { data: data.approvals.filter((a) => !a.revokedAt), error: null };
+    },
+
+    async loadConnection(connectionId: string) {
+      if (!securityVerified) {
+        return { data: null, error: 'Security boundary not verified' };
+      }
+      return {
+        data: data.connections.find((c) => c.id === connectionId) || null,
+        error: null,
+      };
+    },
+
+    async close() {
+      // No-op for mock
+    },
+  };
+}
