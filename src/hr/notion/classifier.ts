@@ -7,9 +7,17 @@
  * Ancestry is resolved via the Notion API parent chain, not title approximation.
  * Structural exclusion uses the verified path, not titles alone.
  * Ambiguous or unresolvable ancestry fails closed (excluded).
+ *
+ * Uses the full ancestry resolver (ancestry-resolver.ts) which handles all
+ * Notion parent types: page_id, database_id, block_id, and workspace.
  */
 
 import { type NotionPage, getParentId } from './api-client.js';
+import {
+  resolvePageAncestry,
+  findApprovedRootInChain as findRootInChain,
+  type AncestryResult,
+} from './ancestry-resolver.js';
 
 export interface ApprovedRoot {
   id: string;
@@ -37,15 +45,15 @@ export interface ClassificationResult {
  * patterns. Each pattern targets a specific known risk.
  */
 const EXCLUDED_SUBTREE_PATTERNS = [
-  /\/New Hire Onboarding Hub\/[^/]+\//i,  // Individual onboarding boards nested under shared hub
-  /30-60-90 Day Plan/i,                   // Individual performance plans
-  /Employee Relations\/[^/]+$/i,          // Individual employee-relations cases
-  /Employee Directory$/i,                 // Personnel rosters / databases
+  /\/New Hire Onboarding Hub\/[^/]+\//i, // Individual onboarding boards nested under shared hub
+  /30-60-90 Day Plan/i, // Individual performance plans
+  /Employee Relations\/[^/]+$/i, // Individual employee-relations cases
+  /Employee Directory$/i, // Personnel rosters / databases
 ];
 
 const EXCLUDED_TITLE_PATTERNS = [
-  /Candidate Scoring Matrices/i,          // Recruitment evaluation tools
-  /Business Accounts and Logins/i,        // Credential pages
+  /Candidate Scoring Matrices/i, // Recruitment evaluation tools
+  /Business Accounts and Logins/i, // Credential pages
 ];
 
 /**
@@ -58,7 +66,9 @@ const EXCLUDED_TITLE_PATTERNS = [
 export async function resolveAncestry(
   page: NotionPage,
   pageTitle: string,
-  getPageTitle: (pageId: string) => Promise<{ id: string; title: string; parentPageId: string | null } | null>,
+  getPageTitle: (
+    pageId: string
+  ) => Promise<{ id: string; title: string; parentPageId: string | null } | null>,
   maxDepth = 10
 ): Promise<{ path: string[]; pathString: string }> {
   const path: string[] = [pageTitle];
@@ -113,27 +123,46 @@ export function classifyWithVerifiedPath(
   const root = findApprovedRootFromAncestry(pageId, ancestorIds, approvedRoots);
 
   if (!root) {
-    return { approvedRoot: null, accessClassification: null, isExcluded: true,
-             exclusionReason: 'not_under_approved_root', resolvedPath: verifiedPath };
+    return {
+      approvedRoot: null,
+      accessClassification: null,
+      isExcluded: true,
+      exclusionReason: 'not_under_approved_root',
+      resolvedPath: verifiedPath,
+    };
   }
 
   if (!root.isActive) {
-    return { approvedRoot: root, accessClassification: null, isExcluded: true,
-             exclusionReason: 'root_deactivated', resolvedPath: verifiedPath };
+    return {
+      approvedRoot: root,
+      accessClassification: null,
+      isExcluded: true,
+      exclusionReason: 'root_deactivated',
+      resolvedPath: verifiedPath,
+    };
   }
 
   // Structural exclusion against the VERIFIED path
   const exclusion = checkStructuralExclusion(verifiedPath, pageTitle);
   if (exclusion) {
-    return { approvedRoot: root, accessClassification: root.accessClassification,
-             isExcluded: true, exclusionReason: exclusion, resolvedPath: verifiedPath };
+    return {
+      approvedRoot: root,
+      accessClassification: root.accessClassification,
+      isExcluded: true,
+      exclusionReason: exclusion,
+      resolvedPath: verifiedPath,
+    };
   }
 
   // Quarantine ambiguous content
   if (shouldQuarantine(pageTitle, verifiedPath)) {
-    return { approvedRoot: root, accessClassification: root.accessClassification,
-             isExcluded: true, exclusionReason: 'quarantined:ambiguous_content',
-             resolvedPath: verifiedPath };
+    return {
+      approvedRoot: root,
+      accessClassification: root.accessClassification,
+      isExcluded: true,
+      exclusionReason: 'quarantined:ambiguous_content',
+      resolvedPath: verifiedPath,
+    };
   }
 
   return {
@@ -160,11 +189,21 @@ export function classifyPage(
   const directRoot = approvedRoots.find((r) => r.notionPageId === page.id);
   if (directRoot) {
     if (!directRoot.isActive) {
-      return { approvedRoot: directRoot, accessClassification: null, isExcluded: true,
-               exclusionReason: 'root_deactivated', resolvedPath: pagePath };
+      return {
+        approvedRoot: directRoot,
+        accessClassification: null,
+        isExcluded: true,
+        exclusionReason: 'root_deactivated',
+        resolvedPath: pagePath,
+      };
     }
-    return { approvedRoot: directRoot, accessClassification: directRoot.accessClassification,
-             isExcluded: false, exclusionReason: null, resolvedPath: pagePath };
+    return {
+      approvedRoot: directRoot,
+      accessClassification: directRoot.accessClassification,
+      isExcluded: false,
+      exclusionReason: null,
+      resolvedPath: pagePath,
+    };
   }
 
   // Check immediate parent (page or database)
@@ -173,27 +212,51 @@ export function classifyPage(
     const parentRoot = approvedRoots.find((r) => r.notionPageId === immediateParentId);
     if (parentRoot) {
       if (!parentRoot.isActive) {
-        return { approvedRoot: parentRoot, accessClassification: null, isExcluded: true,
-                 exclusionReason: 'root_deactivated', resolvedPath: pagePath };
+        return {
+          approvedRoot: parentRoot,
+          accessClassification: null,
+          isExcluded: true,
+          exclusionReason: 'root_deactivated',
+          resolvedPath: pagePath,
+        };
       }
       const exclusion = checkStructuralExclusion(pagePath, pageTitle);
       if (exclusion) {
-        return { approvedRoot: parentRoot, accessClassification: parentRoot.accessClassification,
-                 isExcluded: true, exclusionReason: exclusion, resolvedPath: pagePath };
+        return {
+          approvedRoot: parentRoot,
+          accessClassification: parentRoot.accessClassification,
+          isExcluded: true,
+          exclusionReason: exclusion,
+          resolvedPath: pagePath,
+        };
       }
       if (shouldQuarantine(pageTitle, pagePath)) {
-        return { approvedRoot: parentRoot, accessClassification: parentRoot.accessClassification,
-                 isExcluded: true, exclusionReason: 'quarantined:ambiguous_content',
-                 resolvedPath: pagePath };
+        return {
+          approvedRoot: parentRoot,
+          accessClassification: parentRoot.accessClassification,
+          isExcluded: true,
+          exclusionReason: 'quarantined:ambiguous_content',
+          resolvedPath: pagePath,
+        };
       }
-      return { approvedRoot: parentRoot, accessClassification: parentRoot.accessClassification,
-               isExcluded: false, exclusionReason: null, resolvedPath: pagePath };
+      return {
+        approvedRoot: parentRoot,
+        accessClassification: parentRoot.accessClassification,
+        isExcluded: false,
+        exclusionReason: null,
+        resolvedPath: pagePath,
+      };
     }
   }
 
   // No root found — fail closed
-  return { approvedRoot: null, accessClassification: null, isExcluded: true,
-           exclusionReason: 'not_under_approved_root', resolvedPath: pagePath };
+  return {
+    approvedRoot: null,
+    accessClassification: null,
+    isExcluded: true,
+    exclusionReason: 'not_under_approved_root',
+    resolvedPath: pagePath,
+  };
 }
 
 function checkStructuralExclusion(path: string, title: string): string | null {
@@ -231,4 +294,149 @@ export function shouldQuarantine(pageTitle: string, pagePath: string): boolean {
   if (/\b(?:Directory|Roster|Headcount|Personnel)\b/i.test(pageTitle)) return true;
 
   return false;
+}
+
+// ── Full Ancestry Classification ───────────────────────────
+
+export { type AncestryResult } from './ancestry-resolver.js';
+
+/**
+ * Full ancestry classification result.
+ * Includes both classification and complete ancestry chain.
+ */
+export interface FullClassificationResult extends ClassificationResult {
+  ancestry: AncestryResult;
+  ancestryComplete: boolean;
+  ancestryIncompleteReason: string | null;
+}
+
+/**
+ * Classify a page using complete ancestry resolution.
+ *
+ * This is the preferred classification method. It:
+ * 1. Resolves the full parent chain (page → database → block → workspace)
+ * 2. Requires complete ancestry to authorize (fail-closed)
+ * 3. Checks all ancestors against approved roots
+ * 4. Applies structural exclusion to the verified path
+ *
+ * @param connectionId - Notion connection ID
+ * @param token - Notion API token
+ * @param pageId - The page to classify
+ * @param pageTitle - The page title (for display/exclusion patterns)
+ * @param approvedRoots - List of approved roots to check against
+ * @param ancestryCache - Optional cache to avoid redundant API calls
+ */
+export async function classifyWithFullAncestry(
+  connectionId: string,
+  token: string,
+  pageId: string,
+  pageTitle: string,
+  approvedRoots: ApprovedRoot[],
+  ancestryCache?: Map<string, { id: string; type: string; title: string | null; parent: unknown }>
+): Promise<FullClassificationResult> {
+  // Resolve complete ancestry chain
+  const ancestry = await resolvePageAncestry(
+    connectionId,
+    token,
+    pageId,
+    20, // maxDepth
+    ancestryCache as Map<string, any>
+  );
+
+  // Fail-closed: incomplete ancestry means exclusion
+  if (!ancestry.complete) {
+    return {
+      approvedRoot: null,
+      accessClassification: null,
+      isExcluded: true,
+      exclusionReason: `incomplete_ancestry:${ancestry.incompleteReason}`,
+      resolvedPath: ancestry.pathString || pageTitle,
+      ancestry,
+      ancestryComplete: false,
+      ancestryIncompleteReason: ancestry.incompleteReason || 'unknown',
+    };
+  }
+
+  // Fail-closed: cycles are not allowed
+  if (ancestry.hasCycle) {
+    return {
+      approvedRoot: null,
+      accessClassification: null,
+      isExcluded: true,
+      exclusionReason: 'ancestry_cycle_detected',
+      resolvedPath: ancestry.pathString || pageTitle,
+      ancestry,
+      ancestryComplete: false,
+      ancestryIncompleteReason: 'cycle_detected',
+    };
+  }
+
+  // Find approved root in the ancestry chain
+  const root = findRootInChain(ancestry, approvedRoots);
+
+  if (!root) {
+    return {
+      approvedRoot: null,
+      accessClassification: null,
+      isExcluded: true,
+      exclusionReason: 'not_under_approved_root',
+      resolvedPath: ancestry.pathString,
+      ancestry,
+      ancestryComplete: true,
+      ancestryIncompleteReason: null,
+    };
+  }
+
+  if (!root.isActive) {
+    return {
+      approvedRoot: root,
+      accessClassification: null,
+      isExcluded: true,
+      exclusionReason: 'root_deactivated',
+      resolvedPath: ancestry.pathString,
+      ancestry,
+      ancestryComplete: true,
+      ancestryIncompleteReason: null,
+    };
+  }
+
+  // Structural exclusion against the verified path
+  const exclusion = checkStructuralExclusion(ancestry.pathString, pageTitle);
+  if (exclusion) {
+    return {
+      approvedRoot: root,
+      accessClassification: root.accessClassification,
+      isExcluded: true,
+      exclusionReason: exclusion,
+      resolvedPath: ancestry.pathString,
+      ancestry,
+      ancestryComplete: true,
+      ancestryIncompleteReason: null,
+    };
+  }
+
+  // Quarantine ambiguous content
+  if (shouldQuarantine(pageTitle, ancestry.pathString)) {
+    return {
+      approvedRoot: root,
+      accessClassification: root.accessClassification,
+      isExcluded: true,
+      exclusionReason: 'quarantined:ambiguous_content',
+      resolvedPath: ancestry.pathString,
+      ancestry,
+      ancestryComplete: true,
+      ancestryIncompleteReason: null,
+    };
+  }
+
+  return {
+    approvedRoot: root,
+    accessClassification: root.accessClassification,
+    isExcluded: false,
+    exclusionReason: null,
+    resolvedPath: ancestry.pathString,
+    ancestry,
+    ancestryComplete: true,
+    ancestryIncompleteReason: null,
+  };
 }
