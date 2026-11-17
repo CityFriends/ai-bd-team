@@ -28,6 +28,12 @@ import { checkPilotAccess, type HRPilotConfig } from './hr-pilot-access.js';
 import { executeHRPipeline, type HRPipelineConfig } from '../llm/hr-answer-pipeline.js';
 import { formatPipelineResultForSlack } from './hr-slack-formatter.js';
 import { renderPipelineResultAsBlocks } from './hr-block-kit-renderer.js';
+import {
+  extractSearchQuery,
+  searchHRKnowledge,
+  formatSearchResultsForSlack,
+  isSearchError,
+} from '../search/keyword-search.js';
 
 const processedEvents = new Set<string>();
 
@@ -57,11 +63,7 @@ export type SlackUpdateFn = (
  * Legacy reply function type — kept for backward compatibility with
  * DM path and tests that don't need acknowledgement timestamps.
  */
-export type SlackReplyFn = (
-  channel: string,
-  text: string,
-  blocks?: KnownBlock[]
-) => Promise<void>;
+export type SlackReplyFn = (channel: string, text: string, blocks?: KnownBlock[]) => Promise<void>;
 
 /** Optional function to resolve an employee's preferred first name for greeting. */
 export type EmployeeNameFn = (slackUserId: string) => Promise<string | null>;
@@ -229,7 +231,33 @@ export async function handleMessage(input: HandleMessageInput): Promise<void> {
 
     if (!text.trim()) return;
 
-    const t0 = performance.now();
+    // ── Keyword Search Path ─────────────────────────────────
+    // Check for "search: <query>" pattern before AI pipeline.
+    // Uses PostgreSQL full-text search, not LLM retrieval.
+    const searchQuery = extractSearchQuery(text);
+    if (searchQuery && input.readerPool) {
+      const searchStart = Date.now();
+      try {
+        const searchResult = await searchHRKnowledge(input.readerPool.pool, userId, searchQuery);
+        const responseText = formatSearchResultsForSlack(searchResult);
+        await reply(channelId, responseText);
+
+        if (!isSearchError(searchResult)) {
+          // eslint-disable-next-line no-console
+          console.log(
+            `[HR Search] query="${searchQuery}" results=${searchResult.resultCount} time=${Date.now() - searchStart}ms`
+          );
+        }
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        // eslint-disable-next-line no-console
+        console.error('[HR Search] Unexpected error:', errorMessage);
+        await reply(channelId, '❌ Search encountered an unexpected error. Please try again.');
+      }
+      return;
+    }
+
+    const t0 = Date.now();
 
     // ── Post processing indicator ─────────────────────────
     // Only posted after all authorization checks pass.
@@ -246,7 +274,7 @@ export async function handleMessage(input: HandleMessageInput): Promise<void> {
       }
     }
 
-    const tAck = performance.now();
+    const tAck = Date.now();
 
     try {
       // Run pipeline and name lookup concurrently
@@ -257,7 +285,7 @@ export async function handleMessage(input: HandleMessageInput): Promise<void> {
           : Promise.resolve(null as string | null),
       ]);
 
-      const tPipeline = performance.now();
+      const tPipeline = Date.now();
 
       // Render as Block Kit with plain-text fallback
       const payload = renderPipelineResultAsBlocks(result, {
@@ -289,9 +317,10 @@ export async function handleMessage(input: HandleMessageInput): Promise<void> {
         }
       }
 
-      const tDone = performance.now();
+      const tDone = Date.now();
+      // eslint-disable-next-line no-console
       console.log(
-        `[HR Pipeline] ack=${(tAck - t0).toFixed(0)}ms pipeline=${(tPipeline - tAck).toFixed(0)}ms total=${(tDone - t0).toFixed(0)}ms`
+        `[HR Pipeline] ack=${tAck - t0}ms pipeline=${tPipeline - tAck}ms total=${tDone - t0}ms`
       );
     } catch {
       // Pipeline or delivery failure
