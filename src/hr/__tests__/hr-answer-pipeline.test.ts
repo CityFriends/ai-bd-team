@@ -371,7 +371,7 @@ describe('executeHRPipeline — security', () => {
     // The retrieval function is injected but must be the authorized one.
     // There is no parameter to supply pre-constructed AuthorizedChunks.
     const config = makeConfig({});
-    const result = await executeHRPipeline(config, 'What is PTO?', 'UEMP001');
+    await executeHRPipeline(config, 'What is PTO?', 'UEMP001');
 
     // Verify the retrieval function was called with the proper parameters
     expect(config.retrieveFn).toHaveBeenCalledWith(
@@ -400,5 +400,185 @@ describe('executeHRPipeline — invalid question', () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('invalid_question');
+  });
+});
+
+// ============================================================
+// FALLBACK_LLM Regression (C8X-107BS-QA4)
+// ============================================================
+
+describe('executeHRPipeline — FALLBACK_LLM paths', () => {
+  const FALLBACK_LLM_TEXT =
+    'I encountered an issue generating a response. Please try again later or contact your HR team.';
+
+  it('llm_parse_error produces FALLBACK_LLM', async () => {
+    const config = makeConfig({ llmResponse: 'Not valid JSON at all' });
+    const result = await executeHRPipeline(config, 'What is PTO?', 'UEMP001');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('llm_parse_error');
+      expect(result.fallbackMessage).toBe(FALLBACK_LLM_TEXT);
+    }
+  });
+
+  it('citation_error produces FALLBACK_LLM', async () => {
+    const config = makeConfig({
+      llmResponse: validAnswer('Answer', ['aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee']),
+    });
+    const result = await executeHRPipeline(config, 'What is PTO?', 'UEMP001');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('citation_error');
+      expect(result.fallbackMessage).toBe(FALLBACK_LLM_TEXT);
+    }
+  });
+
+  it('malformed JSON structure produces FALLBACK_LLM', async () => {
+    const config = makeConfig({ llmResponse: '{"text": "Answer"}' }); // missing citedChunkIds
+    const result = await executeHRPipeline(config, 'What is PTO?', 'UEMP001');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('llm_parse_error');
+      expect(result.fallbackMessage).toBe(FALLBACK_LLM_TEXT);
+    }
+  });
+
+  it('extra fields in JSON produces FALLBACK_LLM', async () => {
+    const config = makeConfig({
+      llmResponse: JSON.stringify({
+        text: 'Answer',
+        citedChunkIds: [CHUNK_ID],
+        extraField: 'should fail',
+      }),
+    });
+    const result = await executeHRPipeline(config, 'What is PTO?', 'UEMP001');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('llm_parse_error');
+      expect(result.fallbackMessage).toBe(FALLBACK_LLM_TEXT);
+    }
+  });
+
+  it('llm_error produces FALLBACK_LLM', async () => {
+    const config = makeConfig({ llmError: new Error('Provider error') });
+    const result = await executeHRPipeline(config, 'What is PTO?', 'UEMP001');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('llm_error');
+      expect(result.fallbackMessage).toBe(FALLBACK_LLM_TEXT);
+    }
+  });
+
+  it('timeout produces FALLBACK_LLM', async () => {
+    const err = new Error('Request timed out');
+    err.name = 'APIConnectionTimeoutError';
+    const config = makeConfig({ llmError: err });
+    const result = await executeHRPipeline(config, 'What is PTO?', 'UEMP001');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('llm_error');
+      expect(result.fallbackMessage).toBe(FALLBACK_LLM_TEXT);
+    }
+  });
+
+  it('rate limit produces FALLBACK_LLM', async () => {
+    const err = new Error('Rate limited');
+    err.name = 'RateLimitError';
+    const config = makeConfig({ llmError: err });
+    const result = await executeHRPipeline(config, 'What is PTO?', 'UEMP001');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('llm_error');
+      expect(result.fallbackMessage).toBe(FALLBACK_LLM_TEXT);
+    }
+  });
+});
+
+// ============================================================
+// Informal Question Acceptance (C8X-107BS-QA4)
+// ============================================================
+
+describe('executeHRPipeline — informal questions', () => {
+  // These tests verify that informal, lowercase, unpunctuated questions
+  // are accepted by the pipeline and don't fail at the question validation stage.
+
+  it('accepts "how many pto days do i get"', async () => {
+    const config = makeConfig({});
+    const result = await executeHRPipeline(config, 'how many pto days do i get', 'UEMP001');
+
+    // Should reach LLM (not fail at question validation)
+    expect(config.llmConfig.transport.createMessage).toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+  });
+
+  it('accepts "pto days?"', async () => {
+    const config = makeConfig({});
+    const result = await executeHRPipeline(config, 'pto days?', 'UEMP001');
+
+    expect(config.llmConfig.transport.createMessage).toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+  });
+
+  it('accepts "how much vacation do we get"', async () => {
+    const config = makeConfig({});
+    const result = await executeHRPipeline(config, 'how much vacation do we get', 'UEMP001');
+
+    expect(config.llmConfig.transport.createMessage).toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+  });
+
+  it('accepts "can i carry over pto"', async () => {
+    const config = makeConfig({});
+    const result = await executeHRPipeline(config, 'can i carry over pto', 'UEMP001');
+
+    expect(config.llmConfig.transport.createMessage).toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+  });
+
+  it('accepts "whats our health insurance"', async () => {
+    const config = makeConfig({});
+    const result = await executeHRPipeline(config, 'whats our health insurance', 'UEMP001');
+
+    expect(config.llmConfig.transport.createMessage).toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+  });
+
+  it('accepts "when do we get paid"', async () => {
+    const config = makeConfig({});
+    const result = await executeHRPipeline(config, 'when do we get paid', 'UEMP001');
+
+    expect(config.llmConfig.transport.createMessage).toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+  });
+
+  it('accepts formal question "What is FFTC\'s PTO policy?"', async () => {
+    const config = makeConfig({});
+    const result = await executeHRPipeline(config, "What is FFTC's PTO policy?", 'UEMP001');
+
+    expect(config.llmConfig.transport.createMessage).toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+  });
+
+  it('accepts single word query', async () => {
+    const config = makeConfig({});
+    const result = await executeHRPipeline(config, 'pto', 'UEMP001');
+
+    expect(config.llmConfig.transport.createMessage).toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+  });
+
+  it('accepts text-message style abbreviations', async () => {
+    const config = makeConfig({});
+    const result = await executeHRPipeline(config, 'whats pto', 'UEMP001');
+
+    expect(config.llmConfig.transport.createMessage).toHaveBeenCalled();
+    expect(result.ok).toBe(true);
   });
 });

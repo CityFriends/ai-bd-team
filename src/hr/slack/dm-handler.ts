@@ -37,6 +37,18 @@ import {
 
 const processedEvents = new Set<string>();
 
+// ── Correlation ID ─────────────────────────────────────────
+
+/**
+ * Generate a short correlation ID for request tracing.
+ * Format: 8 hex characters from timestamp + random suffix.
+ */
+function generateCorrelationId(): string {
+  const ts = Date.now().toString(16).slice(-4);
+  const rand = Math.random().toString(16).slice(2, 6);
+  return `${ts}${rand}`;
+}
+
 // ── Processing Indicator ───────────────────────────────────
 
 /** Neutral acknowledgement text. Contains no employee data or policy content. */
@@ -258,6 +270,7 @@ export async function handleMessage(input: HandleMessageInput): Promise<void> {
     }
 
     const t0 = Date.now();
+    const correlationId = generateCorrelationId();
 
     // ── Post processing indicator ─────────────────────────
     // Only posted after all authorization checks pass.
@@ -279,7 +292,7 @@ export async function handleMessage(input: HandleMessageInput): Promise<void> {
     try {
       // Run pipeline and name lookup concurrently
       const [result, employeeName] = await Promise.all([
-        executeHRPipeline(pipelineConfig, text, userId),
+        executeHRPipeline(pipelineConfig, text, userId, correlationId),
         getEmployeeName
           ? getEmployeeName(userId).catch(() => null as string | null)
           : Promise.resolve(null as string | null),
@@ -294,38 +307,54 @@ export async function handleMessage(input: HandleMessageInput): Promise<void> {
       });
 
       // ── Deliver final answer ──────────────────────────
+      let deliveryOutcome:
+        | 'update_blocks'
+        | 'update_plain'
+        | 'reply_blocks'
+        | 'reply_plain'
+        | 'update_failed' = 'update_failed';
       if (ackTs && update) {
         // Update the acknowledgement message in-place
         try {
           await update(channelId, ackTs, payload.text, payload.blocks);
+          deliveryOutcome = 'update_blocks';
         } catch {
           // Block Kit update rejected — try plain-text update
           try {
             await update(channelId, ackTs, formatPipelineResultForSlack(result));
+            deliveryOutcome = 'update_plain';
           } catch {
             // Update failed entirely — do NOT post a duplicate message.
             // The employee still sees the processing indicator.
             // This is a rare edge case (Slack down after initial post).
+            deliveryOutcome = 'update_failed';
           }
         }
       } else {
         // No acknowledgement — deliver as new message (legacy path)
         try {
           await reply(channelId, payload.text, payload.blocks);
+          deliveryOutcome = 'reply_blocks';
         } catch {
           await reply(channelId, formatPipelineResultForSlack(result));
+          deliveryOutcome = 'reply_plain';
         }
       }
 
       const tDone = Date.now();
       // eslint-disable-next-line no-console
       console.log(
-        `[HR Pipeline] ack=${tAck - t0}ms pipeline=${tPipeline - tAck}ms total=${tDone - t0}ms`
+        `[HR Pipeline] cid=${correlationId} ack=${tAck - t0}ms pipeline=${tPipeline - tAck}ms total=${tDone - t0}ms` +
+          ` outcome=${result.ok ? 'success' : result.code} delivery=${deliveryOutcome}`
       );
-    } catch {
-      // Pipeline or delivery failure
+    } catch (err) {
+      // Pipeline or delivery failure (unhandled exception)
       const errorMsg =
         'I encountered an issue processing your question. Please try again later or contact your HR team.';
+      // eslint-disable-next-line no-console
+      console.error(
+        `[HR Pipeline] cid=${correlationId} EXCEPTION stage=outer error=${err instanceof Error ? err.message.slice(0, 100) : 'unknown'}`
+      );
       try {
         if (ackTs && update) {
           await update(channelId, ackTs, errorMsg);

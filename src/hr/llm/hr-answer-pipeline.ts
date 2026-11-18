@@ -85,6 +85,27 @@ export interface HRPipelineConfig {
   retrieveFn: RetrievalFn;
 }
 
+// ── Diagnostic Logging ─────────────────────────────────────
+
+/**
+ * Structured diagnostic log for pipeline failures.
+ * Never logs employee message content, credentials, or policy text.
+ */
+function logPipelineFailure(
+  correlationId: string,
+  stage: 'retrieval' | 'prompt' | 'llm' | 'validation',
+  code: string,
+  details?: { retrievalError?: string; llmCode?: string; chunkCount?: number }
+): void {
+  // eslint-disable-next-line no-console
+  console.error(
+    `[HR Pipeline] FAILURE cid=${correlationId} stage=${stage} code=${code}` +
+      (details?.retrievalError ? ` retrieval_error="${details.retrievalError}"` : '') +
+      (details?.llmCode ? ` llm_code=${details.llmCode}` : '') +
+      (details?.chunkCount !== undefined ? ` chunks=${details.chunkCount}` : '')
+  );
+}
+
 // ── Pipeline ────────────────────────────────────────────────
 
 /**
@@ -99,11 +120,15 @@ export interface HRPipelineConfig {
  *   - Unauthorized citations → safe message.
  *
  * Never returns raw model text to the employee.
+ *
+ * @param correlationId Optional correlation ID for diagnostic logging.
+ *        If not provided, failures are not logged (for backward compatibility).
  */
 export async function executeHRPipeline(
   config: HRPipelineConfig,
   question: string,
-  slackUserId: string
+  slackUserId: string,
+  correlationId?: string
 ): Promise<HRPipelineResult> {
   // 1. Authorized retrieval (feature-gated internally by retrieveForUser)
   let retrieval: RetrievalResult;
@@ -115,16 +140,29 @@ export async function executeHRPipeline(
       slackUserId
     );
   } catch {
+    if (correlationId) {
+      logPipelineFailure(correlationId, 'retrieval', 'retrieval_exception');
+    }
     return { ok: false, code: 'retrieval_error', fallbackMessage: FALLBACK_RETRIEVAL };
   }
 
   if (retrieval.error) {
+    if (correlationId) {
+      logPipelineFailure(correlationId, 'retrieval', 'retrieval_error', {
+        retrievalError: retrieval.error.slice(0, 100), // Truncate for safety
+      });
+    }
     return { ok: false, code: 'retrieval_error', fallbackMessage: FALLBACK_RETRIEVAL };
   }
 
   // 2. Assemble prompt from validated question and authorized chunks
   const promptResult = assemblePrompt(question, retrieval.chunks);
   if (!promptResult.ok) {
+    if (correlationId) {
+      logPipelineFailure(correlationId, 'prompt', promptResult.code, {
+        chunkCount: retrieval.chunks.length,
+      });
+    }
     const fallback =
       promptResult.code === 'no_evidence'
         ? FALLBACK_NO_EVIDENCE
@@ -139,6 +177,12 @@ export async function executeHRPipeline(
   const llmResult = await llmClient.complete(promptResult.request);
 
   if (!llmResult.ok) {
+    if (correlationId) {
+      logPipelineFailure(correlationId, 'llm', llmResult.code, {
+        llmCode: llmResult.code,
+        chunkCount: retrieval.chunks.length,
+      });
+    }
     if (llmResult.code === 'disabled') {
       return { ok: false, code: 'disabled', fallbackMessage: FALLBACK_DISABLED };
     }
@@ -149,6 +193,11 @@ export async function executeHRPipeline(
   const answerResult = finalizeAnswer(llmResult.text, promptResult.authorizedChunks);
 
   if (!answerResult.ok) {
+    if (correlationId) {
+      logPipelineFailure(correlationId, 'validation', answerResult.code, {
+        chunkCount: retrieval.chunks.length,
+      });
+    }
     const fallback =
       answerResult.code === 'unsafe_output'
         ? FALLBACK_UNSAFE

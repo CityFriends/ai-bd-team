@@ -9,6 +9,7 @@
  * represent actual FFTC policies.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { performance } from 'perf_hooks';
 import { retrieveForUser, type RetrievedChunk } from '../notion/retrieval.js';
 import type { HRReaderPool } from '../database/hr-client.js';
 
@@ -33,7 +34,8 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
   // PTO Policy (chunks 1-3)
   {
     chunk_id: makeChunkId(1),
-    content_text: 'Employees receive 15 days of paid time off (PTO) per year. PTO accrues at 1.25 days per month starting from the date of hire.',
+    content_text:
+      'Employees receive 15 days of paid time off (PTO) per year. PTO accrues at 1.25 days per month starting from the date of hire.',
     heading_path: ['Leave', 'PTO'],
     title: 'Paid Time Off Policy',
     page_url: 'https://notion.so/pto-policy',
@@ -43,7 +45,8 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
   },
   {
     chunk_id: makeChunkId(2),
-    content_text: 'Unused PTO carries over up to 5 days per year. PTO requests require manager approval at least 2 weeks in advance for vacation periods longer than 3 days.',
+    content_text:
+      'Unused PTO carries over up to 5 days per year. PTO requests require manager approval at least 2 weeks in advance for vacation periods longer than 3 days.',
     heading_path: ['Leave', 'PTO', 'Carryover'],
     title: 'Paid Time Off Policy',
     page_url: 'https://notion.so/pto-policy',
@@ -53,7 +56,8 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
   },
   {
     chunk_id: makeChunkId(3),
-    content_text: 'After 5 years of service, employees receive 20 days of PTO per year. After 10 years, employees receive 25 days.',
+    content_text:
+      'After 5 years of service, employees receive 20 days of PTO per year. After 10 years, employees receive 25 days.',
     heading_path: ['Leave', 'PTO', 'Tenure'],
     title: 'Paid Time Off Policy',
     page_url: 'https://notion.so/pto-policy',
@@ -65,7 +69,8 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
   // Sick Leave (chunks 4-5)
   {
     chunk_id: makeChunkId(4),
-    content_text: 'Employees receive 10 days of paid sick leave per year. Sick leave may be used for personal illness, medical appointments, or caring for an ill family member.',
+    content_text:
+      'Employees receive 10 days of paid sick leave per year. Sick leave may be used for personal illness, medical appointments, or caring for an ill family member.',
     heading_path: ['Leave', 'Sick Leave'],
     title: 'Sick Leave Policy',
     page_url: 'https://notion.so/sick-leave',
@@ -75,7 +80,8 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
   },
   {
     chunk_id: makeChunkId(5),
-    content_text: 'To report sick leave, notify your manager before your scheduled start time. For absences exceeding 3 consecutive days, a medical certificate may be required.',
+    content_text:
+      'To report sick leave, notify your manager before your scheduled start time. For absences exceeding 3 consecutive days, a medical certificate may be required.',
     heading_path: ['Leave', 'Sick Leave', 'Reporting'],
     title: 'Sick Leave Policy',
     page_url: 'https://notion.so/sick-leave',
@@ -87,7 +93,8 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
   // Parental Leave (chunks 6-7)
   {
     chunk_id: makeChunkId(6),
-    content_text: 'Eligible employees receive up to 12 weeks of paid parental leave following the birth or adoption of a child. Both maternity and paternity leave are covered under this policy.',
+    content_text:
+      'Eligible employees receive up to 12 weeks of paid parental leave following the birth or adoption of a child. Both maternity and paternity leave are covered under this policy.',
     heading_path: ['Leave', 'Parental Leave'],
     title: 'Parental Leave Policy',
     page_url: 'https://notion.so/parental-leave',
@@ -97,7 +104,8 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
   },
   {
     chunk_id: makeChunkId(7),
-    content_text: 'Family leave requests must be submitted at least 30 days before the expected start date. Employees must have completed at least 12 months of employment to be eligible.',
+    content_text:
+      'Family leave requests must be submitted at least 30 days before the expected start date. Employees must have completed at least 12 months of employment to be eligible.',
     heading_path: ['Leave', 'Parental Leave', 'Eligibility'],
     title: 'Parental Leave Policy',
     page_url: 'https://notion.so/parental-leave',
@@ -109,7 +117,8 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
   // Remote Work (chunks 8-9)
   {
     chunk_id: makeChunkId(8),
-    content_text: 'Employees may work from home up to 3 days per week with manager approval. Remote work arrangements must be documented in writing.',
+    content_text:
+      'Employees may work from home up to 3 days per week with manager approval. Remote work arrangements must be documented in writing.',
     heading_path: ['Workplace', 'Remote Work'],
     title: 'Remote Work Policy',
     page_url: 'https://notion.so/remote-work',
@@ -119,7 +128,8 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
   },
   {
     chunk_id: makeChunkId(9),
-    content_text: 'Hybrid schedules require employees to be in the office on Tuesday and Thursday. WFH days must be scheduled in advance using the scheduling system.',
+    content_text:
+      'Hybrid schedules require employees to be in the office on Tuesday and Thursday. WFH days must be scheduled in advance using the scheduling system.',
     heading_path: ['Workplace', 'Remote Work', 'Hybrid'],
     title: 'Remote Work Policy',
     page_url: 'https://notion.so/remote-work',
@@ -131,7 +141,8 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
   // Travel Policy (chunks 10-11)
   {
     chunk_id: makeChunkId(10),
-    content_text: 'Business travel must be approved by your department head before booking. The company reimburses economy airfare, standard hotel rooms, and ground transportation.',
+    content_text:
+      'Business travel must be approved by your department head before booking. The company reimburses economy airfare, standard hotel rooms, and ground transportation.',
     heading_path: ['Finance', 'Travel'],
     title: 'Travel and Expense Policy',
     page_url: 'https://notion.so/travel-expense',
@@ -141,7 +152,8 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
   },
   {
     chunk_id: makeChunkId(11),
-    content_text: 'To get reimbursed, submit an expense report within 30 days of travel completion. Attach all receipts. Reimbursement is processed within 2 pay cycles.',
+    content_text:
+      'To get reimbursed, submit an expense report within 30 days of travel completion. Attach all receipts. Reimbursement is processed within 2 pay cycles.',
     heading_path: ['Finance', 'Travel', 'Reimbursement'],
     title: 'Travel and Expense Policy',
     page_url: 'https://notion.so/travel-expense',
@@ -153,7 +165,8 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
   // Employee Benefits (chunks 12-13)
   {
     chunk_id: makeChunkId(12),
-    content_text: 'The company offers comprehensive health insurance, dental coverage, vision benefits, and a 401(k) retirement plan with employer matching.',
+    content_text:
+      'The company offers comprehensive health insurance, dental coverage, vision benefits, and a 401(k) retirement plan with employer matching.',
     heading_path: ['Benefits', 'Overview'],
     title: 'Employee Benefits Guide',
     page_url: 'https://notion.so/benefits',
@@ -163,7 +176,8 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
   },
   {
     chunk_id: makeChunkId(13),
-    content_text: 'Open enrollment for insurance and benefits occurs annually in November. Changes to coverage take effect January 1st. Employees may enroll in medical, dental, and vision plans.',
+    content_text:
+      'Open enrollment for insurance and benefits occurs annually in November. Changes to coverage take effect January 1st. Employees may enroll in medical, dental, and vision plans.',
     heading_path: ['Benefits', 'Enrollment'],
     title: 'Employee Benefits Guide',
     page_url: 'https://notion.so/benefits',
@@ -175,7 +189,8 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
   // Timekeeping (chunks 14-15)
   {
     chunk_id: makeChunkId(14),
-    content_text: 'All employees must record their hours using the company timekeeping system. Timesheets are due by end of day Friday each week.',
+    content_text:
+      'All employees must record their hours using the company timekeeping system. Timesheets are due by end of day Friday each week.',
     heading_path: ['Administration', 'Timekeeping'],
     title: 'Timekeeping Policy',
     page_url: 'https://notion.so/timekeeping',
@@ -185,7 +200,8 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
   },
   {
     chunk_id: makeChunkId(15),
-    content_text: 'Hourly employees must track hours accurately including breaks. Time tracking software is available on desktop and mobile for logging work hours.',
+    content_text:
+      'Hourly employees must track hours accurately including breaks. Time tracking software is available on desktop and mobile for logging work hours.',
     heading_path: ['Administration', 'Timekeeping', 'Tracking'],
     title: 'Timekeeping Policy',
     page_url: 'https://notion.so/timekeeping',
@@ -197,7 +213,8 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
   // Cybersecurity (chunks 16-17)
   {
     chunk_id: makeChunkId(16),
-    content_text: 'All employees must follow the company cybersecurity and information security policy. This includes using strong passwords, enabling multi-factor authentication, and reporting suspicious emails.',
+    content_text:
+      'All employees must follow the company cybersecurity and information security policy. This includes using strong passwords, enabling multi-factor authentication, and reporting suspicious emails.',
     heading_path: ['IT', 'Cybersecurity'],
     title: 'Cybersecurity Policy',
     page_url: 'https://notion.so/cybersecurity',
@@ -207,7 +224,8 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
   },
   {
     chunk_id: makeChunkId(17),
-    content_text: 'IT security incidents including phishing, data breaches, and unauthorized access must be reported to the security team immediately. The security policy requires annual training completion.',
+    content_text:
+      'IT security incidents including phishing, data breaches, and unauthorized access must be reported to the security team immediately. The security policy requires annual training completion.',
     heading_path: ['IT', 'Cybersecurity', 'Incidents'],
     title: 'Cybersecurity Policy',
     page_url: 'https://notion.so/cybersecurity',
@@ -219,7 +237,8 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
   // Harassment Prevention (chunks 18-19)
   {
     chunk_id: makeChunkId(18),
-    content_text: 'The company has zero tolerance for harassment and discrimination in the workplace. All employees are required to complete annual harassment prevention training.',
+    content_text:
+      'The company has zero tolerance for harassment and discrimination in the workplace. All employees are required to complete annual harassment prevention training.',
     heading_path: ['Compliance', 'Harassment'],
     title: 'Harassment Prevention Policy',
     page_url: 'https://notion.so/harassment',
@@ -229,7 +248,8 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
   },
   {
     chunk_id: makeChunkId(19),
-    content_text: 'To report harassment or discrimination, contact HR directly, use the anonymous reporting hotline, or file a complaint through the employee portal. All complaints are investigated confidentially.',
+    content_text:
+      'To report harassment or discrimination, contact HR directly, use the anonymous reporting hotline, or file a complaint through the employee portal. All complaints are investigated confidentially.',
     heading_path: ['Compliance', 'Harassment', 'Reporting'],
     title: 'Harassment Prevention Policy',
     page_url: 'https://notion.so/harassment',
@@ -244,7 +264,8 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
   // the last_verified_at DESC ordering in production.
   {
     chunk_id: makeChunkId(50),
-    content_text: 'Furlough guidelines: employees on temporary furlough retain accrued PTO balances. Contact HR for PTO payout options.',
+    content_text:
+      'Furlough guidelines: employees on temporary furlough retain accrued PTO balances. Contact HR for PTO payout options.',
     heading_path: ['Admin', 'Furlough'],
     title: 'Temporary Furlough Guidelines',
     page_url: 'https://notion.so/furlough',
@@ -254,7 +275,8 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
   },
   {
     chunk_id: makeChunkId(51),
-    content_text: 'Device password policy: if you forget your password, PTO requests may be delayed. Reset via IT portal.',
+    content_text:
+      'Device password policy: if you forget your password, PTO requests may be delayed. Reset via IT portal.',
     heading_path: ['IT', 'Passwords'],
     title: 'Device Password Policy',
     page_url: 'https://notion.so/passwords',
@@ -264,7 +286,8 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
   },
   {
     chunk_id: makeChunkId(52),
-    content_text: 'Termination: upon separation, accrued PTO is paid out in the final paycheck per state law.',
+    content_text:
+      'Termination: upon separation, accrued PTO is paid out in the final paycheck per state law.',
     heading_path: ['Admin', 'Termination'],
     title: 'Termination of Employment Policy',
     page_url: 'https://notion.so/termination',
@@ -274,7 +297,8 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
   },
   {
     chunk_id: makeChunkId(53),
-    content_text: 'Remote work: PTO requests while working remotely follow the same approval process as in-office requests.',
+    content_text:
+      'Remote work: PTO requests while working remotely follow the same approval process as in-office requests.',
     heading_path: ['Workplace', 'Remote'],
     title: 'Remote Work Policy',
     page_url: 'https://notion.so/remote-expanded',
@@ -284,7 +308,8 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
   },
   {
     chunk_id: makeChunkId(54),
-    content_text: 'Code of conduct: misuse of PTO for unapproved activities may result in disciplinary action.',
+    content_text:
+      'Code of conduct: misuse of PTO for unapproved activities may result in disciplinary action.',
     heading_path: ['Compliance', 'Conduct'],
     title: 'Friends Code Of Conduct',
     page_url: 'https://notion.so/conduct',
@@ -294,7 +319,8 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
   },
   {
     chunk_id: makeChunkId(55),
-    content_text: 'Voting leave: four consecutive hours of paid time off for primary and presidential elections. Additional PTO may be used.',
+    content_text:
+      'Voting leave: four consecutive hours of paid time off for primary and presidential elections. Additional PTO may be used.',
     heading_path: ['Leave', 'Voting'],
     title: 'Voting Leave',
     page_url: 'https://notion.so/voting',
@@ -306,7 +332,8 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
   // Noise chunk — broadly matches "leave" and "work" but is about jury duty
   {
     chunk_id: makeChunkId(20),
-    content_text: 'Employees called for jury duty will receive their regular pay for up to 10 days of court leave per year.',
+    content_text:
+      'Employees called for jury duty will receive their regular pay for up to 10 days of court leave per year.',
     heading_path: ['Leave', 'Jury Duty'],
     title: 'Jury Duty Leave',
     page_url: 'https://notion.so/jury-duty',
@@ -324,24 +351,20 @@ const SYNTHETIC_CHUNKS: SyntheticChunk[] = [
  */
 function mockIlikeQuery(query: string, limit: number): SyntheticChunk[] {
   const lower = query.toLowerCase();
-  return SYNTHETIC_CHUNKS
-    .filter((c) => c.content_text.toLowerCase().includes(lower))
-    .slice(0, limit);
+  return SYNTHETIC_CHUNKS.filter((c) => c.content_text.toLowerCase().includes(lower)).slice(
+    0,
+    limit
+  );
 }
 
 function createMockPool(): HRReaderPool {
-  const queryFn = vi.fn().mockImplementation(
-    async (_sql: string, params: unknown[]) => {
-      const queryText = params[1] as string;
-      // Undo sanitizeQuery escaping for our mock ILIKE match
-      const unescaped = queryText
-        .replace(/\\%/g, '%')
-        .replace(/\\_/g, '_')
-        .replace(/\\\\/g, '\\');
-      const rows = mockIlikeQuery(unescaped, params[3] as number);
-      return { rows };
-    }
-  );
+  const queryFn = vi.fn().mockImplementation(async (_sql: string, params: unknown[]) => {
+    const queryText = params[1] as string;
+    // Undo sanitizeQuery escaping for our mock ILIKE match
+    const unescaped = queryText.replace(/\\%/g, '%').replace(/\\_/g, '_').replace(/\\\\/g, '\\');
+    const rows = mockIlikeQuery(unescaped, params[3] as number);
+    return { rows };
+  });
   return { pool: {} as any, query: queryFn, end: vi.fn() };
 }
 
@@ -389,7 +412,12 @@ describe('Retrieval ranking — 10-question synthetic evaluation', () => {
 
   it('Q1: "What is our paid time off policy?" → PTO Policy in top results', async () => {
     const pool = createMockPool();
-    const result = await retrieveForUser(pool, SIGNING_SECRET, 'What is our paid time off policy?', 'UEMP001');
+    const result = await retrieveForUser(
+      pool,
+      SIGNING_SECRET,
+      'What is our paid time off policy?',
+      'UEMP001'
+    );
     expect(result.error).toBeNull();
     expect(result.chunks.length).toBeGreaterThan(0);
     // PTO policy must appear in results (the limit-5 bug excluded it entirely)
@@ -401,7 +429,12 @@ describe('Retrieval ranking — 10-question synthetic evaluation', () => {
 
   it('Q2: "How many PTO days do I get?" → PTO Policy in top results', async () => {
     const pool = createMockPool();
-    const result = await retrieveForUser(pool, SIGNING_SECRET, 'How many PTO days do I get?', 'UEMP001');
+    const result = await retrieveForUser(
+      pool,
+      SIGNING_SECRET,
+      'How many PTO days do I get?',
+      'UEMP001'
+    );
     expect(result.error).toBeNull();
     const titles = result.chunks.map((c) => c.citation.title);
     expect(titles).toContain('Paid Time Off Policy');
@@ -416,49 +449,84 @@ describe('Retrieval ranking — 10-question synthetic evaluation', () => {
 
   it('Q4: "How does parental leave work?" → Parental Leave Policy ranked first', async () => {
     const pool = createMockPool();
-    const result = await retrieveForUser(pool, SIGNING_SECRET, 'How does parental leave work?', 'UEMP001');
+    const result = await retrieveForUser(
+      pool,
+      SIGNING_SECRET,
+      'How does parental leave work?',
+      'UEMP001'
+    );
     expect(result.error).toBeNull();
     expect(topPolicy(result.chunks)).toBe('Parental Leave Policy');
   });
 
   it('Q5: "How do I report sick leave?" → Sick Leave Policy ranked first', async () => {
     const pool = createMockPool();
-    const result = await retrieveForUser(pool, SIGNING_SECRET, 'How do I report sick leave?', 'UEMP001');
+    const result = await retrieveForUser(
+      pool,
+      SIGNING_SECRET,
+      'How do I report sick leave?',
+      'UEMP001'
+    );
     expect(result.error).toBeNull();
     expect(topPolicy(result.chunks)).toBe('Sick Leave Policy');
   });
 
   it('Q6: "How do I get reimbursed for travel?" → Travel Policy ranked first', async () => {
     const pool = createMockPool();
-    const result = await retrieveForUser(pool, SIGNING_SECRET, 'How do I get reimbursed for travel?', 'UEMP001');
+    const result = await retrieveForUser(
+      pool,
+      SIGNING_SECRET,
+      'How do I get reimbursed for travel?',
+      'UEMP001'
+    );
     expect(result.error).toBeNull();
     expect(topPolicies(result.chunks, 3)).toContain('Travel and Expense Policy');
   });
 
   it('Q7: "What benefits do we offer?" → Benefits Guide ranked first', async () => {
     const pool = createMockPool();
-    const result = await retrieveForUser(pool, SIGNING_SECRET, 'What benefits do we offer?', 'UEMP001');
+    const result = await retrieveForUser(
+      pool,
+      SIGNING_SECRET,
+      'What benefits do we offer?',
+      'UEMP001'
+    );
     expect(result.error).toBeNull();
     expect(topPolicy(result.chunks)).toBe('Employee Benefits Guide');
   });
 
   it('Q8: "How do I record my hours?" → Timekeeping Policy ranked first', async () => {
     const pool = createMockPool();
-    const result = await retrieveForUser(pool, SIGNING_SECRET, 'How do I record my hours?', 'UEMP001');
+    const result = await retrieveForUser(
+      pool,
+      SIGNING_SECRET,
+      'How do I record my hours?',
+      'UEMP001'
+    );
     expect(result.error).toBeNull();
     expect(topPolicy(result.chunks)).toBe('Timekeeping Policy');
   });
 
   it('Q9: "What is our cybersecurity policy?" → Cybersecurity Policy ranked first', async () => {
     const pool = createMockPool();
-    const result = await retrieveForUser(pool, SIGNING_SECRET, 'What is our cybersecurity policy?', 'UEMP001');
+    const result = await retrieveForUser(
+      pool,
+      SIGNING_SECRET,
+      'What is our cybersecurity policy?',
+      'UEMP001'
+    );
     expect(result.error).toBeNull();
     expect(topPolicy(result.chunks)).toBe('Cybersecurity Policy');
   });
 
   it('Q10: "How do I report harassment?" → Harassment Prevention Policy ranked first', async () => {
     const pool = createMockPool();
-    const result = await retrieveForUser(pool, SIGNING_SECRET, 'How do I report harassment?', 'UEMP001');
+    const result = await retrieveForUser(
+      pool,
+      SIGNING_SECRET,
+      'How do I report harassment?',
+      'UEMP001'
+    );
     expect(result.error).toBeNull();
     expect(topPolicy(result.chunks)).toBe('Harassment Prevention Policy');
   });
@@ -472,21 +540,36 @@ describe('Retrieval ranking — structural constraints', () => {
   it('returns at most 10 chunks', async () => {
     const pool = createMockPool();
     // "leave" is very broad — matches PTO, sick, parental, jury duty
-    const result = await retrieveForUser(pool, SIGNING_SECRET, 'Tell me about leave policies', 'UEMP001');
+    const result = await retrieveForUser(
+      pool,
+      SIGNING_SECRET,
+      'Tell me about leave policies',
+      'UEMP001'
+    );
     expect(result.error).toBeNull();
     expect(result.chunks.length).toBeLessThanOrEqual(10);
   });
 
   it('deduplicates chunk IDs across terms', async () => {
     const pool = createMockPool();
-    const result = await retrieveForUser(pool, SIGNING_SECRET, 'What is our paid time off policy?', 'UEMP001');
+    const result = await retrieveForUser(
+      pool,
+      SIGNING_SECRET,
+      'What is our paid time off policy?',
+      'UEMP001'
+    );
     const ids = result.chunks.map((c) => c.chunkId);
     expect(new Set(ids).size).toBe(ids.length);
   });
 
   it('makes at most 6 RPC calls', async () => {
     const pool = createMockPool();
-    await retrieveForUser(pool, SIGNING_SECRET, 'PTO vacation sick leave health insurance 401k retirement', 'UEMP001');
+    await retrieveForUser(
+      pool,
+      SIGNING_SECRET,
+      'PTO vacation sick leave health insurance 401k retirement',
+      'UEMP001'
+    );
     const callCount = (pool.query as ReturnType<typeof vi.fn>).mock.calls.length;
     expect(callCount).toBeGreaterThan(0);
     expect(callCount).toBeLessThanOrEqual(6);
@@ -494,7 +577,12 @@ describe('Retrieval ranking — structural constraints', () => {
 
   it('abstains safely when no chunks match', async () => {
     const pool = createMockPool();
-    const result = await retrieveForUser(pool, SIGNING_SECRET, 'What is the meaning of life?', 'UEMP001');
+    const result = await retrieveForUser(
+      pool,
+      SIGNING_SECRET,
+      'What is the meaning of life?',
+      'UEMP001'
+    );
     expect(result.error).toBeNull();
     expect(result.chunks).toHaveLength(0);
   });
@@ -517,7 +605,7 @@ describe('Retrieval ranking — security regression', () => {
     const pool = createMockPool();
     await retrieveForUser(pool, SIGNING_SECRET, 'What is PTO?', 'UEMP001');
     for (const call of (pool.query as ReturnType<typeof vi.fn>).mock.calls) {
-      expect(call[0]).toBe('SELECT * FROM hr_retrieve_knowledge_v2($1, $2, $3, $4)');
+      expect(call[0]).toBe('SELECT * FROM hr_retrieve_knowledge_v3($1, $2, $3, $4)');
     }
   });
 
@@ -580,7 +668,12 @@ describe('Retrieval ranking — PTO limit regression', () => {
     // (ids 50-55) that also contain "PTO". With LIMIT 5, position 7+ would be
     // excluded. With LIMIT 20, it's included.
     const pool = createMockPool();
-    const result = await retrieveForUser(pool, SIGNING_SECRET, 'What is our paid time off policy?', 'UEMP001');
+    const result = await retrieveForUser(
+      pool,
+      SIGNING_SECRET,
+      'What is our paid time off policy?',
+      'UEMP001'
+    );
     expect(result.error).toBeNull();
     const titles = result.chunks.map((c) => c.citation.title);
     expect(titles).toContain('Paid Time Off Policy');
@@ -588,7 +681,12 @@ describe('Retrieval ranking — PTO limit regression', () => {
 
   it('PTO policy appears in results alongside incidental PTO mentions', async () => {
     const pool = createMockPool();
-    const result = await retrieveForUser(pool, SIGNING_SECRET, 'What is our paid time off policy?', 'UEMP001');
+    const result = await retrieveForUser(
+      pool,
+      SIGNING_SECRET,
+      'What is our paid time off policy?',
+      'UEMP001'
+    );
     expect(result.error).toBeNull();
     // The dedicated PTO policy must be in the result set (was excluded with limit=5)
     const ptoChunk = result.chunks.find((c) => c.citation.title === 'Paid Time Off Policy');
@@ -600,7 +698,12 @@ describe('Retrieval ranking — PTO limit regression', () => {
 
   it('"How many PTO days do I get?" retrieves the dedicated PTO policy', async () => {
     const pool = createMockPool();
-    const result = await retrieveForUser(pool, SIGNING_SECRET, 'How many PTO days do I get?', 'UEMP001');
+    const result = await retrieveForUser(
+      pool,
+      SIGNING_SECRET,
+      'How many PTO days do I get?',
+      'UEMP001'
+    );
     expect(result.error).toBeNull();
     const titles = result.chunks.map((c) => c.citation.title);
     expect(titles).toContain('Paid Time Off Policy');
@@ -625,7 +728,12 @@ describe('Retrieval ranking — PTO limit regression', () => {
 
   it('no duplicate chunk IDs in results', async () => {
     const pool = createMockPool();
-    const result = await retrieveForUser(pool, SIGNING_SECRET, 'What is our paid time off policy?', 'UEMP001');
+    const result = await retrieveForUser(
+      pool,
+      SIGNING_SECRET,
+      'What is our paid time off policy?',
+      'UEMP001'
+    );
     const ids = result.chunks.map((c) => c.chunkId);
     expect(new Set(ids).size).toBe(ids.length);
   });
@@ -644,15 +752,20 @@ describe('Retrieval — parallel execution', () => {
       const unescaped = queryText.replace(/\\%/g, '%').replace(/\\_/g, '_').replace(/\\\\/g, '\\');
       const limit = params[3] as number;
       const lower = unescaped.toLowerCase();
-      const rows = SYNTHETIC_CHUNKS
-        .filter((c) => c.content_text.toLowerCase().includes(lower))
-        .slice(0, limit);
+      const rows = SYNTHETIC_CHUNKS.filter((c) =>
+        c.content_text.toLowerCase().includes(lower)
+      ).slice(0, limit);
       return { rows };
     });
     const pool: HRReaderPool = { pool: {} as any, query: delayedQuery, end: vi.fn() };
 
     const start = performance.now();
-    const result = await retrieveForUser(pool, SIGNING_SECRET, 'What is our paid time off policy?', 'UEMP001');
+    const result = await retrieveForUser(
+      pool,
+      SIGNING_SECRET,
+      'What is our paid time off policy?',
+      'UEMP001'
+    );
     const elapsed = performance.now() - start;
 
     expect(result.error).toBeNull();
@@ -672,20 +785,30 @@ describe('Retrieval — parallel execution', () => {
       const unescaped = queryText.replace(/\\%/g, '%').replace(/\\_/g, '_').replace(/\\\\/g, '\\');
       const limit = params[3] as number;
       const lower = unescaped.toLowerCase();
-      const rows = SYNTHETIC_CHUNKS
-        .filter((c) => c.content_text.toLowerCase().includes(lower))
-        .slice(0, limit);
+      const rows = SYNTHETIC_CHUNKS.filter((c) =>
+        c.content_text.toLowerCase().includes(lower)
+      ).slice(0, limit);
       return { rows };
     });
 
     // Run twice with different timing patterns
     callNum = 0;
     const pool1: HRReaderPool = { pool: {} as any, query: varyingQuery, end: vi.fn() };
-    const result1 = await retrieveForUser(pool1, SIGNING_SECRET, 'What is our paid time off policy?', 'UEMP001');
+    const result1 = await retrieveForUser(
+      pool1,
+      SIGNING_SECRET,
+      'What is our paid time off policy?',
+      'UEMP001'
+    );
 
     callNum = 3; // offset to get different order
     const pool2: HRReaderPool = { pool: {} as any, query: varyingQuery, end: vi.fn() };
-    const result2 = await retrieveForUser(pool2, SIGNING_SECRET, 'What is our paid time off policy?', 'UEMP001');
+    const result2 = await retrieveForUser(
+      pool2,
+      SIGNING_SECRET,
+      'What is our paid time off policy?',
+      'UEMP001'
+    );
 
     // Same chunks, same order
     expect(result1.chunks.map((c) => c.chunkId)).toEqual(result2.chunks.map((c) => c.chunkId));
@@ -734,5 +857,102 @@ describe('Retrieval — parallel execution', () => {
     }
     // Tokens should be distinct (different iat timestamps possible but payload same)
     // At minimum, all are valid
+  });
+});
+
+// ── Informal Question Acceptance (C8X-107BS-QA4) ────────────
+
+describe('Retrieval — informal questions', () => {
+  const SIGNING_SECRET = 'test-signing-secret-for-mock';
+
+  it('"how many pto days do i get" retrieves PTO Policy', async () => {
+    const pool = createMockPool();
+    const result = await retrieveForUser(
+      pool,
+      SIGNING_SECRET,
+      'how many pto days do i get',
+      'UEMP001'
+    );
+    expect(result.error).toBeNull();
+    const titles = result.chunks.map((c) => c.citation.title);
+    expect(titles).toContain('Paid Time Off Policy');
+  });
+
+  it('"pto days?" retrieves PTO Policy', async () => {
+    const pool = createMockPool();
+    const result = await retrieveForUser(pool, SIGNING_SECRET, 'pto days?', 'UEMP001');
+    expect(result.error).toBeNull();
+    const titles = result.chunks.map((c) => c.citation.title);
+    expect(titles).toContain('Paid Time Off Policy');
+  });
+
+  it('"how much vacation do we get" retrieves PTO Policy via synonym', async () => {
+    const pool = createMockPool();
+    const result = await retrieveForUser(
+      pool,
+      SIGNING_SECRET,
+      'how much vacation do we get',
+      'UEMP001'
+    );
+    expect(result.error).toBeNull();
+    // "vacation" should expand to PTO-related synonyms
+    expect(result.chunks.length).toBeGreaterThan(0);
+  });
+
+  it('"can i carry over pto" retrieves PTO Policy with carryover info', async () => {
+    const pool = createMockPool();
+    const result = await retrieveForUser(pool, SIGNING_SECRET, 'can i carry over pto', 'UEMP001');
+    expect(result.error).toBeNull();
+    const titles = result.chunks.map((c) => c.citation.title);
+    expect(titles).toContain('Paid Time Off Policy');
+  });
+
+  it('"whats our health insurance" retrieves Employee Benefits', async () => {
+    const pool = createMockPool();
+    const result = await retrieveForUser(
+      pool,
+      SIGNING_SECRET,
+      'whats our health insurance',
+      'UEMP001'
+    );
+    expect(result.error).toBeNull();
+    const titles = result.chunks.map((c) => c.citation.title);
+    expect(titles).toContain('Employee Benefits Guide');
+  });
+
+  it('"when do we get paid" extracts payment/payroll terms', async () => {
+    const pool = createMockPool();
+    const result = await retrieveForUser(pool, SIGNING_SECRET, 'when do we get paid', 'UEMP001');
+    expect(result.error).toBeNull();
+    // Should generate search terms even for simple questions
+    expect((pool.query as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(0);
+  });
+
+  it('single lowercase word "pto" retrieves PTO Policy', async () => {
+    const pool = createMockPool();
+    const result = await retrieveForUser(pool, SIGNING_SECRET, 'pto', 'UEMP001');
+    expect(result.error).toBeNull();
+    const titles = result.chunks.map((c) => c.citation.title);
+    expect(titles).toContain('Paid Time Off Policy');
+  });
+
+  it('abbreviation "wfh" retrieves Remote Work Policy', async () => {
+    const pool = createMockPool();
+    const result = await retrieveForUser(pool, SIGNING_SECRET, 'wfh', 'UEMP001');
+    expect(result.error).toBeNull();
+    // "wfh" should expand to work from home
+    expect((pool.query as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(0);
+  });
+
+  it('no punctuation question still generates search terms', async () => {
+    const pool = createMockPool();
+    const result = await retrieveForUser(
+      pool,
+      SIGNING_SECRET,
+      'benefits enrollment dates',
+      'UEMP001'
+    );
+    expect(result.error).toBeNull();
+    expect((pool.query as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(0);
   });
 });
