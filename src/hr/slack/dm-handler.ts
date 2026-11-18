@@ -65,7 +65,8 @@ export const PROCESSING_INDICATOR_TEXT = '🔍 Looking up FFTC policies…';
 export type SlackPostFn = (
   channel: string,
   text: string,
-  blocks?: KnownBlock[]
+  blocks?: KnownBlock[],
+  threadTs?: string
 ) => Promise<{ ts: string | undefined }>;
 
 /** Update an existing bot message by timestamp. */
@@ -80,7 +81,12 @@ export type SlackUpdateFn = (
  * Legacy reply function type — kept for backward compatibility with
  * DM path and tests that don't need acknowledgement timestamps.
  */
-export type SlackReplyFn = (channel: string, text: string, blocks?: KnownBlock[]) => Promise<void>;
+export type SlackReplyFn = (
+  channel: string,
+  text: string,
+  blocks?: KnownBlock[],
+  threadTs?: string
+) => Promise<void>;
 
 /** Optional function to resolve an employee's preferred first name for greeting. */
 export type EmployeeNameFn = (slackUserId: string) => Promise<string | null>;
@@ -126,11 +132,12 @@ export function registerMessageHandler(config: DMHandlerConfig): void {
     const channelId = event.channel;
 
     // Build Slack operation functions from the live client
-    const post: SlackPostFn = async (ch, text, blocks?) => {
+    const post: SlackPostFn = async (ch, text, blocks?, threadTs?) => {
       const resp = await client.chat.postMessage({
         channel: ch,
         text,
         ...(blocks ? { blocks } : {}),
+        ...(threadTs ? { thread_ts: threadTs } : {}),
       });
       return { ts: resp.ts };
     };
@@ -145,8 +152,8 @@ export function registerMessageHandler(config: DMHandlerConfig): void {
     };
 
     // Legacy reply (for DM path)
-    const reply: SlackReplyFn = async (ch, text, blocks?) => {
-      await post(ch, text, blocks);
+    const reply: SlackReplyFn = async (ch, text, blocks?, threadTs?) => {
+      await post(ch, text, blocks, threadTs);
     };
 
     // Extract thread_ts for conversation context. If the message is in a thread,
@@ -271,7 +278,7 @@ export async function handleMessage(input: HandleMessageInput): Promise<void> {
       try {
         const searchResult = await searchHRKnowledge(input.readerPool.pool, userId, searchQuery);
         const responseText = formatSearchResultsForSlack(searchResult);
-        await reply(channelId, responseText);
+        await reply(channelId, responseText, undefined, threadTs);
 
         if (!isSearchError(searchResult)) {
           // eslint-disable-next-line no-console
@@ -283,7 +290,12 @@ export async function handleMessage(input: HandleMessageInput): Promise<void> {
         const errorMessage = err instanceof Error ? err.message : String(err);
         // eslint-disable-next-line no-console
         console.error('[HR Search] Unexpected error:', errorMessage);
-        await reply(channelId, '❌ Search encountered an unexpected error. Please try again.');
+        await reply(
+          channelId,
+          '❌ Search encountered an unexpected error. Please try again.',
+          undefined,
+          threadTs
+        );
       }
       return;
     }
@@ -294,10 +306,11 @@ export async function handleMessage(input: HandleMessageInput): Promise<void> {
     // ── Post processing indicator ─────────────────────────
     // Only posted after all authorization checks pass.
     // Contains no employee data, question text, or policy content.
+    // Posted in-thread so follow-up replies share the same thread context.
     let ackTs: string | undefined;
     if (post) {
       try {
-        const ackResult = await post(channelId, PROCESSING_INDICATOR_TEXT);
+        const ackResult = await post(channelId, PROCESSING_INDICATOR_TEXT, undefined, threadTs);
         ackTs = ackResult.ts;
       } catch {
         // Acknowledgement failed — continue without it.
@@ -369,12 +382,12 @@ export async function handleMessage(input: HandleMessageInput): Promise<void> {
           }
         }
       } else {
-        // No acknowledgement — deliver as new message (legacy path)
+        // No acknowledgement — deliver as new message in-thread (legacy path)
         try {
-          await reply(channelId, payload.text, payload.blocks);
+          await reply(channelId, payload.text, payload.blocks, threadTs);
           deliveryOutcome = 'reply_blocks';
         } catch {
-          await reply(channelId, formatPipelineResultForSlack(result));
+          await reply(channelId, formatPipelineResultForSlack(result), undefined, threadTs);
           deliveryOutcome = 'reply_plain';
         }
       }
@@ -419,7 +432,7 @@ export async function handleMessage(input: HandleMessageInput): Promise<void> {
         if (ackTs && update) {
           await update(channelId, ackTs, errorMsg);
         } else {
-          await reply(channelId, errorMsg);
+          await reply(channelId, errorMsg, undefined, threadTs);
         }
       } catch {
         // Cannot safely send anything

@@ -13,7 +13,13 @@
  *   - Employee names are escaped to prevent injection.
  */
 
-import type { KnownBlock, SectionBlock, HeaderBlock, DividerBlock, ContextBlock } from '@slack/types';
+import type {
+  KnownBlock,
+  SectionBlock,
+  HeaderBlock,
+  DividerBlock,
+  ContextBlock,
+} from '@slack/types';
 import type { HRAnswerResult } from '../llm/hr-answer-foundation.js';
 import type { HRPipelineResult } from '../llm/hr-answer-pipeline.js';
 
@@ -37,13 +43,37 @@ const MAX_FALLBACK_TEXT = 3000;
 const TOPIC_EMOJIS: Array<{ pattern: RegExp; emoji: string; label: string }> = [
   { pattern: /\b(pto|paid time off|vacation|time off)\b/i, emoji: '🏖️', label: 'Paid Time Off' },
   { pattern: /\b(sick leave|sick day|illness)\b/i, emoji: '🤒', label: 'Sick Leave' },
-  { pattern: /\b(parental leave|maternity|paternity|family leave)\b/i, emoji: '👶', label: 'Parental Leave' },
-  { pattern: /\b(remote work|work from home|wfh|hybrid|telecommut)/i, emoji: '🏠', label: 'Remote Work' },
-  { pattern: /\b(cybersecurity|cyber\s*security|security\s*policy|phishing|password\s*policy)\b/i, emoji: '🛡️', label: 'Cybersecurity' },
-  { pattern: /\b(benefits|insurance|401k|dental|vision|medical)\b/i, emoji: '💼', label: 'Employee Benefits' },
+  {
+    pattern: /\b(parental leave|maternity|paternity|family leave)\b/i,
+    emoji: '👶',
+    label: 'Parental Leave',
+  },
+  {
+    pattern: /\b(remote work|work from home|wfh|hybrid|telecommut)/i,
+    emoji: '🏠',
+    label: 'Remote Work',
+  },
+  {
+    pattern: /\b(cybersecurity|cyber\s*security|security\s*policy|phishing|password\s*policy)\b/i,
+    emoji: '🛡️',
+    label: 'Cybersecurity',
+  },
+  {
+    pattern: /\b(benefits|insurance|401k|dental|vision|medical)\b/i,
+    emoji: '💼',
+    label: 'Employee Benefits',
+  },
   { pattern: /\b(travel|reimburs|expense)\b/i, emoji: '✈️', label: 'Travel & Expenses' },
-  { pattern: /\b(harassment|discrimination|complaint|reporting)\b/i, emoji: '⚖️', label: 'Workplace Compliance' },
-  { pattern: /\b(timekeeping|timesheet|hours|time tracking)\b/i, emoji: '⏰', label: 'Timekeeping' },
+  {
+    pattern: /\b(harassment|discrimination|complaint|reporting)\b/i,
+    emoji: '⚖️',
+    label: 'Workplace Compliance',
+  },
+  {
+    pattern: /\b(timekeeping|timesheet|hours|time tracking)\b/i,
+    emoji: '⏰',
+    label: 'Timekeeping',
+  },
   { pattern: /\b(holiday|day off)\b/i, emoji: '🎉', label: 'Holidays' },
   { pattern: /\b(onboarding|new hire|orientation)\b/i, emoji: '🚀', label: 'Onboarding' },
   { pattern: /\b(performance|review|evaluation)\b/i, emoji: '📊', label: 'Performance' },
@@ -251,7 +281,8 @@ function deduplicateCitations(
 // ── Greeting ───────────────────────────────────────────────
 
 /** Patterns that suggest the employee is starting a conversation. */
-const GREETING_PATTERNS = /^\s*(hi|hello|hey|good\s*(morning|afternoon|evening)|help|can\s+you\s+help)\b/i;
+const GREETING_PATTERNS =
+  /^\s*(hi|hello|hey|good\s*(morning|afternoon|evening)|help|can\s+you\s+help)\b/i;
 
 /** Sensitive topics where a cheerful greeting would be inappropriate. */
 const SENSITIVE_TOPICS = new Set(['Workplace Compliance', 'Separation']);
@@ -337,7 +368,7 @@ export function renderAnswerAsBlocks(
   // 3. Answer body — split into sections for readability
   const normalized = normalizeToMrkdwn(answerText);
   const sections = splitIntoSections(normalized);
-  const reservedBlocks = 3; // divider + sources + context
+  const reservedBlocks = 4; // divider + sources + footer context + follow-up hint
   let truncated = false;
 
   for (const section of sections) {
@@ -364,7 +395,17 @@ export function renderAnswerAsBlocks(
     : '_Answers are based on approved FFTC policy documents. For clarification, contact HR._';
   blocks.push(contextBlock(footerText));
 
-  // 6. Build plain-text fallback
+  // 6. Follow-up hint (only for grounded answers with citations)
+  //    Abstentions have empty citations and should not show this hint.
+  if (uniqueSources.length > 0) {
+    blocks.push(
+      contextBlock(
+        '💬 _Have a follow-up question? Reply in this thread to continue the conversation._'
+      )
+    );
+  }
+
+  // 7. Build plain-text fallback
   const fallbackText = buildPlainTextFallback(answerText, uniqueSources, truncated);
 
   return { text: fallbackText, blocks, truncated };
@@ -382,9 +423,7 @@ export function renderPipelineResultAsBlocks(
   }
 
   // Failure — simple fallback block
-  const blocks: KnownBlock[] = [
-    sectionBlock(result.fallbackMessage),
-  ];
+  const blocks: KnownBlock[] = [sectionBlock(result.fallbackMessage)];
 
   return { text: result.fallbackMessage, blocks, truncated: false };
 }

@@ -43,10 +43,10 @@ const PTO_SHORT = makeResult(
 
 const PTO_DETAILED = makeResult(
   'FFTC employees receive 18 days of PTO annually, accrued at 6 hours per semi-monthly pay period.\n\n' +
-  '• You begin accruing leave on your hire date\n' +
-  '• You can rollover up to 240 hours annually\n' +
-  '• The maximum PTO balance is 360 hours\n\n' +
-  'To request time off, submit a request through Unanet at least two weeks in advance.',
+    '• You begin accruing leave on your hire date\n' +
+    '• You can rollover up to 240 hours annually\n' +
+    '• The maximum PTO balance is 360 hours\n\n' +
+    'To request time off, submit a request through Unanet at least two weeks in advance.',
   [
     { chunkId: 'a', sourceUrl: 'https://notion.so/pto#b1', title: 'Paid Time Off (PTO)' },
     { chunkId: 'b', sourceUrl: 'https://notion.so/pto#b2', title: 'Paid Time Off (PTO)' },
@@ -55,10 +55,10 @@ const PTO_DETAILED = makeResult(
 
 const PARENTAL_LEAVE = makeResult(
   'Parental leave includes all caregivers, regardless of gender.\n\n' +
-  '*Company Parental Leave*\n• 12 weeks of paid parental leave\n• Available after 12 months of employment\n\n' +
-  '*New York Paid Family Leave*\n• Up to 12 weeks at 67% of average weekly wage\n• Funded through employee payroll deductions\n• Must be processed within 30 days\n\n' +
-  '*Washington Paid Family and Medical Leave*\n• Up to 12 weeks for family leave\n• Benefits calculated based on state formula\n\n' +
-  '*California Paid Family Leave*\n• Up to 8 weeks at approximately 60-70% of wages\n• Administered through EDD',
+    '*Company Parental Leave*\n• 12 weeks of paid parental leave\n• Available after 12 months of employment\n\n' +
+    '*New York Paid Family Leave*\n• Up to 12 weeks at 67% of average weekly wage\n• Funded through employee payroll deductions\n• Must be processed within 30 days\n\n' +
+    '*Washington Paid Family and Medical Leave*\n• Up to 12 weeks for family leave\n• Benefits calculated based on state formula\n\n' +
+    '*California Paid Family Leave*\n• Up to 8 weeks at approximately 60-70% of wages\n• Administered through EDD',
   [
     { chunkId: 'a', sourceUrl: 'https://notion.so/parental#b1', title: 'Parental Leave' },
     { chunkId: 'b', sourceUrl: 'https://notion.so/parental#b2', title: 'Parental Leave' },
@@ -85,24 +85,37 @@ const SICK_LEAVE = makeResult(
 
 const HARASSMENT = makeResult(
   'The company has zero tolerance for harassment and discrimination.\n\nTo report:\n• Contact HR directly\n• Use the anonymous reporting hotline\n• File a complaint through the employee portal',
-  [{ chunkId: 'a', sourceUrl: 'https://notion.so/harassment', title: 'Harassment Prevention Policy' }]
+  [
+    {
+      chunkId: 'a',
+      sourceUrl: 'https://notion.so/harassment',
+      title: 'Harassment Prevention Policy',
+    },
+  ]
 );
 
 const ABSTENTION_RESULT = {
   ok: false as const,
   code: 'no_evidence' as const,
-  fallbackMessage: "I couldn't find enough approved HR information to answer that reliably. Please contact your HR team for clarification.",
+  fallbackMessage:
+    "I couldn't find enough approved HR information to answer that reliably. Please contact your HR team for clarification.",
 };
 
 const LONG_SECTION = makeResult(
-  Array.from({ length: 50 }, (_, i) =>
-    `Section ${i + 1}: Detailed policy paragraph with important information about employee rights and obligations under company policy number ${i + 100}.`
+  Array.from(
+    { length: 50 },
+    (_, i) =>
+      `Section ${i + 1}: Detailed policy paragraph with important information about employee rights and obligations under company policy number ${i + 100}.`
   ).join('\n\n'),
   [{ chunkId: 'a', sourceUrl: 'https://notion.so/long', title: 'Comprehensive Policy Guide' }]
 );
 
 const OVERSIZED_PARAGRAPH = makeResult(
-  'Policy overview:\n' + Array.from({ length: 100 }, (_, i) => `• Item ${i + 1}: Important policy detail that must not be lost`).join('\n'),
+  'Policy overview:\n' +
+    Array.from(
+      { length: 100 },
+      (_, i) => `• Item ${i + 1}: Important policy detail that must not be lost`
+    ).join('\n'),
   [{ chunkId: 'a', sourceUrl: 'https://notion.so/big', title: 'Big Policy' }]
 );
 
@@ -127,7 +140,9 @@ describe('shouldGreetByName', () => {
   });
 
   it('greets on "help" message', () => {
-    expect(shouldGreetByName('Can you help me understand parental leave?', 'Jo', ptoTopic)).toBe(true);
+    expect(shouldGreetByName('Can you help me understand parental leave?', 'Jo', ptoTopic)).toBe(
+      true
+    );
   });
 
   it('does NOT greet on direct policy question', () => {
@@ -139,7 +154,9 @@ describe('shouldGreetByName', () => {
   });
 
   it('does NOT greet on sensitive topic', () => {
-    expect(shouldGreetByName('Hi, how do I report harassment?', 'Lapedra', harassmentTopic)).toBe(false);
+    expect(shouldGreetByName('Hi, how do I report harassment?', 'Lapedra', harassmentTopic)).toBe(
+      false
+    );
   });
 
   it('does NOT greet when name is null', () => {
@@ -149,13 +166,21 @@ describe('shouldGreetByName', () => {
 
 describe('buildGreeting', () => {
   it('personalizes when greeting is appropriate', () => {
-    const result = buildGreeting('Alex', { emoji: '🏖️', label: 'Paid Time Off' }, 'Hi, what is PTO?');
+    const result = buildGreeting(
+      'Alex',
+      { emoji: '🏖️', label: 'Paid Time Off' },
+      'Hi, what is PTO?'
+    );
     expect(result).toContain('Alex');
     expect(result).toContain('Paid Time Off');
   });
 
   it('returns empty for direct questions', () => {
-    const result = buildGreeting('Alex', { emoji: '🏖️', label: 'Paid Time Off' }, 'How many PTO days?');
+    const result = buildGreeting(
+      'Alex',
+      { emoji: '🏖️', label: 'Paid Time Off' },
+      'How many PTO days?'
+    );
     expect(result).toBe('');
   });
 
@@ -187,7 +212,9 @@ describe('renderAnswerAsBlocks — structure', () => {
   });
 
   it('detects cybersecurity topic from question', () => {
-    const payload = renderAnswerAsBlocks(CYBERSECURITY, { messageText: 'What is our cybersecurity policy?' });
+    const payload = renderAnswerAsBlocks(CYBERSECURITY, {
+      messageText: 'What is our cybersecurity policy?',
+    });
     const header = payload.blocks[0] as { text: { text: string } };
     expect(header.text.text).toContain('🛡️');
   });
@@ -219,51 +246,64 @@ describe('renderAnswerAsBlocks — topic classification', () => {
 
   // Benefits questions — must show 💼 even when answer mentions PTO
   it('general benefits question → Employee Benefits header', () => {
-    const header = getHeaderText(renderAnswerAsBlocks(BENEFITS, {
-      messageText: 'What benefits do we offer?',
-    }));
+    const header = getHeaderText(
+      renderAnswerAsBlocks(BENEFITS, {
+        messageText: 'What benefits do we offer?',
+      })
+    );
     expect(header).toContain('💼');
     expect(header).toContain('Employee Benefits');
   });
 
   it('benefits with insurance/retirement/parental → Employee Benefits header', () => {
-    const header = getHeaderText(renderAnswerAsBlocks(BENEFITS, {
-      messageText: 'What employee benefits does FFTC offer, including health insurance, retirement, and parental leave?',
-    }));
+    const header = getHeaderText(
+      renderAnswerAsBlocks(BENEFITS, {
+        messageText:
+          'What employee benefits does FFTC offer, including health insurance, retirement, and parental leave?',
+      })
+    );
     expect(header).toContain('💼');
     expect(header).toContain('Employee Benefits');
   });
 
   it('benefits answer containing incidental PTO → Employee Benefits (not PTO)', () => {
     // The BENEFITS fixture mentions "18 days accrued PTO" — must not override topic
-    const header = getHeaderText(renderAnswerAsBlocks(BENEFITS, {
-      messageText: 'What benefits do we offer?',
-    }));
+    const header = getHeaderText(
+      renderAnswerAsBlocks(BENEFITS, {
+        messageText: 'What benefits do we offer?',
+      })
+    );
     expect(header).not.toContain('🏖️');
     expect(header).toContain('💼');
   });
 
   // PTO questions — must show 🏖️
   it('PTO accrual question → Paid Time Off header', () => {
-    const header = getHeaderText(renderAnswerAsBlocks(PTO_SHORT, {
-      messageText: 'How many PTO days do I get?',
-    }));
+    const header = getHeaderText(
+      renderAnswerAsBlocks(PTO_SHORT, {
+        messageText: 'How many PTO days do I get?',
+      })
+    );
     expect(header).toContain('🏖️');
     expect(header).toContain('Paid Time Off');
   });
 
   it('PTO rollover question → Paid Time Off header', () => {
-    const header = getHeaderText(renderAnswerAsBlocks(PTO_DETAILED, {
-      messageText: 'How many PTO days do I get, and can I roll them over?',
-    }));
+    const header = getHeaderText(
+      renderAnswerAsBlocks(PTO_DETAILED, {
+        messageText: 'How many PTO days do I get, and can I roll them over?',
+      })
+    );
     expect(header).toContain('🏖️');
   });
 
   // Parental leave — must show 👶 even when answer mentions PTO
   it('parental leave question → Parental Leave header', () => {
-    const header = getHeaderText(renderAnswerAsBlocks(PARENTAL_LEAVE, {
-      messageText: 'How does parental leave work?',
-    }));
+    const header = getHeaderText(
+      renderAnswerAsBlocks(PARENTAL_LEAVE, {
+        messageText: 'How does parental leave work?',
+      })
+    );
     expect(header).toContain('👶');
     expect(header).toContain('Parental Leave');
   });
@@ -273,34 +313,42 @@ describe('renderAnswerAsBlocks — topic classification', () => {
       'Parental leave is 12 weeks. You may also use accrued PTO to extend your leave.',
       [{ chunkId: 'a', sourceUrl: 'https://notion.so/parental', title: 'Parental Leave' }]
     );
-    const header = getHeaderText(renderAnswerAsBlocks(answerWithPTO, {
-      messageText: 'How does parental leave work?',
-    }));
+    const header = getHeaderText(
+      renderAnswerAsBlocks(answerWithPTO, {
+        messageText: 'How does parental leave work?',
+      })
+    );
     expect(header).toContain('👶');
     expect(header).not.toContain('🏖️');
   });
 
   // Sick leave
   it('sick leave question → Sick Leave header', () => {
-    const header = getHeaderText(renderAnswerAsBlocks(SICK_LEAVE, {
-      messageText: 'How do I report sick leave?',
-    }));
+    const header = getHeaderText(
+      renderAnswerAsBlocks(SICK_LEAVE, {
+        messageText: 'How do I report sick leave?',
+      })
+    );
     expect(header).toContain('🤒');
   });
 
   // Cybersecurity
   it('cybersecurity question → Cybersecurity header', () => {
-    const header = getHeaderText(renderAnswerAsBlocks(CYBERSECURITY, {
-      messageText: 'What is our cybersecurity policy?',
-    }));
+    const header = getHeaderText(
+      renderAnswerAsBlocks(CYBERSECURITY, {
+        messageText: 'What is our cybersecurity policy?',
+      })
+    );
     expect(header).toContain('🛡️');
   });
 
   // Ambiguous multi-policy: question mentions multiple topics
   it('ambiguous question with "benefits" and "PTO" → Employee Benefits', () => {
-    const header = getHeaderText(renderAnswerAsBlocks(BENEFITS, {
-      messageText: 'What benefits and PTO do we offer?',
-    }));
+    const header = getHeaderText(
+      renderAnswerAsBlocks(BENEFITS, {
+        messageText: 'What benefits and PTO do we offer?',
+      })
+    );
     // "benefits" is a broad-topic indicator → overrides specific "PTO" match
     expect(header).toContain('💼');
   });
@@ -325,9 +373,11 @@ describe('renderAnswerAsBlocks — topic classification', () => {
     const result = makeResult('Here is the policy information.', [
       { chunkId: 'a', sourceUrl: 'https://notion.so/cyber', title: 'Cybersecurity Policy' },
     ]);
-    const header = getHeaderText(renderAnswerAsBlocks(result, {
-      messageText: 'Tell me about that',
-    }));
+    const header = getHeaderText(
+      renderAnswerAsBlocks(result, {
+        messageText: 'Tell me about that',
+      })
+    );
     expect(header).toContain('🛡️');
   });
 });
@@ -502,17 +552,26 @@ describe('12-fixture acceptance', () => {
     { name: 'Long policy (many sections)', result: LONG_SECTION },
     { name: 'Oversized paragraph', result: OVERSIZED_PARAGRAPH },
     { name: 'Harassment (sensitive)', result: HARASSMENT },
-    { name: 'Greeting with name', result: PTO_SHORT, opts: { employeeName: 'Lapedra', messageText: 'Hi, help me with PTO?' } },
-    { name: 'Direct question (no greeting)', result: PTO_SHORT, opts: { messageText: 'How many PTO days?' } },
+    {
+      name: 'Greeting with name',
+      result: PTO_SHORT,
+      opts: { employeeName: 'Lapedra', messageText: 'Hi, help me with PTO?' },
+    },
+    {
+      name: 'Direct question (no greeting)',
+      result: PTO_SHORT,
+      opts: { messageText: 'How many PTO days?' },
+    },
     { name: 'Name lookup failure', result: PTO_SHORT, opts: { employeeName: null } },
     { name: 'Zero citations', result: makeResult('Answer.', []) },
     { name: 'Abstention', result: ABSTENTION_RESULT },
   ];
 
   it.each(fixtures)('$name generates valid Block Kit', ({ result, opts }) => {
-    const payload = result.ok === false
-      ? renderPipelineResultAsBlocks(result, opts)
-      : renderAnswerAsBlocks(result, opts);
+    const payload =
+      result.ok === false
+        ? renderPipelineResultAsBlocks(result, opts)
+        : renderAnswerAsBlocks(result, opts);
 
     expect(payload.blocks.length).toBeGreaterThan(0);
     expect(payload.blocks.length).toBeLessThanOrEqual(45);
@@ -526,5 +585,57 @@ describe('12-fixture acceptance', () => {
     const allText = JSON.stringify(payload);
     expect(allText).not.toContain('<script');
     expect(allText).not.toContain('<!channel>');
+  });
+});
+
+// ── Follow-up Hint Tests ─────────────────────────────────────
+
+describe('renderAnswerAsBlocks — follow-up hint', () => {
+  it('includes follow-up hint for answers with citations', () => {
+    const result = makeResult('You get 20 PTO days per year.', [
+      { chunkId: 'a', sourceUrl: 'https://notion.so/pto', title: 'PTO Policy' },
+    ]);
+    const payload = renderAnswerAsBlocks(result);
+
+    const contextBlocks = payload.blocks.filter((b) => b.type === 'context');
+    const contextTexts = contextBlocks.map((b) =>
+      'elements' in b ? b.elements.map((e) => ('text' in e ? e.text : '')).join('') : ''
+    );
+
+    expect(contextTexts.some((t) => t.includes('follow-up'))).toBe(true);
+    expect(contextTexts.some((t) => t.includes('Reply in this thread'))).toBe(true);
+  });
+
+  it('omits follow-up hint for abstention messages (no citations)', () => {
+    const result = makeResult(
+      "I couldn't find enough approved HR information to answer that reliably.",
+      [] // No citations = abstention
+    );
+    const payload = renderAnswerAsBlocks(result);
+
+    const contextBlocks = payload.blocks.filter((b) => b.type === 'context');
+    const contextTexts = contextBlocks.map((b) =>
+      'elements' in b ? b.elements.map((e) => ('text' in e ? e.text : '')).join('') : ''
+    );
+
+    // Should NOT contain the follow-up hint
+    expect(contextTexts.some((t) => t.includes('follow-up'))).toBe(false);
+    expect(contextTexts.some((t) => t.includes('Reply in this thread'))).toBe(false);
+  });
+
+  it('places follow-up hint after sources section', () => {
+    const result = makeResult('Answer text here.', [
+      { chunkId: 'a', sourceUrl: 'https://notion.so/policy', title: 'Policy' },
+    ]);
+    const payload = renderAnswerAsBlocks(result);
+
+    // Find the index of the last context block (should be the follow-up hint)
+    const lastContextIndex = payload.blocks
+      .map((b, i) => ({ type: b.type, i }))
+      .filter((x) => x.type === 'context')
+      .pop()?.i;
+
+    // The follow-up hint should be the last block
+    expect(lastContextIndex).toBe(payload.blocks.length - 1);
   });
 });
