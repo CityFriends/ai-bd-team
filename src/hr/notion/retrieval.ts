@@ -14,6 +14,7 @@
  * retrieval fails closed (returns empty results with error).
  */
 
+import { performance } from 'perf_hooks';
 import type { HRReaderPool } from '../database/hr-client.js';
 import { createIdentityToken } from '../auth/identity-token.js';
 import { extractSearchTermsWithSource, type SearchTerm } from '../llm/keyword-extractor.js';
@@ -223,7 +224,7 @@ async function executeParallelRPCs(
     const batchResults = await Promise.all(
       batch.map(async ({ term, token, sanitized }): Promise<TermResult> => {
         const result = await readerPool.query(
-          'SELECT * FROM hr_retrieve_knowledge_v2($1, $2, $3, $4)',
+          'SELECT * FROM hr_retrieve_knowledge_v3($1, $2, $3, $4)',
           [token, sanitized, freshness, CANDIDATES_PER_TERM]
         );
         return { term, rows: result.rows || [] };
@@ -248,23 +249,64 @@ interface ScoredCandidate {
  * Deterministic relevance score for a retrieved chunk candidate.
  *
  * Scoring signals (applied once per distinct match type):
+ *   +350  Page title contains a multi-word phrase from the query (phrase title authority)
+ *   +300  Page title contains a keyword from the original query (keyword title authority)
+ *   +200  Page title contains a synonym term from query expansion (synonym title authority)
  *   +100  Title/heading contains an exact multi-word phrase from the query
  *    +60  Chunk matched a multi-word phrase term
  *    +40  Chunk matched a recognized synonym term
  *    +15  Each additional distinct term match beyond the first
  *     +5  Chunk matched a generic single-word term
  *
+ * The title authority bonus ensures that pages explicitly about a topic
+ * (e.g., "Paid Time Off (PTO)" for "pto" queries) rank above pages that
+ * merely mention the term (e.g., "Jury Duty" mentioning "paid time off").
+ *
+ * The synonym title authority bonus handles cases like "vacation" → "PTO",
+ * ensuring "Paid Time Off (PTO)" ranks highly for vacation queries.
+ *
  * Scoring is separate from authorization. A high score does not
  * bypass content-hash approval or freshness checks.
  */
-function scoreCandidate(
-  candidate: ScoredCandidate,
-  _allTerms: readonly SearchTerm[]
-): number {
+function scoreCandidate(candidate: ScoredCandidate, allTerms: readonly SearchTerm[]): number {
   let score = 0;
   const countedSources = new Set<string>();
   const titleLower = candidate.title.toLowerCase();
   const headingLower = candidate.chunk.headingPath.join(' ').toLowerCase();
+
+  // Title authority bonus: if the page title contains any search term,
+  // this page is likely authoritative for that topic. Applied once per chunk.
+  // Find the BEST matching term (highest scoring) rather than first match.
+  // Priority: phrase/multi-word (most specific) > keyword > single-word synonym
+  let bestTitleBonus = 0;
+  for (const term of allTerms) {
+    const isMultiWord = term.text.includes(' ');
+
+    // For multi-word terms, use substring match; for single words, use word boundary
+    const isMatch = isMultiWord
+      ? candidate.title.toLowerCase().includes(term.text.toLowerCase())
+      : new RegExp(`\\b${escapeRegexForScoring(term.text)}\\b`, 'i').test(candidate.title);
+
+    if (isMatch) {
+      let bonus = 0;
+      if (term.source === 'phrase') {
+        // Multi-word phrase match in title: highest authority (most specific)
+        bonus = 350;
+      } else if (term.source === 'keyword') {
+        // Direct keyword match in title: very high authority
+        bonus = 300;
+      } else if (term.source === 'synonym' && isMultiWord) {
+        // Multi-word synonym (e.g., "paid time off" from "vacation" query)
+        // matches title: treat as phrase-level authority since it's specific
+        bonus = 350;
+      } else if (term.source === 'synonym') {
+        // Single-word synonym matches title: strong but lower
+        bonus = 200;
+      }
+      bestTitleBonus = Math.max(bestTitleBonus, bonus);
+    }
+  }
+  score += bestTitleBonus;
 
   for (const term of candidate.matchedTerms) {
     // Avoid counting the same source type more than once per term text
@@ -294,6 +336,11 @@ function scoreCandidate(
   }
 
   return score;
+}
+
+/** Escape special regex characters for safe pattern matching. */
+function escapeRegexForScoring(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

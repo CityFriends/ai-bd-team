@@ -242,9 +242,15 @@ export function assemblePrompt(
 /**
  * Parse a raw LLM response string into the strict answer contract.
  *
- * Requires a plain JSON object — no code fences, no leading/trailing
- * commentary, no markdown wrapping. Only standard JSON whitespace
- * around the object is tolerated.
+ * Tolerates harmless surrounding text or markdown fences while maintaining
+ * strict validation of the JSON structure itself. Extracts exactly one
+ * valid JSON object from the response.
+ *
+ * Rejects:
+ *   - Multiple JSON objects (ambiguous)
+ *   - Malformed JSON
+ *   - Missing required fields
+ *   - Invalid citation IDs
  */
 export function parseModelAnswer(raw: string): HRAnswerParseResult {
   if (typeof raw !== 'string' || raw.length === 0) {
@@ -255,17 +261,83 @@ export function parseModelAnswer(raw: string): HRAnswerParseResult {
 
   // Strip code fences if present — newer models may wrap JSON in ```json ... ```
   if (cleaned.startsWith('```')) {
-    cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '').trim();
+    cleaned = cleaned
+      .replace(/^```(?:json)?\s*\n?/, '')
+      .replace(/\n?```\s*$/, '')
+      .trim();
   }
 
-  // The response must be exactly a JSON object: starts with { and ends with }
-  if (!cleaned.startsWith('{') || !cleaned.endsWith('}')) {
+  // Extract JSON object from response, tolerating preamble/postamble text
+  // Find the first '{' and extract to its matching '}'
+  const jsonStart = cleaned.indexOf('{');
+  if (jsonStart === -1) {
     return { ok: false, code: 'invalid_json' };
   }
 
+  // Find matching closing brace using balanced bracket counting
+  let braceCount = 0;
+  let jsonEnd = -1;
+  let inString = false;
+  let escapeNext = false;
+
+  for (let i = jsonStart; i < cleaned.length; i++) {
+    const char = cleaned[i];
+
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+
+    if (char === '\\' && inString) {
+      escapeNext = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (char === '{') {
+      braceCount++;
+    } else if (char === '}') {
+      braceCount--;
+      if (braceCount === 0) {
+        jsonEnd = i;
+        break;
+      }
+    }
+  }
+
+  if (jsonEnd === -1) {
+    return { ok: false, code: 'invalid_json' };
+  }
+
+  // Check for multiple JSON objects (ambiguous response)
+  const afterJson = cleaned.slice(jsonEnd + 1).trim();
+  if (afterJson.includes('{') && afterJson.includes('}')) {
+    // Potential second JSON object — reject as ambiguous
+    const secondStart = afterJson.indexOf('{');
+    const secondEnd = afterJson.indexOf('}', secondStart);
+    if (secondStart !== -1 && secondEnd > secondStart) {
+      // Try to parse to confirm it's actually JSON
+      try {
+        JSON.parse(afterJson.slice(secondStart, secondEnd + 1));
+        // Successfully parsed a second object — reject
+        return { ok: false, code: 'invalid_json' };
+      } catch {
+        // Not valid JSON, ignore
+      }
+    }
+  }
+
+  const jsonStr = cleaned.slice(jsonStart, jsonEnd + 1);
+
   let parsed: unknown;
   try {
-    parsed = JSON.parse(cleaned);
+    parsed = JSON.parse(jsonStr);
   } catch {
     return { ok: false, code: 'invalid_json' };
   }

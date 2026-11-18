@@ -232,12 +232,13 @@ describe('parseModelAnswer', () => {
     expect(parseModelAnswer('{bad}').ok).toBe(false);
   });
 
-  it('rejects code-fenced JSON with trailing commentary', () => {
+  it('accepts code-fenced JSON with harmless trailing commentary', () => {
+    // Per C8X-107BS-QA4: tolerate harmless surrounding text
     const fenced =
       '```json\n{"text":"Hi","citedChunkIds":[]}\n```\nHere is some extra explanation.';
     const result = parseModelAnswer(fenced);
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.code).toBe('invalid_json');
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.answer.text).toBe('Hi');
   });
 
   it('accepts clean code-fenced JSON (newer models wrap in fences)', () => {
@@ -247,9 +248,19 @@ describe('parseModelAnswer', () => {
     if (result.ok) expect(result.answer.text).toBe('Hi');
   });
 
-  it('rejects trailing commentary after JSON', () => {
+  it('accepts harmless trailing commentary after JSON', () => {
+    // Per C8X-107BS-QA4: tolerate harmless surrounding text
     const result = parseModelAnswer('{"text":"Hi","citedChunkIds":[]} I hope that helps!');
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.answer.text).toBe('Hi');
+  });
+
+  it('rejects multiple JSON objects (ambiguous response)', () => {
+    const result = parseModelAnswer(
+      '{"text":"First","citedChunkIds":[]} {"text":"Second","citedChunkIds":[]}'
+    );
     expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('invalid_json');
   });
 
   it('rejects unexpected fields', () => {
@@ -598,10 +609,11 @@ describe('C8X-76 — application-controlled abstention', () => {
 });
 
 // ============================================================
-// C8X-76: Strict JSON Parsing (no code fences)
+// C8X-76 + C8X-107BS-QA4: Tolerant JSON Parsing
+// Accepts harmless surrounding text while rejecting ambiguous responses
 // ============================================================
 
-describe('C8X-76 — strict JSON parsing', () => {
+describe('C8X-76/107BS-QA4 — tolerant JSON parsing', () => {
   it('accepts ```json code fence (stripped before parsing)', () => {
     const result = parseModelAnswer('```json\n{"text":"Hi","citedChunkIds":[]}\n```');
     expect(result.ok).toBe(true);
@@ -612,14 +624,18 @@ describe('C8X-76 — strict JSON parsing', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('rejects code fence with trailing text', () => {
+  it('accepts code fence with harmless trailing text', () => {
+    // Per C8X-107BS-QA4: tolerate harmless surrounding text
     const result = parseModelAnswer('```json\n{"text":"Hi","citedChunkIds":[]}\n```\nExtra text.');
-    expect(result.ok).toBe(false);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.answer.text).toBe('Hi');
   });
 
-  it('rejects backticks embedded in the response', () => {
+  it('accepts backticks embedded in preamble', () => {
+    // Per C8X-107BS-QA4: tolerate harmless surrounding text
     const result = parseModelAnswer('Here is the answer: ```{"text":"Hi","citedChunkIds":[]}```');
-    expect(result.ok).toBe(false);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.answer.text).toBe('Hi');
   });
 
   it('accepts valid raw JSON', () => {
@@ -637,14 +653,26 @@ describe('C8X-76 — strict JSON parsing', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('rejects leading text before JSON', () => {
+  it('accepts harmless leading text before JSON', () => {
+    // Per C8X-107BS-QA4: tolerate harmless surrounding text
     const result = parseModelAnswer('Here is my answer: {"text":"Hi","citedChunkIds":[]}');
-    expect(result.ok).toBe(false);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.answer.text).toBe('Hi');
   });
 
-  it('rejects trailing text after JSON', () => {
+  it('accepts harmless trailing text after JSON', () => {
+    // Per C8X-107BS-QA4: tolerate harmless surrounding text
     const result = parseModelAnswer('{"text":"Hi","citedChunkIds":[]} I hope this helps!');
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.answer.text).toBe('Hi');
+  });
+
+  it('rejects multiple JSON objects (ambiguous)', () => {
+    const result = parseModelAnswer(
+      '{"text":"First","citedChunkIds":[]} {"text":"Second","citedChunkIds":[]}'
+    );
     expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('invalid_json');
   });
 
   it('existing valid citation-backed answers still work', () => {
