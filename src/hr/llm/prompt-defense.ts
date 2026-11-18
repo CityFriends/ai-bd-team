@@ -33,6 +33,7 @@ export const PROMPT_DELIMITERS = [
   '---HR_SYSTEM_INSTRUCTIONS---',
   '---HR_POLICY_EXCERPTS---',
   '---EMPLOYEE_QUESTION---',
+  '---CONVERSATION_HISTORY---',
 ] as const;
 
 // ── Trust Boundary Types ────────────────────────────────────
@@ -67,6 +68,7 @@ export type HRQuestionValidationResult =
 
 // Unsafe control characters: C0 controls except \t (\x09), \n (\x0a), \r (\x0d).
 // Also rejects DEL (\x7f) and C1 controls (\x80-\x9f).
+// eslint-disable-next-line no-control-regex -- Intentional: detecting unsafe control chars
 const UNSAFE_CONTROL_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/;
 
 /**

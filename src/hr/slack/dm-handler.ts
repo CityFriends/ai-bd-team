@@ -34,6 +34,11 @@ import {
   formatSearchResultsForSlack,
   isSearchError,
 } from '../search/keyword-search.js';
+import {
+  getConversationStore,
+  type GetContextInput,
+  type AddTurnInput,
+} from './conversation-context.js';
 
 const processedEvents = new Set<string>();
 
@@ -144,12 +149,20 @@ export function registerMessageHandler(config: DMHandlerConfig): void {
       await post(ch, text, blocks);
     };
 
+    // Extract thread_ts for conversation context. If the message is in a thread,
+    // thread_ts identifies the parent. If it's a top-level message, we use the
+    // message's own timestamp (eventTs) as the thread identifier.
+    const threadTs =
+      'thread_ts' in event && event.thread_ts ? (event.thread_ts as string) : event.ts;
+
     await handleMessage({
       userId,
       channelId,
       channelType,
       text: 'text' in event ? event.text || '' : '',
       eventTs: event.ts,
+      workspaceId: context.teamId,
+      threadTs,
       auth: config.auth,
       readerPool: config.readerPool,
       signingSecret: config.signingSecret,
@@ -171,6 +184,10 @@ export interface HandleMessageInput {
   channelType: string;
   text: string;
   eventTs: string;
+  /** Slack workspace ID for conversation isolation. */
+  workspaceId?: string;
+  /** Thread timestamp — if present, message is in a thread (enables follow-ups). */
+  threadTs?: string;
   auth: HRAuthProvider;
   readerPool?: HRReaderPool;
   signingSecret?: string;
@@ -196,6 +213,8 @@ export async function handleMessage(input: HandleMessageInput): Promise<void> {
     channelType,
     text,
     eventTs,
+    workspaceId,
+    threadTs,
     auth,
     pilotConfig,
     pipelineConfig,
@@ -289,10 +308,29 @@ export async function handleMessage(input: HandleMessageInput): Promise<void> {
 
     const tAck = Date.now();
 
+    // ── Conversation Context ───────────────────────────────
+    // Get prior conversation turns for follow-up context.
+    // History provides context to the LLM but does NOT authorize citations.
+    // Fresh retrieval is always performed for each question.
+    let conversationHistory: import('./conversation-context.js').ConversationTurn[] | undefined;
+    const contextInput: GetContextInput | null =
+      workspaceId && threadTs ? { workspaceId, channelId, threadTs, userId } : null;
+
+    if (contextInput) {
+      const store = getConversationStore();
+      const history = store.getContext(contextInput);
+      if (history && history.length > 0) {
+        conversationHistory = history;
+      }
+    }
+
     try {
       // Run pipeline and name lookup concurrently
       const [result, employeeName] = await Promise.all([
-        executeHRPipeline(pipelineConfig, text, userId, correlationId),
+        executeHRPipeline(pipelineConfig, text, userId, {
+          correlationId,
+          conversationHistory,
+        }),
         getEmployeeName
           ? getEmployeeName(userId).catch(() => null as string | null)
           : Promise.resolve(null as string | null),
@@ -347,6 +385,28 @@ export async function handleMessage(input: HandleMessageInput): Promise<void> {
         `[HR Pipeline] cid=${correlationId} ack=${tAck - t0}ms pipeline=${tPipeline - tAck}ms total=${tDone - t0}ms` +
           ` outcome=${result.ok ? 'success' : result.code} delivery=${deliveryOutcome}`
       );
+
+      // ── Record Conversation Turn ───────────────────────────
+      // Store the Q&A for follow-up context. Only recorded if:
+      // - We have workspace/thread context (conversation isolation)
+      // - The response was delivered (not update_failed)
+      // - The pipeline returned a valid response (success or abstention)
+      if (contextInput && deliveryOutcome !== 'update_failed' && result.ok) {
+        try {
+          const store = getConversationStore();
+          const addTurnInput: AddTurnInput = {
+            ...contextInput,
+            question: text,
+            answer: result.answer.text,
+            // Could extract topic from question or citations for context hints
+          };
+          store.addTurn(addTurnInput);
+        } catch {
+          // Turn recording failure is non-critical — log but don't fail
+          // eslint-disable-next-line no-console
+          console.error(`[HR Pipeline] cid=${correlationId} Failed to record conversation turn`);
+        }
+      }
     } catch (err) {
       // Pipeline or delivery failure (unhandled exception)
       const errorMsg =

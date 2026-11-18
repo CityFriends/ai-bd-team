@@ -25,7 +25,9 @@ import {
   finalizeAnswer,
   HR_ABSTENTION_MESSAGE,
   type HRAnswerResult,
+  type AssemblePromptOptions,
 } from './hr-answer-foundation.js';
+import type { ConversationTurn } from '../slack/conversation-context.js';
 
 // ── Pipeline Result ─────────────────────────────────────────
 
@@ -109,6 +111,22 @@ function logPipelineFailure(
 // ── Pipeline ────────────────────────────────────────────────
 
 /**
+ * Options for pipeline execution.
+ */
+export interface PipelineOptions {
+  /**
+   * Correlation ID for diagnostic logging.
+   * If not provided, failures are not logged (for backward compatibility).
+   */
+  correlationId?: string;
+  /**
+   * Prior conversation turns for follow-up context.
+   * Provides context only — retrieval is always performed fresh.
+   */
+  conversationHistory?: ConversationTurn[];
+}
+
+/**
  * Execute the full HR answer pipeline for an employee question.
  *
  * The pipeline is fail-closed at every stage:
@@ -121,15 +139,20 @@ function logPipelineFailure(
  *
  * Never returns raw model text to the employee.
  *
- * @param correlationId Optional correlation ID for diagnostic logging.
- *        If not provided, failures are not logged (for backward compatibility).
+ * For follow-up questions, the conversationHistory provides context to the
+ * LLM to resolve pronouns and understand topic continuity. However, retrieval
+ * is always performed fresh — conversation history does NOT authorize citations.
  */
 export async function executeHRPipeline(
   config: HRPipelineConfig,
   question: string,
   slackUserId: string,
-  correlationId?: string
+  options?: string | PipelineOptions
 ): Promise<HRPipelineResult> {
+  // Handle backward compatibility: string = correlationId, object = options
+  const resolvedOptions: PipelineOptions =
+    typeof options === 'string' ? { correlationId: options } : options || {};
+  const { correlationId, conversationHistory } = resolvedOptions;
   // 1. Authorized retrieval (feature-gated internally by retrieveForUser)
   let retrieval: RetrievalResult;
   try {
@@ -156,7 +179,11 @@ export async function executeHRPipeline(
   }
 
   // 2. Assemble prompt from validated question and authorized chunks
-  const promptResult = assemblePrompt(question, retrieval.chunks);
+  const promptOptions: AssemblePromptOptions = {};
+  if (conversationHistory && conversationHistory.length > 0) {
+    promptOptions.conversationHistory = conversationHistory;
+  }
+  const promptResult = assemblePrompt(question, retrieval.chunks, promptOptions);
   if (!promptResult.ok) {
     if (correlationId) {
       logPipelineFailure(correlationId, 'prompt', promptResult.code, {
